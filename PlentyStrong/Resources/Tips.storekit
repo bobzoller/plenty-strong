@@ -1,0 +1,64 @@
+{
+  "identifier": "plenty-strong-synthetic-tips",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "100",
+      "localizations": [
+        {
+          "description": "Optional support. Unlocks nothing.",
+          "displayName": "Small tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "us.zoller.PlentyStrong.tip.small",
+      "referenceName": "Small synthetic tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "2.99",
+      "familyShareable": false,
+      "internalID": "101",
+      "localizations": [
+        {
+          "description": "Optional support. Unlocks nothing.",
+          "displayName": "Medium tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "us.zoller.PlentyStrong.tip.medium",
+      "referenceName": "Medium synthetic tip",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "102",
+      "localizations": [
+        {
+          "description": "Optional support. Unlocks nothing.",
+          "displayName": "Large tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "us.zoller.PlentyStrong.tip.large",
+      "referenceName": "Large synthetic tip",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

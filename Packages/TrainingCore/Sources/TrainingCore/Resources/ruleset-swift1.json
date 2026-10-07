@@ -1,0 +1,391 @@
+{
+  "version": "general-fitness-swift1",
+  "sourceIds": [
+    "E01",
+    "E02",
+    "E03",
+    "E04",
+    "E05",
+    "E06",
+    "E07",
+    "E08",
+    "E09",
+    "E10",
+    "E11",
+    "E12",
+    "E13"
+  ],
+  "ruleIds": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12",
+    "R13",
+    "R14",
+    "R15",
+    "R16"
+  ],
+  "presetTable": "Active fixed-home-gym-v0.2 app adaptation of general-fitness-v0.2. All four goals use Sunday/Tuesday/Thursday; the fixed app does not offer two-day schedules. Fat loss: 2 sets, 8–12, 120 seconds. Size: 3 sets, 8–12, 120 seconds. Strength: 3 sets, 4–6 only for the four permitted movements, otherwise 8–12, 180 seconds. Maintenance: 2 sets, 8–12, 120 seconds. Normal instruction: Stop when you think you could do two more good reps. Stop earlier for pain or loss of control. These are operational app defaults, not four independently validated trial protocols. Archived numeric v0.2 retains its original table and two-day behavior in numeric-v02-ruleset.json.",
+  "rulebook": "Active fixed-profile adaptations: bodyweight and user-managed assistance modes retain null numeric loads and empty catalogs. Clean normal work can establish their baseline without a numeric load. They progress repetitions only; at their maximum ceiling R15 emits manual_setup_limit. Per-side observations never sum sides; incomplete or unequal app side logs are partial. Comparison context includes stable variant/base IDs, description snapshot, loading mode, variant setup revision and rep convention. Shared base safety gates every variant. Modifications are opaque plain text, never parsed into loading. Fixed coverage reports actual counts; it does not require twice-weekly coverage for every muscle. Active normal instructions use the exact parameterized app copy. The following original numeric rulebook is preserved as provenance; these explicit active adaptations govern the fixed app.\n\nAn exposure is **eligible** when completed, clean, normal-mode, and comparable,\nwith known effort and session mode `normal`. Eligibility does not certify the effort\nestimate as a measurement. A rep-floor miss can still count toward strain.\n\nAfter structural validation/replay handling, classify problems first. Recovery\ncannot clear a paused movement. Then exclude easier-session work, evaluate\nbaseline and interruption rules, and finally movement progression. The first matching\nmovement rule wins. State updates are proposed in isolation and validated together\nbefore returning an applied result.\n\n| Rule | Condition | Exact action | Basis |\n| --- | --- | --- | --- |\n| R01 | Pain or loss of control on any row | Preserve actuals; pause that movement; reset both counters; prescribe no working sets for it. Resume requires an explicit safe configuration change. | Safety app policy; medical/rehabilitation management is outside this engine. |\n| R02 | User selects the optional easier-workout control before working sets | `prepareWorkout` derives an easier prescription for the current session, leaves persistent state unchanged, and requires no readiness answer. | Explicit user preference; software behavior. |\n| R03 | Preparing or recording an easier session | Use half preset sets rounded up (minimum 1), capped by any smaller current dose; same load; original preset rep floor as ceiling; monitoring floor 0; at least 4 clean reps left subject to stricter restrictions. No progression, strain, or plateau qualification. Preserve counters/window unless R01 or a confirmed changed load requires resetting them. | E12-informed app adaptation; exact single-session dose is an app choice. |\n| R04 | Next planned workout after an easier session | Return to the existing planned prescription, preserving load, baseline/paused mode, and unresolved temporary-dose flags. No timer, readiness check, or mandatory extra return exposure. | Single-session scope; software requirement. |\n| R05 | At least 28 days since that movement's last completed exposure, or interruption-return pending | On detecting the gap, reset counters/history window and mark interruption-return pending; prescribe one fewer working set (minimum 1), same load, and normal effort instruction next time. The resumed event is recorded but ineligible. After a clean complete known non-hard reduced-dose result, clear the flag/override and restore preset sets. Neither return exposure qualifies for progression. | Conservative interruption policy, exact timing is an app choice. |\n| R06 | Unknown load or baseline mode | Apply the baseline procedure above; baseline completion sets mode `normal` and counters zero. No same-transition increase. | E01/E07-informed app calibration policy. |\n| R07 | Normal-session skip, partial work, changed actual load, unknown effort, or ceiling exceeded | Hold load/range. Skip preserves counters; other cases reset counters. A confirmed changed actual load becomes a new baseline, with counters/window zero. Do not treat it as an approved increase. Ceiling excess emits its notice. | Data/uncertainty policy informed by E07. |\n| R08 | Eligible result has `too_hard` effort or any set below rep floor | Clear ceiling streak; add 1 to strain streak. First strain holds. Second strain selects the nearest lower available load, returns to baseline, and resets counters. If none exists, prescribe one fewer set (minimum 1) for the next exposure as a temporary recovery dose. | App adaptation informed by effort/recovery principles, not a published exact two-miss formula. |\n| R09 | Temporary one-set reduction from R08 | At a clean complete result with known non-hard effort, restore preset sets and baseline mode, resetting comparisons. A further strain while already at one set pauses the movement for review. | Bounded app adaptation; reductions never stack indefinitely. |\n| R10 | Eligible non-strained result below ceiling on any set | Hold load and rep range; clear both streaks. Reps are governed by capacity and the stopping instruction, not a required weekly increment. | E01/E05 adaptation. |\n| R11 | Every set reaches ceiling, final effort `on_target` or `too_easy`, eligible result | Clear strain streak; increment ceiling streak. First confirmation holds. At two confirmations, apply R12–R15 by goal and equipment. | Adaptation of E03, **not the literal 2-for-2 test**: no bonus/failure reps are performed. |\n| R12 | Two confirmations; maintenance; final effort `on_target` | Hold load; reset ceiling streak. Stable capability is success. | E10-informed maintenance policy. |\n| R13 | Two confirmations; building/cut goal, or maintenance with final `too_easy` | If automatic progression is allowed, choose the smallest available higher load. Increase only if its rise is <=10%. Restore original preset rep range, return to baseline, reset counters. | E02/E03 adaptation. Maintenance increases restore challenge rather than chase growth. |\n| R14 | R13 finds no higher load, its smallest step exceeds 10%, or load progression is prohibited; rep-range extension is explicitly allowed | For size/cut/maintenance and strength's 8–12 fallback extend ceiling by 2, maximum 20; for low-rep strength extend by 2, maximum 8. Hold load, reset comparisons. Floor remains unchanged. | E05/E11 adaptation; exact +2/maxima are product choices. |\n| R15 | R13 cannot progress and R14 is at maximum or prohibited | Hold load/range and emit `equipment_limit` or `progression_restricted`. Reset ceiling streak. Request a compatible equipment/movement solution from the deferred plan builder; never silently make a prohibited jump. | Software/safety boundary and app policy. |\n| R16 | Six comparable clean normal on-target exposures in size/strength, no increase in latest-three versus first-three median total reps, and no recovery/problem/equipment notice already explains it | Add `plateau_check` notice while keeping the normal prescription. Do not diagnose absence of growth or add sets automatically. Cut/maintenance do not emit this notice merely for stable reps. | Trend heuristic; six exposures and median comparison are app choices. |\n\nR16 is an informational overlay after the primary movement action, and cannot\noverride it. A successful load change clears its comparison window. A restriction\ncan permit R14 rep extensions but never R13 load increases; an explicit restriction\nagainst any progression goes directly to R15. At baseline completion retain only\nthe verified current load and preset prescription; don't infer past adherence.\n\nA completed log updates `lastCompletedDate` even if it is ineligible; partial and\nskipped logs do not. Already-paused movements stay paused until explicit safe\nreconfiguration. Their logs cannot silently restore work.\n\nNormal effort instructions use at least `max(2, minimumRir)` clean reps left;\neasier sessions use at least `max(4, minimumRir)`. Effort-category teaching copy follows\nthe active instruction when a restriction makes it easier than the default.\nR08 sets `nextSetOverride`; R09 clears it. A reduced dose that remains strained\nholds that dose for review rather than repeatedly subtracting sets. R05 uses the\nsame override with its interruption flag. Easier sessions retain these flags,\nnever satisfy their return conditions, and use the smaller current dose.\n\n### Easier session preparation and completion\n\n`prepareWorkout` checks the ruleset version/hash and derives from the exact\n`activePrescription`. The normal path returns it unchanged. The easier path\napplies R02/R03 only to unpaused working or baseline-setup movements. Paused\nmovements retain zero sets. Unknown loads remain unknown; the app can record a\ncomfortable available actual load, but an easier exposure cannot establish the\nnormal-effort baseline. Never increase a current rep ceiling or set count to\nmake an easier prescription. The easier ceiling is the smaller of the displayed\nceiling and original preset rep floor. Its phase is `easier`.\n\nGenerate the derived ID as SHA-256 of canonical JSON with keys\n`plannedPrescriptionId`, `sessionMode`, `rulesetVersion`, `rulesetHash`, and\n`prescription`. The last value is the resulting prescription excluding its own\nID. Repeated\npreparation from identical inputs returns identical content/ID. The adapter saves\nwhich prescription was displayed; preparation does not increment state revision,\nconsume an event ID, or create performed history.\n\nOn completion, R01 still wins over the easier-session rules. Easier work is\nrecorded as performed, but does not confirm a load increase, count a strain,\nestablish a baseline, resolve a temporary-dose return, or enter the plateau\nwindow. A confirmed different actual load is retained as baseline mode with\ncounters/window reset; unknown actual loads never become inferred loads.\nCompleted easier work updates `lastCompletedDate`, because it was performed.\n\nThe next prescription restores the planned dose and effort subject to existing\nmovement restrictions and unresolved overrides. Its phase is `baseline`, `return`,\nor `normal` as persistent state requires. Repeated easier requests each affect\none session; they do not create a hidden week or diagnose fatigue. Automatic\nmovement adjustments continue to use R08/R09's comparable normal-session reps\nand effort. Version 0.2 has no automatic session-wide deload trigger.\n\n### Configuration changes\n\nGoal, schedule, movement, load-catalog, or safety-restriction changes are explicit\nconfiguration events handled by a separate initialization/reconfiguration\nboundary. Preserve performed history, rebuild affected presets, and reset affected\ncomparison counters and baseline status. Unaffected movements retain state.\nConstraints may become stricter automatically; relaxing a medical/safety\nrestriction needs the appropriate external authorization. The workout transition\nrejects unannounced configuration changes. Version migrations are explicit and\nnever reprocess historical events under new rules silently.",
+  "hash": "cc6520f0de45d47979942d3dda21eccc2e9779638ef1c18c7fdc44c4862b8463",
+  "sourceRulesetHash": "cba4084ab7e12b7074a3b87aba813f72fbff2d0560992edd0b566661bfc60beb",
+  "contractVersion": 2,
+  "profileId": "fixed-home-gym-v0.2",
+  "profileHash": "e63a0543d54108af99637ed52dacebc1276e766b4314bc095891248efd7ce8ce",
+  "presets": {
+    "fat_loss": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    },
+    "size": {
+      "normalSets": 3,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    },
+    "strength": {
+      "normalSets": 3,
+      "repFloor": 4,
+      "repCeiling": 6,
+      "restSeconds": 180,
+      "defaultDays": 3,
+      "fallbackFloor": 8,
+      "fallbackCeiling": 12
+    },
+    "maintenance": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    }
+  },
+  "parameters": {
+    "normalMinimumRir": 2,
+    "normalEffortInstruction": "Stop when you think you could do two more good reps. Stop earlier for pain or loss of control.",
+    "stopInstruction": "Stop for pain or loss of control.",
+    "easierMinimumRir": 4,
+    "confirmationCount": 2,
+    "setbackCount": 2,
+    "maximumLoadIncreasePercent": 10,
+    "repCeilingExtension": 2,
+    "maximumRepCeiling": 20,
+    "maximumStrengthRepCeiling": 8,
+    "interruptionDays": 28,
+    "plateauExposures": 6,
+    "ceilingCopyTemplate": "Up to {ceiling} good reps"
+  },
+  "rules": [
+    {
+      "id": "R01",
+      "condition": "Pain or loss of control on any row",
+      "action": "Preserve actuals; pause that movement; reset both counters; prescribe no working sets for it. Resume requires an explicit safe configuration change.",
+      "basis": "Safety app policy; medical/rehabilitation management is outside this engine.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R01",
+      "adaptationRationale": "Safety app policy; medical/rehabilitation management is outside this engine."
+    },
+    {
+      "id": "R02",
+      "condition": "User selects the optional easier-workout control before working sets",
+      "action": "`prepareWorkout` derives an easier prescription for the current session, leaves persistent state unchanged, and requires no readiness answer.",
+      "basis": "Explicit user preference; software behavior.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R02",
+      "adaptationRationale": "Explicit user preference; software behavior."
+    },
+    {
+      "id": "R03",
+      "condition": "Preparing or recording an easier session",
+      "action": "Use half preset sets rounded up (minimum 1), capped by any smaller current dose; same load; original preset rep floor as ceiling; monitoring floor 0; at least 4 clean reps left subject to stricter restrictions. No progression, strain, or plateau qualification. Preserve counters/window unless R01 or a confirmed changed load requires resetting them.",
+      "basis": "E12-informed app adaptation; exact single-session dose is an app choice.",
+      "sourceIds": [
+        "E12"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R03",
+      "adaptationRationale": "E12-informed app adaptation; exact single-session dose is an app choice."
+    },
+    {
+      "id": "R04",
+      "condition": "Next planned workout after an easier session",
+      "action": "Return to the existing planned prescription, preserving load, baseline/paused mode, and unresolved temporary-dose flags. No timer, readiness check, or mandatory extra return exposure.",
+      "basis": "Single-session scope; software requirement.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R04",
+      "adaptationRationale": "Single-session scope; software requirement."
+    },
+    {
+      "id": "R05",
+      "condition": "At least 28 days since that movement's last completed exposure, or interruption-return pending",
+      "action": "On detecting the gap, reset counters/history window and mark interruption-return pending; prescribe one fewer working set (minimum 1), same load, and normal effort instruction next time. The resumed event is recorded but ineligible. After a clean complete known non-hard reduced-dose result, clear the flag/override and restore preset sets. Neither return exposure qualifies for progression.",
+      "basis": "Conservative interruption policy, exact timing is an app choice.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R05",
+      "adaptationRationale": "Conservative interruption policy, exact timing is an app choice."
+    },
+    {
+      "id": "R06",
+      "condition": "Unknown load or baseline mode",
+      "action": "Apply the baseline procedure above; baseline completion sets mode `normal` and counters zero. No same-transition increase.",
+      "basis": "E01/E07-informed app calibration policy.",
+      "sourceIds": [
+        "E01",
+        "E07"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R06",
+      "adaptationRationale": "E01/E07-informed app calibration policy. Active fixed bodyweight/manual modes can establish baseline with null load; easier/partial work cannot."
+    },
+    {
+      "id": "R07",
+      "condition": "Normal-session skip, partial work, changed actual load, unknown effort, or ceiling exceeded",
+      "action": "Hold load/range. Skip preserves counters; other cases reset counters. A confirmed changed actual load becomes a new baseline, with counters/window zero. Do not treat it as an approved increase. Ceiling excess emits its notice.",
+      "basis": "Data/uncertainty policy informed by E07.",
+      "sourceIds": [
+        "E07"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R07",
+      "adaptationRationale": "Data/uncertainty policy informed by E07."
+    },
+    {
+      "id": "R08",
+      "condition": "Eligible result has `too_hard` effort or any set below rep floor",
+      "action": "Clear ceiling streak; add 1 to strain streak. First strain holds. Second strain selects the nearest lower available load, returns to baseline, and resets counters. If none exists, prescribe one fewer set (minimum 1) for the next exposure as a temporary recovery dose.",
+      "basis": "App adaptation informed by effort/recovery principles, not a published exact two-miss formula.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R08",
+      "adaptationRationale": "App adaptation informed by effort/recovery principles, not a published exact two-miss formula."
+    },
+    {
+      "id": "R09",
+      "condition": "Temporary one-set reduction from R08",
+      "action": "At a clean complete result with known non-hard effort, restore preset sets and baseline mode, resetting comparisons. A further strain while already at one set pauses the movement for review.",
+      "basis": "Bounded app adaptation; reductions never stack indefinitely.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R09",
+      "adaptationRationale": "Bounded app adaptation; reductions never stack indefinitely."
+    },
+    {
+      "id": "R10",
+      "condition": "Eligible non-strained result below ceiling on any set",
+      "action": "Hold load and rep range; clear both streaks. Reps are governed by capacity and the stopping instruction, not a required weekly increment.",
+      "basis": "E01/E05 adaptation.",
+      "sourceIds": [
+        "E01",
+        "E05"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R10",
+      "adaptationRationale": "E01/E05 adaptation."
+    },
+    {
+      "id": "R11",
+      "condition": "Every set reaches ceiling, final effort `on_target` or `too_easy`, eligible result",
+      "action": "Clear strain streak; increment ceiling streak. First confirmation holds. At two confirmations, apply R12–R15 by goal and equipment.",
+      "basis": "Adaptation of E03, **not the literal 2-for-2 test**: no bonus/failure reps are performed.",
+      "sourceIds": [
+        "E03"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R11",
+      "adaptationRationale": "Adaptation of E03, **not the literal 2-for-2 test**: no bonus/failure reps are performed."
+    },
+    {
+      "id": "R12",
+      "condition": "Two confirmations; maintenance; final effort `on_target`",
+      "action": "Hold load; reset ceiling streak. Stable capability is success.",
+      "basis": "E10-informed maintenance policy.",
+      "sourceIds": [
+        "E10"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R12",
+      "adaptationRationale": "E10-informed maintenance policy."
+    },
+    {
+      "id": "R13",
+      "condition": "Two confirmations; building/cut goal, or maintenance with final `too_easy`",
+      "action": "If automatic progression is allowed, choose the smallest available higher load. Increase only if its rise is <=10%. Restore original preset rep range, return to baseline, reset counters.",
+      "basis": "E02/E03 adaptation. Maintenance increases restore challenge rather than chase growth.",
+      "sourceIds": [
+        "E02",
+        "E03"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R13",
+      "adaptationRationale": "E02/E03 adaptation. Maintenance increases restore challenge rather than chase growth."
+    },
+    {
+      "id": "R14",
+      "condition": "R13 finds no higher load, its smallest step exceeds 10%, or load progression is prohibited; rep-range extension is explicitly allowed",
+      "action": "For size/cut/maintenance and strength's 8–12 fallback extend ceiling by 2, maximum 20; for low-rep strength extend by 2, maximum 8. Hold load, reset comparisons. Floor remains unchanged.",
+      "basis": "E05/E11 adaptation; exact +2/maxima are product choices.",
+      "sourceIds": [
+        "E05",
+        "E11"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R14",
+      "adaptationRationale": "E05/E11 adaptation; exact +2/maxima are product choices."
+    },
+    {
+      "id": "R15",
+      "condition": "R13 cannot progress and R14 is at maximum or prohibited",
+      "action": "Hold load/range and emit `equipment_limit` or `progression_restricted`. Reset ceiling streak. Request a compatible equipment/movement solution from the deferred plan builder; never silently make a prohibited jump.",
+      "basis": "Software/safety boundary and app policy.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R15",
+      "adaptationRationale": "Software/safety boundary and app policy. Active fixed bodyweight/manual ceiling limit emits manual_setup_limit; no inferred assistance or added load."
+    },
+    {
+      "id": "R16",
+      "condition": "Six comparable clean normal on-target exposures in size/strength, no increase in latest-three versus first-three median total reps, and no recovery/problem/equipment notice already explains it",
+      "action": "Add `plateau_check` notice while keeping the normal prescription. Do not diagnose absence of growth or add sets automatically. Cut/maintenance do not emit this notice merely for stable reps.",
+      "basis": "Trend heuristic; six exposures and median comparison are app choices.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#rule-precedence-and-decision-table/R16",
+      "adaptationRationale": "Trend heuristic; six exposures and median comparison are app choices."
+    }
+  ],
+  "sources": [
+    {
+      "id": "E01",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+      "locator": "Results and Practical Applications; [official summary](https://acsm.org/resistance-training-guidelines-update-2026/)",
+      "population": "Healthy adults",
+      "limitations": "Foundation for healthy adults: regular training, goal-dependent load/volume, sufficient effort, and optional failure/complex periodization. Exact individual RIR optima remain uncertain.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E01",
+      "adaptationRationale": "Foundation for healthy adults: regular training, goal-dependent load/volume, sufficient effort, and optional failure/complex periodization. Exact individual RIR optima remain uncertain."
+    },
+    {
+      "id": "E02",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/19204579/",
+      "locator": "progression and loading recommendations",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Published 2–10% load-increase guidance after exceeding the intended repetitions by one or two. Older guidance, supplemented by E01.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E02",
+      "adaptationRationale": "Published 2–10% load-increase guidance after exceeding the intended repetitions by one or two. Older guidance, supplemented by E01."
+    },
+    {
+      "id": "E03",
+      "url": "https://www.nasm.org/resource-center/blog/training/progressive-overload-explained-programming-progress-for-every-client",
+      "locator": "“Use the 2-for-2 Rule”",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Professional heuristic: two extra final-set reps on two consecutive workouts; suggested upper/lower-body increment ranges. Professional guidance rather than a head-to-head validation of exact thresholds.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E03",
+      "adaptationRationale": "Professional heuristic: two extra final-set reps on two consecutive workouts; suggested upper/lower-body increment ranges. Professional guidance rather than a head-to-head validation of exact thresholds."
+    },
+    {
+      "id": "E04",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/37414459/",
+      "locator": "Abstract and Discussion",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Many prescriptions improve strength and size; higher loads favor strength and multiple sets favor hypertrophy. Network rankings do not prescribe an individual optimum.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E04",
+      "adaptationRationale": "Many prescriptions improve strength and size; higher loads favor strength and multiple sets favor hypertrophy. Network rankings do not prescribe an individual optimum."
+    },
+    {
+      "id": "E05",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9528903/",
+      "locator": "Training Procedures and Conclusion",
+      "population": "Trained adults in an eight-week trial",
+      "limitations": "Repetition and load progression were both viable in an eight-week trial of trained adults. The study used supervised failure training; this app does not copy that effort protocol.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E05",
+      "adaptationRationale": "Repetition and load progression were both viable in an eight-week trial of trained adults. The study used supervised failure training; this app does not copy that effort protocol."
+    },
+    {
+      "id": "E06",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/38393985/",
+      "locator": "Methods and Results",
+      "population": "Trained adults in a small quadriceps trial",
+      "limitations": "Similar quadriceps growth with failure versus 1–2 RIR, with greater acute fatigue from failure, in a small trial of trained adults. Does not prove the proposed default across every movement or population.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E06",
+      "adaptationRationale": "Similar quadriceps growth with failure versus 1–2 RIR, with greater acute fatigue from failure, in a small trial of trained adults. Does not prove the proposed default across every movement or population."
+    },
+    {
+      "id": "E07",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/34542869/",
+      "locator": "Results and Conclusions",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Effort estimates contain error. Feedback categories are observations, not exact measurements of remaining repetitions.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E07",
+      "adaptationRationale": "Effort estimates contain error. Feedback categories are observations, not exact measurements of remaining repetitions."
+    },
+    {
+      "id": "E08",
+      "url": "https://link.springer.com/article/10.1007/s40279-025-02344-w",
+      "locator": "Methods and Conclusions",
+      "population": "Predominantly young men",
+      "limitations": "Volume has diminishing returns; distinguishing direct/indirect sets improves dose accounting. The sample was predominantly young men. No personalized recoverable-volume threshold is established.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E08",
+      "adaptationRationale": "Volume has diminishing returns; distinguishing direct/indirect sets improves dose accounting. The sample was predominantly young men. No personalized recoverable-volume threshold is established."
+    },
+    {
+      "id": "E09",
+      "url": "https://onlinelibrary.wiley.com/doi/full/10.1111/sms.14075",
+      "locator": "Abstract and Discussion",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Energy deficits constrain lean-mass gains more consistently than strength gains. Supports different success expectations during a cut, not a universal volume reduction.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E09",
+      "adaptationRationale": "Energy deficits constrain lean-mass gains more consistently than strength gains. Supports different success expectations during a cut, not a universal volume reduction."
+    },
+    {
+      "id": "E10",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/21131862/",
+      "locator": "Methods and Conclusions",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "Maintenance can require less training, with age-dependent results. Does not justify one set weekly for every user or applying maintenance doses to a cut.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E10",
+      "adaptationRationale": "Maintenance can require less training, with age-dependent results. Does not justify one set weekly for every user or applying maintenance doses to a cut."
+    },
+    {
+      "id": "E11",
+      "url": "https://journal.iusca.org/index.php/Journal/article/view/81",
+      "locator": "Load, Volume, Rest Interval, and Proximity to Failure sections",
+      "population": "Athletic populations",
+      "limitations": "Detailed hypertrophy guidance, including loading flexibility and rest. Athletic-population scope limits direct transfer of aggressive prescriptions.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E11",
+      "adaptationRationale": "Detailed hypertrophy guidance, including loading flexibility and rest. Athletic-population scope limits direct transfer of aggressive prescriptions."
+    },
+    {
+      "id": "E12",
+      "url": "https://link.springer.com/article/10.1186/s40798-023-00633-0",
+      "locator": "Design Principles",
+      "population": "Expert coaches; consensus participants",
+      "limitations": "Expert consensus on reducing stress to manage fatigue. The optional easier session adapts that principle; its exact dose and single-session scope are app policy.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E12",
+      "adaptationRationale": "Expert consensus on reducing stress to manage fatigue. The optional easier session adapts that principle; its exact dose and single-session scope are app policy."
+    },
+    {
+      "id": "E13",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10809978/",
+      "locator": "Methods and Conclusion",
+      "population": "Not specified in archived source register; no additional population inference",
+      "limitations": "A scheduled week of complete cessation did not improve hypertrophy and reduced strength gains in that trial. Complete cessation differs from a single optional easier session; this trial does not validate that feature.",
+      "relevantPassageReference": "2026-10-05-general-fitness-progression-design.md#source-register/E13",
+      "adaptationRationale": "A scheduled week of complete cessation did not improve hypertrophy and reduced strength gains in that trial. Complete cessation differs from a single optional easier session; this trial does not validate that feature."
+    }
+  ]
+}

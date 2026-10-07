@@ -1,0 +1,328 @@
+{
+  "activeCandidate": "finalFixBuild2",
+  "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+  "files": [
+    {
+      "attachmentFile": "8710732C-22C2-49F4-84C5-2CC56ED7739B.png",
+      "attachmentName": "Candidate synthetic independent setup baseline_0_7A608138-BFF1-4F73-8B81-AC683644EE15.png",
+      "bytes": 257644,
+      "captureTimestamp": 1791367555.561,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "independent-setup-baseline.png",
+      "hasAlpha": false,
+      "meaning": "Synthetic opaque +25lb description; separate starting baseline, no assumed resistance and shared stop controls.",
+      "os": "27.0",
+      "sha256": "c04266885f2a482fc4d96c9e5d759d5454f340406e4398375107ea72f0432731",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "MovementSetupTests/testOpaqueModificationBaselineAndSavedSelection()"
+    },
+    {
+      "attachmentFile": "20087F1B-A0B4-43B7-A250-71E70741DAA0.png",
+      "attachmentName": "Accessibility size dark privacy_0_8CB0507E-8827-405C-827D-8E32D5428DA5.png",
+      "bytes": 321270,
+      "captureTimestamp": 1791367618.691,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "large-text-dark-privacy.png",
+      "hasAlpha": false,
+      "meaning": "Actual extreme text/dark privacy view; long heading truncation and viewport scrolling retained. Diagnostic evidence, not accessibility certification.",
+      "os": "27.0",
+      "sha256": "1b8b2856df4d1c01caaf3eec6560ca6adc7ceec70e1ebb535f7295dc48807153",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "OfflineAcceptanceTests/testLargeTextDarkModeAndPrivacyLabels()"
+    },
+    {
+      "attachmentFile": "17FD8B4A-D32E-458B-ADCC-54E6666C1016.png",
+      "attachmentName": "Large text onboarding pinned confirmation_0_149E9D04-1A19-4BEC-B6B0-8E5C84D8AA2E.png",
+      "bytes": 1079894,
+      "captureTimestamp": 1791367629.492,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "large-text-onboarding.png",
+      "hasAlpha": false,
+      "meaning": "Actual extreme text/dark acceptance fixture with selected goal and pinned confirmation. Diagnostic evidence, not marketing layout.",
+      "os": "27.0",
+      "sha256": "2280b8bb8b2e26471a20a1d70b92ece925e641d635d040ddee2625f2c78b7827",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "OfflineAcceptanceTests/testLargeTextOnboardingKeepsRestoreAndConfirmReachable()"
+    },
+    {
+      "attachmentFile": "A2F907C0-7835-4E60-AF09-4183930978F6.png",
+      "attachmentName": "Candidate synthetic per-side actuals and stopping controls_0_3D4CF52B-3A38-451B-AD7B-DF38CAF778D2.png",
+      "bytes": 319476,
+      "captureTimestamp": 1791367762.985,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "per-side-actuals.png",
+      "hasAlpha": false,
+      "meaning": "Actual left7/right5, per-side instruction and pain/control stops. Lower partial controls require normal scrolling.",
+      "os": "27.0",
+      "sha256": "ee8e105a1c86bd2142f6d5b53652a6a42947b0d14436ba28dd6db4006c2aa893",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "WorkoutFlowTests/testAccessiblePerHandPerSideTotalAndBodyweightLabelsInLandscape()"
+    },
+    {
+      "attachmentFile": "C95FAA60-41A6-41D3-B665-47A8F98E94FC.png",
+      "attachmentName": "Stored actuals and next prescription_0_A60523B9-4589-4D8C-85E8-0E0BB067C4CB.png",
+      "bytes": 269806,
+      "captureTimestamp": 1791367402.73,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "recorded-actuals.png",
+      "hasAlpha": false,
+      "meaning": "Original actual10/10/9, source setup label and next-target heading. Use with saved-next-target.png.",
+      "os": "27.0",
+      "sha256": "aa6adef7f1bf1a2efb39c3d0233fc5f0c5b18e41c9435ecfbe9ecf4e4a778eae",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+    },
+    {
+      "attachmentFile": "78994FAA-56AD-4F1C-B47E-9F7FFD1EEADB.png",
+      "attachmentName": "Empty-store restore screen_0_29999EEA-9092-4DDE-92AF-D877014DC37B.png",
+      "bytes": 210166,
+      "captureTimestamp": 1791367436.096,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "restored-history.png",
+      "hasAlpha": false,
+      "meaning": "Actual History after synthetic empty-store JSON recovery. Original inherited attachment name says empty-store restore screen; this image does not show onboarding/Files/provider UI.",
+      "os": "27.0",
+      "sha256": "fe37c13677bd7651f0c3b118b41e16799912fea7be5ecbeab3f9a79afa5e014f",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "HistorySettingsTests/testLocalFileDuplicateImportAndEmptyOnboardingRecovery()"
+    },
+    {
+      "attachmentFile": "91190DE6-B296-44D4-98D5-476FF9E505F8.png",
+      "attachmentName": "Candidate synthetic visible saved next target_0_76295E52-74B3-41D1-975B-573C6506250A.png",
+      "bytes": 506718,
+      "captureTimestamp": 1791367405.616,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "saved-next-target.png",
+      "hasAlpha": false,
+      "meaning": "Same stored workout after one native swipe: saved5lb target/ceiling12, separate from recorded actuals.",
+      "os": "27.0",
+      "sha256": "88c71ed5b527041e03ecd80c0ff7e36df8c5c5f35313a938ec504c2796355499",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+    },
+    {
+      "attachmentFile": "24566C12-8FE0-44A3-9742-1ED9AFD4F87A.png",
+      "attachmentName": "Candidate synthetic saved setups and description semantics_0_45DFAAD8-5AE8-4D7B-AB08-8A285D6C49F9.png",
+      "bytes": 208158,
+      "captureTimestamp": 1791367569.114,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "saved-setup-picker.png",
+      "hasAlpha": false,
+      "meaning": "Synthetic Demo neutral grip correction/selectable saved setup; identity/progress retained and descriptions do not calculate resistance.",
+      "os": "27.0",
+      "sha256": "f29be2ad7a814e42dd3410aee960d3bdac9a53a17d07ff90f2fcf62c4cde282d",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "MovementSetupTests/testOpaqueModificationBaselineAndSavedSelection()"
+    },
+    {
+      "attachmentFile": "5CFAACB1-EBCE-4B9A-9ADB-C5651B2F5727.png",
+      "attachmentName": "Candidate synthetic Today_0_BA574078-263A-42A2-913B-E3A1A65CEBB4.png",
+      "bytes": 260176,
+      "captureTimestamp": 1791367399.427,
+      "device": "iPhone 17",
+      "dimensions": [
+        1206,
+        2622
+      ],
+      "file": "today.png",
+      "hasAlpha": false,
+      "meaning": "Synthetic Today: offline availability, fixed routine and stopping instruction.",
+      "os": "27.0",
+      "sha256": "0fd23640a47877014ea1c4517c2ce3f2c6065ba67596c26ce347874918be2577",
+      "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc",
+      "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+    }
+  ],
+  "finalFixBuild2": {
+    "build": "2",
+    "completeAppStoreUploadSet": false,
+    "files": [
+      {
+        "attachmentFile": "09453D18-5612-4006-8863-E90AD0465962.png",
+        "attachmentName": "Final fix accepted numeric archive read only_0_0D01A083-777E-4D01-9275-DD885FDA6153.png",
+        "bytes": 242124,
+        "captureTimestamp": 1791378164.658,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/legacy-read-only.png",
+        "hasAlpha": false,
+        "meaning": "Valid original numeric schema1 prescription/name/40.1kg total, explicit training unavailable; original archive remains recoverable/exportable.",
+        "os": "27.0",
+        "sha256": "62282bd66b2853451889c58168b59d3afdc1a9e1d5117ae2e1d10d8d3f260d27",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testAcceptedLegacyArchiveIsReadOnlyExportableAndReopens()"
+      },
+      {
+        "attachmentFile": "6BF50394-F8EF-4EED-9E49-9FB1BEE36EE6.png",
+        "attachmentName": "Stored actuals and next prescription_0_F0CC7D7E-DEF6-465F-951F-E0D462F9389D.png",
+        "bytes": 248171,
+        "captureTimestamp": 1791378215.743,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/recorded-actuals.png",
+        "hasAlpha": false,
+        "meaning": "Original actual10/10/9, human setup label/outcome/5lb load, next-target heading; paired scrolled target capture shows independently saved ceiling12.",
+        "os": "27.0",
+        "sha256": "14200533f0909ac33957fef6a6472b4d905dc8d6d2e472054acbc0ed22354f55",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+      },
+      {
+        "attachmentFile": "FCCC639D-7A2D-438D-A56A-8DDA8709DC09.png",
+        "attachmentName": "Candidate synthetic visible saved next target_0_709686FA-6B65-4F2B-A927-0993A32B183E.png",
+        "bytes": 531558,
+        "captureTimestamp": 1791378218.664,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/saved-next-target.png",
+        "hasAlpha": false,
+        "meaning": "Same workout after one native swipe: first saved ceiling12 is partly under the navigation bar; Pull-ups actual8 and its independently saved ceiling12 are visible. First10/10/9 actuals and5lb recorded/target loads are in the unscrolled companion.",
+        "os": "27.0",
+        "sha256": "c2e4167229a36ad4f04fbc7adab0064793edb943150df422666c42a1c17ee9c7",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+      },
+      {
+        "attachmentFile": "02C6F97E-C6E2-4101-A7A0-1DC4E07DCB40.png",
+        "attachmentName": "Candidate synthetic Today_0_8D335453-603C-4231-83B3-C3BF76C97A52.png",
+        "bytes": 259442,
+        "captureTimestamp": 1791378212.378,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/today.png",
+        "hasAlpha": false,
+        "meaning": "Fixed native Today, local training available while optional services are unavailable; synthetic fixture.",
+        "os": "27.0",
+        "sha256": "2f8fa230284b48c189ac62c4e6020455ce74617157b7648fc10bb3969a97a488",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testHistoryKeepsActualRepsSeparateFromNextPrescription()"
+      },
+      {
+        "attachmentFile": "7CD3472A-71CD-46AE-A880-90BADF9DDD67.png",
+        "attachmentName": "Final fix original actuals with stored identity collapsed_0_824F877C-1168-4D13-B897-DDF87F50AA19.png",
+        "bytes": 510792,
+        "captureTimestamp": 1791378333.399,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/stored-details-collapsed.png",
+        "hasAlpha": false,
+        "meaning": "Scrolled saved target12 and collapsed Stored record details, with later movement actual8 visible. Inherited attachment title overstates first original actuals visibility;10/10/9 are shown in the unscrolled companion.",
+        "os": "27.0",
+        "sha256": "104a9af23293f455a6191e5ad86a1a0ca6ca64506faa6f18e99504497cb0659d",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testStoredIdentityDisclosureKeepsActualsProminent()"
+      },
+      {
+        "attachmentFile": "37D495B7-BFD7-416A-9155-A0D8D5CDBA00.png",
+        "attachmentName": "Final fix copyable stored identity expanded_0_8A897C84-3309-4D0E-8FFD-9F79DE8CB35E.png",
+        "bytes": 508772,
+        "captureTimestamp": 1791378334.346,
+        "debugDylibSHA256": "5899c132ea28b760f92cc6562c3cf87ba628a3850e1053cb8364108e4a05e810",
+        "debugDylibUUID": "091E7F14-1C93-3234-B50F-F9CD5769209A",
+        "debugLauncherSHA256": "e0eb18fea09197ed3f95b2924c7ba74820dc40c97caacad3d402d8b9eb5b9e17",
+        "debugLauncherUUID": "C4360A8F-ACB8-36AA-88B9-A20427A4B05D",
+        "device": "iPhone 17",
+        "deviceUDID": "9468C341-5B70-40C7-8F40-29CC9CFD3FAA",
+        "dimensions": [
+          1206,
+          2622
+        ],
+        "file": "build-2/stored-details-expanded.png",
+        "hasAlpha": false,
+        "meaning": "Expanded native Stored record details retain the first full original copyable setup identity/base ID; its target and first10/10/9 actuals are above this viewport, shown in companion captures. Pull-ups actual8 remains visible.",
+        "os": "27.0",
+        "sha256": "1b96070ed5da03ce7db41c1573c377fb20d200acd15e409d09f26266c81ef411",
+        "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+        "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+        "testID": "HistorySettingsTests/testStoredIdentityDisclosureKeepsActualsProminent()"
+      }
+    ],
+    "resultBundle": ".superpowers/sdd/2026-10-05-plenty-strong-ios-implementation/final-fix-evidence/final-ui.xcresult",
+    "shippedSourceSHA": "ed276b05375ee903e3861396603ef4eb9953a53e",
+    "sourceConfiguration": "Debug, native -ui-testing synthetic fixtures; live construction refused",
+    "sourceSHA": "85c4d4687460241145eb169e66181fc8f9268a4e",
+    "version": "0.1.0",
+    "visualReview": "All six raw native captures inspected; companion actuals/target view and truthful scrolled-details captions retained."
+  },
+  "resultBundle": "DerivedDataT3Final2/FullUI.xcresult",
+  "rootRecordStatus": "Preserved historical build1 c316 record; current evidence is finalFixBuild2.",
+  "sourceConfiguration": "Debug, native -ui-testing synthetic fixtures; live construction refused",
+  "sourceSHA": "c31657ed90ad59148f7e633c3fef3b533a6cf3dc"
+}

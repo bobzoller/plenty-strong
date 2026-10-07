@@ -1,0 +1,11 @@
+Plenty Strong
+Copyright (c) 2026 Plenty Strong contributors. Licensed under MIT; see LICENSE.
+
+Kado by Sébastien Castiel is a product/design reference for native, local-first
+training and optional tips. The current source and asset audit found no
+incorporated Kado implementation or assets. Kado's MIT copyright is not a claim
+of authorship of Plenty Strong. See docs/release/third-party-attribution.md
+for the pinned upstream and audit limitations. Any future incorporation must
+retain the upstream copyright and license notice with that material.
+
+Apple frameworks are supplied by Apple under their respective terms.

@@ -1,0 +1,3359 @@
+{
+  "artifactType": "proposed-design-fixtures",
+  "rulesetVersion": "general-fitness-v0.2",
+  "specification": "2026-10-05-general-fitness-progression-design.md",
+  "semantics": {
+    "inputExpansion": "Recursively merge inputOverrides into baseInput; arrays/scalars replace. Cases are independent.",
+    "hashing": "SHA-256 UTF-8 canonical JSON: recursively sorted keys, compact separators, no NaN. Rules hash excludes hash field.",
+    "expectedChecks": "For applied/no_op/rejected cases, slash-prefixed keys are JSON Pointer projections of AdvanceResult. For prepared cases, they address the returned WorkoutPrescription; prepared is a fixture label, not an API discriminator. workingSetCount checks the first exercise set count of the next/returned prescription. minimumRir checks instruction threshold. stateUnchanged checks no input mutation, plus returned state equality when present. prescriptionUnchanged checks exact equality with activePrescription. noticeKeys checks emitted notices. primaryRuleIds identify relevant rule paths, not executed test results.",
+    "limitations": "Specified expectations, not executed engine tests. One synthetic movement isolates progression and is not a complete human program. The frozen rulebook and source IDs refer to the specification; executable Ruleset schemas are implementation work.",
+    "operation": "For advanceProgram, recursively merge overrides into baseInput and omit top-level easierToday. For prepareWorkout, pass only expanded state/rules and easierToday when supplied; other base fields are unused.",
+    "idExamples": "Normal planned IDs are readable fixture stand-ins; derived easier IDs use the documented SHA-256 payload. Production tests must generate all normal IDs canonically."
+  },
+  "baseInput": {
+    "state": {
+      "schemaVersion": 1,
+      "rulesetVersion": "general-fitness-v0.2",
+      "rulesetHash": "cba4084ab7e12b7074a3b87aba813f72fbff2d0560992edd0b566661bfc60beb",
+      "config": {
+        "programId": "example-program",
+        "goal": "size",
+        "daysPerWeek": 3,
+        "movements": [
+          {
+            "id": "example_lift",
+            "primaryMuscles": [
+              "example_target"
+            ],
+            "secondaryMuscles": [],
+            "lowRepLoadingAllowed": true,
+            "automaticLoadProgressionAllowed": true,
+            "automaticRepRangeExtensionAllowed": true,
+            "minimumRir": 2,
+            "availableLoads": [
+              {
+                "amount": "38",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              {
+                "amount": "42",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              {
+                "amount": "50",
+                "unit": "lb",
+                "basis": "per_implement"
+              }
+            ]
+          }
+        ],
+        "weeklySlots": [
+          {
+            "id": "SUN",
+            "movementIds": [
+              "example_lift"
+            ]
+          },
+          {
+            "id": "TUE",
+            "movementIds": [
+              "example_lift"
+            ]
+          },
+          {
+            "id": "THU",
+            "movementIds": [
+              "example_lift"
+            ]
+          }
+        ],
+        "requiredMuscleGroups": [
+          "example_target"
+        ],
+        "initialLoads": {
+          "example_lift": {
+            "amount": "40",
+            "unit": "lb",
+            "basis": "per_implement"
+          }
+        }
+      },
+      "revision": 7,
+      "exercises": {
+        "example_lift": {
+          "load": {
+            "amount": "40",
+            "unit": "lb",
+            "basis": "per_implement"
+          },
+          "mode": "normal",
+          "normalSets": 3,
+          "repFloor": 8,
+          "repCeiling": 12,
+          "ceilingStreak": 0,
+          "strainStreak": 0,
+          "lastCompletedDate": "2026-10-01",
+          "nextSetOverride": null,
+          "interruptedReturn": false,
+          "recentComparable": []
+        }
+      },
+      "lastSessionDate": "2026-10-01",
+      "activePrescription": {
+        "id": "example-current",
+        "date": "2026-10-04",
+        "slotId": "SUN",
+        "exercises": [
+          {
+            "movementId": "example_lift",
+            "kind": "working",
+            "phase": "normal",
+            "load": {
+              "amount": "40",
+              "unit": "lb",
+              "basis": "per_implement"
+            },
+            "sets": [
+              {
+                "repFloor": 8,
+                "repCeiling": 12,
+                "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+              },
+              {
+                "repFloor": 8,
+                "repCeiling": 12,
+                "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+              },
+              {
+                "repFloor": 8,
+                "repCeiling": 12,
+                "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+              }
+            ],
+            "restSeconds": 120,
+            "stopInstruction": "Stop for pain or loss of control."
+          }
+        ]
+      },
+      "processedEvents": {}
+    },
+    "event": {
+      "eventId": "example-event",
+      "date": "2026-10-04",
+      "slotId": "SUN",
+      "prescriptionId": "example-current",
+      "exercises": [
+        {
+          "movementId": "example_lift",
+          "prescriptionId": "example-current",
+          "status": "completed",
+          "actualLoad": {
+            "amount": "40",
+            "unit": "lb",
+            "basis": "per_implement"
+          },
+          "actualSets": [
+            {
+              "reps": 10
+            },
+            {
+              "reps": 10
+            },
+            {
+              "reps": 9
+            }
+          ],
+          "finalEffort": "on_target",
+          "problem": "none"
+        }
+      ],
+      "plannedPrescriptionId": "example-current",
+      "sessionMode": "normal"
+    },
+    "rules": {
+      "version": "general-fitness-v0.2",
+      "sourceIds": [
+        "E01",
+        "E02",
+        "E03",
+        "E04",
+        "E05",
+        "E06",
+        "E07",
+        "E08",
+        "E09",
+        "E10",
+        "E11",
+        "E12",
+        "E13"
+      ],
+      "ruleIds": [
+        "R01",
+        "R02",
+        "R03",
+        "R04",
+        "R05",
+        "R06",
+        "R07",
+        "R08",
+        "R09",
+        "R10",
+        "R11",
+        "R12",
+        "R13",
+        "R14",
+        "R15",
+        "R16"
+      ],
+      "presetTable": "These are reviewable **app adaptations** of E01–E04, E06, and E09–E11. The numbers\nare proposed operational defaults, not four protocols independently validated in\ntrials. The app supplies them without exposing a programming settings panel.\n\n| Goal ID | Default days | Working sets per movement exposure | Rep floor and ceiling | Rest between working sets | Objective |\n| --- | --- | --- | --- | --- | --- |\n| `fat_loss` | 3 | 2 | 8–12 | 120 seconds | Preserve useful loading, performance, and adherence while losing weight. |\n| `size` | 3 | 3; use 4 if only 2 days are available | 8–12 | 120 seconds | Build reps/load with more weekly work than maintenance. |\n| `strength` | 3 | 3 | 4–6; use 8–12 where low-rep loading is unsuitable | 180 seconds | Increase capability with heavier loading and adequate rest. |\n| `maintenance` | 2 | 2 | 8–12 | 120 seconds | Maintain capability at a manageable dose without compulsory escalation. |\n\nAll goals use approximately two clean reps left. “About right” is intentionally\nbroad; it does not certify exactly 2 RIR. The strength rep range cannot be assumed\nto equal a particular percentage of 1RM. The engine does not require 1RM testing.\n\nUsers can choose two or three days based on availability. The future plan builder\nmust provide appropriate coverage on those days. For example, a primary movement\ntrained three times with three sets provides nine direct weekly sets; this is a\npractical approximation to higher-volume guidance, not a universal minimum for\ngrowth. Changing the number of days changes the plan configuration and resets\ncomparison counters; it is not interpreted as a sudden performance decline.\n\nNormal set counts stay fixed. Version 0.2 does not estimate MEV/MRV, add sets from\npump/soreness, or escalate volume automatically during a plateau. Sets change\nthrough preset changes, temporary recovery sessions, or configuration changes.\nA cut is not automatically assigned the smallest maintenance dose.\n\n### Parameters whose exact values are app choices\n\n| Parameter | Value | Basis and limitation |\n| --- | --- | --- |\n| Normal effort target | Approximately 2 clean reps left | E01/E06/E07; a simple common instruction, not a proven universal optimum. |\n| Load confirmation | 2 comparable ceiling exposures | Adaptation of E03 using capped reps and effort feedback rather than performing bonus reps. |\n| Maximum automatic upward load step | 10% | E02; proposed common upper bound. Equipment rounding never permits a larger step. |\n| Effort or rep-floor setbacks before retreat | 2 comparable exposures | Trend safeguard; E07 supports uncertainty handling, but this exact count is an app choice. |\n| Easier-session set count | `max(1, ceil(normalSets / 2))`, capped by an existing smaller temporary dose | E12-informed reduced-stress adaptation; applies to one session, not a week. |\n| Easier-session effort | At least 4 clean reps left; stricter restrictions still apply | App choice to make the requested session visibly easier. |\n| Equipment-driven rep-ceiling extension | +2, to at most 20; strength low-rep slots at most 8 | E05/E11 support wider loading options; these steps and limits are app choices. |\n| Return after a long interruption | 28 days; baseline mode and one fewer set, minimum 1, for the next exposure | Conservative app choice, not a scientifically established interruption boundary. |\n| Building-goal plateau notice | 6 comparable exposures; latest-three median total reps no greater than first-three median | App choice for a visible trend; not proof that muscle growth has stopped. |",
+      "rulebook": "An exposure is **eligible** when completed, clean, normal-mode, and comparable,\nwith known effort and session mode `normal`. Eligibility does not certify the effort\nestimate as a measurement. A rep-floor miss can still count toward strain.\n\nAfter structural validation/replay handling, classify problems first. Recovery\ncannot clear a paused movement. Then exclude easier-session work, evaluate\nbaseline and interruption rules, and finally movement progression. The first matching\nmovement rule wins. State updates are proposed in isolation and validated together\nbefore returning an applied result.\n\n| Rule | Condition | Exact action | Basis |\n| --- | --- | --- | --- |\n| R01 | Pain or loss of control on any row | Preserve actuals; pause that movement; reset both counters; prescribe no working sets for it. Resume requires an explicit safe configuration change. | Safety app policy; medical/rehabilitation management is outside this engine. |\n| R02 | User selects the optional easier-workout control before working sets | `prepareWorkout` derives an easier prescription for the current session, leaves persistent state unchanged, and requires no readiness answer. | Explicit user preference; software behavior. |\n| R03 | Preparing or recording an easier session | Use half preset sets rounded up (minimum 1), capped by any smaller current dose; same load; original preset rep floor as ceiling; monitoring floor 0; at least 4 clean reps left subject to stricter restrictions. No progression, strain, or plateau qualification. Preserve counters/window unless R01 or a confirmed changed load requires resetting them. | E12-informed app adaptation; exact single-session dose is an app choice. |\n| R04 | Next planned workout after an easier session | Return to the existing planned prescription, preserving load, baseline/paused mode, and unresolved temporary-dose flags. No timer, readiness check, or mandatory extra return exposure. | Single-session scope; software requirement. |\n| R05 | At least 28 days since that movement's last completed exposure, or interruption-return pending | On detecting the gap, reset counters/history window and mark interruption-return pending; prescribe one fewer working set (minimum 1), same load, and normal effort instruction next time. The resumed event is recorded but ineligible. After a clean complete known non-hard reduced-dose result, clear the flag/override and restore preset sets. Neither return exposure qualifies for progression. | Conservative interruption policy, exact timing is an app choice. |\n| R06 | Unknown load or baseline mode | Apply the baseline procedure above; baseline completion sets mode `normal` and counters zero. No same-transition increase. | E01/E07-informed app calibration policy. |\n| R07 | Normal-session skip, partial work, changed actual load, unknown effort, or ceiling exceeded | Hold load/range. Skip preserves counters; other cases reset counters. A confirmed changed actual load becomes a new baseline, with counters/window zero. Do not treat it as an approved increase. Ceiling excess emits its notice. | Data/uncertainty policy informed by E07. |\n| R08 | Eligible result has `too_hard` effort or any set below rep floor | Clear ceiling streak; add 1 to strain streak. First strain holds. Second strain selects the nearest lower available load, returns to baseline, and resets counters. If none exists, prescribe one fewer set (minimum 1) for the next exposure as a temporary recovery dose. | App adaptation informed by effort/recovery principles, not a published exact two-miss formula. |\n| R09 | Temporary one-set reduction from R08 | At a clean complete result with known non-hard effort, restore preset sets and baseline mode, resetting comparisons. A further strain while already at one set pauses the movement for review. | Bounded app adaptation; reductions never stack indefinitely. |\n| R10 | Eligible non-strained result below ceiling on any set | Hold load and rep range; clear both streaks. Reps are governed by capacity and the stopping instruction, not a required weekly increment. | E01/E05 adaptation. |\n| R11 | Every set reaches ceiling, final effort `on_target` or `too_easy`, eligible result | Clear strain streak; increment ceiling streak. First confirmation holds. At two confirmations, apply R12–R15 by goal and equipment. | Adaptation of E03, **not the literal 2-for-2 test**: no bonus/failure reps are performed. |\n| R12 | Two confirmations; maintenance; final effort `on_target` | Hold load; reset ceiling streak. Stable capability is success. | E10-informed maintenance policy. |\n| R13 | Two confirmations; building/cut goal, or maintenance with final `too_easy` | If automatic progression is allowed, choose the smallest available higher load. Increase only if its rise is <=10%. Restore original preset rep range, return to baseline, reset counters. | E02/E03 adaptation. Maintenance increases restore challenge rather than chase growth. |\n| R14 | R13 finds no higher load, its smallest step exceeds 10%, or load progression is prohibited; rep-range extension is explicitly allowed | For size/cut/maintenance and strength's 8–12 fallback extend ceiling by 2, maximum 20; for low-rep strength extend by 2, maximum 8. Hold load, reset comparisons. Floor remains unchanged. | E05/E11 adaptation; exact +2/maxima are product choices. |\n| R15 | R13 cannot progress and R14 is at maximum or prohibited | Hold load/range and emit `equipment_limit` or `progression_restricted`. Reset ceiling streak. Request a compatible equipment/movement solution from the deferred plan builder; never silently make a prohibited jump. | Software/safety boundary and app policy. |\n| R16 | Six comparable clean normal on-target exposures in size/strength, no increase in latest-three versus first-three median total reps, and no recovery/problem/equipment notice already explains it | Add `plateau_check` notice while keeping the normal prescription. Do not diagnose absence of growth or add sets automatically. Cut/maintenance do not emit this notice merely for stable reps. | Trend heuristic; six exposures and median comparison are app choices. |\n\nR16 is an informational overlay after the primary movement action, and cannot\noverride it. A successful load change clears its comparison window. A restriction\ncan permit R14 rep extensions but never R13 load increases; an explicit restriction\nagainst any progression goes directly to R15. At baseline completion retain only\nthe verified current load and preset prescription; don't infer past adherence.\n\nA completed log updates `lastCompletedDate` even if it is ineligible; partial and\nskipped logs do not. Already-paused movements stay paused until explicit safe\nreconfiguration. Their logs cannot silently restore work.\n\nNormal effort instructions use at least `max(2, minimumRir)` clean reps left;\neasier sessions use at least `max(4, minimumRir)`. Effort-category teaching copy follows\nthe active instruction when a restriction makes it easier than the default.\nR08 sets `nextSetOverride`; R09 clears it. A reduced dose that remains strained\nholds that dose for review rather than repeatedly subtracting sets. R05 uses the\nsame override with its interruption flag. Easier sessions retain these flags,\nnever satisfy their return conditions, and use the smaller current dose.\n\n### Easier session preparation and completion\n\n`prepareWorkout` checks the ruleset version/hash and derives from the exact\n`activePrescription`. The normal path returns it unchanged. The easier path\napplies R02/R03 only to unpaused working or baseline-setup movements. Paused\nmovements retain zero sets. Unknown loads remain unknown; the app can record a\ncomfortable available actual load, but an easier exposure cannot establish the\nnormal-effort baseline. Never increase a current rep ceiling or set count to\nmake an easier prescription. The easier ceiling is the smaller of the displayed\nceiling and original preset rep floor. Its phase is `easier`.\n\nGenerate the derived ID as SHA-256 of canonical JSON with keys\n`plannedPrescriptionId`, `sessionMode`, `rulesetVersion`, `rulesetHash`, and\n`prescription`. The last value is the resulting prescription excluding its own\nID. Repeated\npreparation from identical inputs returns identical content/ID. The adapter saves\nwhich prescription was displayed; preparation does not increment state revision,\nconsume an event ID, or create performed history.\n\nOn completion, R01 still wins over the easier-session rules. Easier work is\nrecorded as performed, but does not confirm a load increase, count a strain,\nestablish a baseline, resolve a temporary-dose return, or enter the plateau\nwindow. A confirmed different actual load is retained as baseline mode with\ncounters/window reset; unknown actual loads never become inferred loads.\nCompleted easier work updates `lastCompletedDate`, because it was performed.\n\nThe next prescription restores the planned dose and effort subject to existing\nmovement restrictions and unresolved overrides. Its phase is `baseline`, `return`,\nor `normal` as persistent state requires. Repeated easier requests each affect\none session; they do not create a hidden week or diagnose fatigue. Automatic\nmovement adjustments continue to use R08/R09's comparable normal-session reps\nand effort. Version 0.2 has no automatic session-wide deload trigger.\n\n### Configuration changes\n\nGoal, schedule, movement, load-catalog, or safety-restriction changes are explicit\nconfiguration events handled by a separate initialization/reconfiguration\nboundary. Preserve performed history, rebuild affected presets, and reset affected\ncomparison counters and baseline status. Unaffected movements retain state.\nConstraints may become stricter automatically; relaxing a medical/safety\nrestriction needs the appropriate external authorization. The workout transition\nrejects unannounced configuration changes. Version migrations are explicit and\nnever reprocess historical events under new rules silently.",
+      "hash": "cba4084ab7e12b7074a3b87aba813f72fbff2d0560992edd0b566661bfc60beb"
+    },
+    "nextSlotId": "TUE",
+    "nextWorkoutDate": "2026-10-06"
+  },
+  "cases": [
+    {
+      "id": "C01",
+      "description": "Natural reps below ceiling",
+      "inputOverrides": {},
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "/nextWorkout/exercises/0/sets/0/repCeiling": 12
+        },
+        "primaryRuleIds": [
+          "R10"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C02",
+      "description": "Easy work below ceiling can gain reps naturally",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "too_easy",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextWorkout/exercises/0/sets/0/repCeiling": 12
+        },
+        "primaryRuleIds": [
+          "R10"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C03",
+      "description": "First ceiling confirmation",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/ceilingStreak": 1,
+          "/nextState/exercises/example_lift/load/amount": "40"
+        },
+        "primaryRuleIds": [
+          "R11"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C04",
+      "description": "Second ceiling confirmation increases load",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "42",
+          "/nextState/exercises/example_lift/mode": "baseline",
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "/nextState/exercises/example_lift/strainStreak": 0
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R13"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C05",
+      "description": "Too-hard ceiling work does not qualify",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "too_hard",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/strainStreak": 1,
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R08"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C06",
+      "description": "Second comparable strain retreats",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "too_hard",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "strainStreak": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "38",
+          "/nextState/exercises/example_lift/mode": "baseline",
+          "/nextState/exercises/example_lift/strainStreak": 0
+        },
+        "primaryRuleIds": [
+          "R08"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C07",
+      "description": "One below-floor set counts strain",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 9
+                },
+                {
+                  "reps": 7
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/strainStreak": 1,
+          "/nextState/exercises/example_lift/load/amount": "40"
+        },
+        "primaryRuleIds": [
+          "R08"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C08",
+      "description": "Pain wins over ceiling performance",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "pain"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/mode": "paused",
+          "/nextWorkout/exercises/0/kind": "paused",
+          "/nextWorkout/exercises/0/sets": []
+        },
+        "primaryRuleIds": [
+          "R01"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C09",
+      "description": "Control loss wins over easy feedback",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 9
+                }
+              ],
+              "finalEffort": "too_easy",
+              "problem": "control_lost"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/mode": "paused",
+          "/nextWorkout/exercises/0/sets": []
+        },
+        "primaryRuleIds": [
+          "R01"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C10",
+      "description": "Partial work cannot confirm",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "partial",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "unknown",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "/nextState/exercises/example_lift/load/amount": "40"
+        },
+        "primaryRuleIds": [
+          "R07"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C11",
+      "description": "Skip preserves counters",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "skipped",
+              "actualLoad": null,
+              "actualSets": [],
+              "finalEffort": "unknown",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/ceilingStreak": 1,
+          "/nextState/exercises/example_lift/lastCompletedDate": "2026-10-01"
+        },
+        "primaryRuleIds": [
+          "R07"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C12",
+      "description": "Large equipment jump extends reps",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "50",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/repCeiling": 14,
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R14"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C13",
+      "description": "Equipment boundary at maximum ceiling",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 20
+                },
+                {
+                  "reps": 20
+                },
+                {
+                  "reps": 20
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1,
+              "repCeiling": 20
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 20,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 20,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 20,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "50",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/repCeiling": 20,
+          "noticeKeys": [
+            "equipment_limit"
+          ]
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R15"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C14",
+      "description": "Maintenance at target effort holds",
+      "inputOverrides": {
+        "state": {
+          "config": {
+            "goal": "maintenance",
+            "daysPerWeek": 2,
+            "weeklySlots": [
+              {
+                "id": "SUN",
+                "movementIds": [
+                  "example_lift"
+                ]
+              },
+              {
+                "id": "THU",
+                "movementIds": [
+                  "example_lift"
+                ]
+              }
+            ]
+          },
+          "exercises": {
+            "example_lift": {
+              "normalSets": 2,
+              "ceilingStreak": 1
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "nextSlotId": "THU",
+        "nextWorkoutDate": "2026-10-08"
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R12"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C15",
+      "description": "Maintenance restores challenge when too easy",
+      "inputOverrides": {
+        "state": {
+          "config": {
+            "goal": "maintenance",
+            "daysPerWeek": 2,
+            "weeklySlots": [
+              {
+                "id": "SUN",
+                "movementIds": [
+                  "example_lift"
+                ]
+              },
+              {
+                "id": "THU",
+                "movementIds": [
+                  "example_lift"
+                ]
+              }
+            ]
+          },
+          "exercises": {
+            "example_lift": {
+              "normalSets": 2,
+              "ceilingStreak": 1
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "too_easy",
+              "problem": "none"
+            }
+          ]
+        },
+        "nextSlotId": "THU",
+        "nextWorkoutDate": "2026-10-08"
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "42",
+          "/nextState/exercises/example_lift/mode": "baseline"
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R13"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C16",
+      "description": "Strength preset progresses",
+      "inputOverrides": {
+        "state": {
+          "config": {
+            "goal": "strength"
+          },
+          "exercises": {
+            "example_lift": {
+              "repFloor": 4,
+              "repCeiling": 6,
+              "ceilingStreak": 1
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 4,
+                    "repCeiling": 6,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 4,
+                    "repCeiling": 6,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 4,
+                    "repCeiling": 6,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 180,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 6
+                },
+                {
+                  "reps": 6
+                },
+                {
+                  "reps": 6
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "42",
+          "/nextState/exercises/example_lift/repFloor": 4,
+          "/nextState/exercises/example_lift/repCeiling": 6,
+          "/nextWorkout/exercises/0/restSeconds": 180
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R13"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C17",
+      "description": "Optional easier control prepares the current workout",
+      "operation": "prepareWorkout",
+      "inputOverrides": {
+        "easierToday": true
+      },
+      "expected": {
+        "kind": "prepared",
+        "checks": {
+          "stateUnchanged": true,
+          "workingSetCount": 2,
+          "/exercises/0/phase": "easier",
+          "/exercises/0/load/amount": "40",
+          "/exercises/0/sets/0/repCeiling": 8,
+          "minimumRir": 4
+        },
+        "primaryRuleIds": [
+          "R02",
+          "R03"
+        ]
+      }
+    },
+    {
+      "id": "C18",
+      "description": "Easy capped work in an easier session cannot qualify",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "too_easy",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/ceilingStreak": 1,
+          "/nextState/exercises/example_lift/strainStreak": 0,
+          "workingSetCount": 3,
+          "/nextWorkout/exercises/0/phase": "normal"
+        },
+        "primaryRuleIds": [
+          "R03",
+          "R04"
+        ]
+      }
+    },
+    {
+      "id": "C19",
+      "description": "Next workout restores normal work without a readiness check",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "workingSetCount": 3,
+          "/nextWorkout/exercises/0/phase": "normal",
+          "/nextWorkout/exercises/0/sets/0/repCeiling": 12,
+          "/nextState/exercises/example_lift/load/amount": "40"
+        },
+        "primaryRuleIds": [
+          "R03",
+          "R04"
+        ]
+      }
+    },
+    {
+      "id": "C20",
+      "description": "Exact replay",
+      "inputOverrides": {
+        "state": {
+          "lastSessionDate": "2026-10-04",
+          "exercises": {
+            "example_lift": {
+              "lastCompletedDate": "2026-10-04"
+            }
+          },
+          "activePrescription": {
+            "id": "example-next",
+            "date": "2026-10-06",
+            "slotId": "TUE"
+          },
+          "processedEvents": {
+            "example-event": "342f9f04d2081671d64bbb160935d1bdb5fa70ff18e8fbcff761bf4dc5cf31fe"
+          }
+        }
+      },
+      "expected": {
+        "kind": "no_op",
+        "checks": {
+          "stateUnchanged": true
+        },
+        "primaryRuleIds": [],
+        "reason": "event_replayed"
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C21",
+      "description": "Changed duplicate rejected",
+      "inputOverrides": {
+        "state": {
+          "lastSessionDate": "2026-10-04",
+          "exercises": {
+            "example_lift": {
+              "lastCompletedDate": "2026-10-04"
+            }
+          },
+          "activePrescription": {
+            "id": "example-next",
+            "date": "2026-10-06",
+            "slotId": "TUE"
+          },
+          "processedEvents": {
+            "example-event": "342f9f04d2081671d64bbb160935d1bdb5fa70ff18e8fbcff761bf4dc5cf31fe"
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 11
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 9
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "rejected",
+        "checks": {
+          "stateUnchanged": true
+        },
+        "primaryRuleIds": [],
+        "errorCodes": [
+          "event_id_conflict"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C22",
+      "description": "Wrong rules hash rejected",
+      "inputOverrides": {
+        "state": {
+          "rulesetHash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "expected": {
+        "kind": "rejected",
+        "checks": {
+          "stateUnchanged": true
+        },
+        "primaryRuleIds": [],
+        "errorCodes": [
+          "ruleset_mismatch"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C23",
+      "description": "Verified starting load establishes baseline",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "load": null,
+              "mode": "baseline",
+              "lastCompletedDate": null
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "baseline_setup",
+                "phase": "baseline",
+                "load": null,
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          },
+          "config": {
+            "initialLoads": {
+              "example_lift": null
+            }
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/mode": "normal",
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R06"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C24",
+      "description": "Changed actual load is rebaselined",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "38",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 9
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "38",
+          "/nextState/exercises/example_lift/mode": "baseline",
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R07"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C25",
+      "description": "Stable maintenance is success",
+      "inputOverrides": {
+        "state": {
+          "config": {
+            "goal": "maintenance",
+            "daysPerWeek": 2,
+            "weeklySlots": [
+              {
+                "id": "SUN",
+                "movementIds": [
+                  "example_lift"
+                ]
+              },
+              {
+                "id": "THU",
+                "movementIds": [
+                  "example_lift"
+                ]
+              }
+            ]
+          },
+          "exercises": {
+            "example_lift": {
+              "normalSets": 2,
+              "recentComparable": [
+                {
+                  "eventId": "history-2026-09-24",
+                  "date": "2026-09-24",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 2,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-27",
+                  "date": "2026-09-27",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 2,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                }
+              ]
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "nextSlotId": "THU",
+        "nextWorkoutDate": "2026-10-08"
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "noticeKeys": []
+        },
+        "primaryRuleIds": [
+          "R10"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C26",
+      "description": "Building plateau adds notice only",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "recentComparable": [
+                {
+                  "eventId": "history-2026-09-13",
+                  "date": "2026-09-13",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-17",
+                  "date": "2026-09-17",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 9
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-20",
+                  "date": "2026-09-20",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-24",
+                  "date": "2026-09-24",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 9
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-27",
+                  "date": "2026-09-27",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "workingSetCount": 3,
+          "noticeKeys": [
+            "plateau_check"
+          ]
+        },
+        "primaryRuleIds": [
+          "R10",
+          "R16"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C27",
+      "description": "Improving median needs no notice",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 11
+                },
+                {
+                  "reps": 11
+                },
+                {
+                  "reps": 11
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "recentComparable": [
+                {
+                  "eventId": "history-2026-09-13",
+                  "date": "2026-09-13",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-17",
+                  "date": "2026-09-17",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 9
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-20",
+                  "date": "2026-09-20",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-24",
+                  "date": "2026-09-24",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 11
+                    },
+                    {
+                      "reps": 10
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                },
+                {
+                  "eventId": "history-2026-09-27",
+                  "date": "2026-09-27",
+                  "load": {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  "plannedSetCount": 3,
+                  "repFloor": 8,
+                  "repCeiling": 12,
+                  "actualSets": [
+                    {
+                      "reps": 11
+                    },
+                    {
+                      "reps": 11
+                    },
+                    {
+                      "reps": 10
+                    }
+                  ],
+                  "effort": "on_target",
+                  "problem": "none",
+                  "phase": "normal",
+                  "sessionMode": "normal"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "noticeKeys": []
+        },
+        "primaryRuleIds": [
+          "R10"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C28",
+      "description": "28-day interruption requests reduced return",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "lastCompletedDate": "2026-09-06"
+            }
+          },
+          "lastSessionDate": "2026-09-06"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/nextSetOverride": 2,
+          "/nextState/exercises/example_lift/interruptedReturn": true,
+          "/nextState/exercises/example_lift/recentComparable": [],
+          "workingSetCount": 2
+        },
+        "primaryRuleIds": [
+          "R05"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C29",
+      "description": "Lowest load strain reduces sets temporarily",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "strainStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "42",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "50",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "too_hard",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/nextSetOverride": 2,
+          "/nextState/exercises/example_lift/normalSets": 3,
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "workingSetCount": 2
+        },
+        "primaryRuleIds": [
+          "R08"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C30",
+      "description": "Two-day size preset uses four sets",
+      "inputOverrides": {
+        "state": {
+          "config": {
+            "daysPerWeek": 2,
+            "weeklySlots": [
+              {
+                "id": "SUN",
+                "movementIds": [
+                  "example_lift"
+                ]
+              },
+              {
+                "id": "THU",
+                "movementIds": [
+                  "example_lift"
+                ]
+              }
+            ]
+          },
+          "exercises": {
+            "example_lift": {
+              "normalSets": 4
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "nextSlotId": "THU",
+        "nextWorkoutDate": "2026-10-08"
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "workingSetCount": 4,
+          "/nextWorkout/exercises/0/restSeconds": 120,
+          "/nextWorkout/exercises/0/sets/0/repCeiling": 12
+        },
+        "primaryRuleIds": [
+          "R10"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C31",
+      "description": "Unknown effort alone blocks confirmation",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "unknown",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "/nextState/exercises/example_lift/load/amount": "40"
+        },
+        "primaryRuleIds": [
+          "R07"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C32",
+      "description": "Stale prescription rejected",
+      "inputOverrides": {
+        "event": {
+          "prescriptionId": "stale"
+        }
+      },
+      "expected": {
+        "kind": "rejected",
+        "checks": {
+          "stateUnchanged": true
+        },
+        "primaryRuleIds": [],
+        "errorCodes": [
+          "stale_prescription"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C33",
+      "description": "Above-ceiling actuals preserved but held",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 13
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "noticeKeys": [
+            "rep_ceiling_exceeded"
+          ]
+        },
+        "primaryRuleIds": [
+          "R07"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C34",
+      "description": "Exactly 10 percent allowed",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "44",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "44",
+          "/nextState/exercises/example_lift/mode": "baseline"
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R13"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C35",
+      "description": "Above 10 percent blocked exactly",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "44.004",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/repCeiling": 14
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R14"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C36",
+      "description": "Load restriction permits authorized rep extension",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": false,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "42",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/repCeiling": 14
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R14"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C37",
+      "description": "All progression explicitly restricted",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                },
+                {
+                  "reps": 12
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        },
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "ceilingStreak": 1
+            }
+          },
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": false,
+                "automaticRepRangeExtensionAllowed": false,
+                "minimumRir": 2,
+                "availableLoads": [
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "42",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/repCeiling": 12,
+          "noticeKeys": [
+            "progression_restricted"
+          ]
+        },
+        "primaryRuleIds": [
+          "R11",
+          "R15"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C38",
+      "description": "Pain in an easier session still pauses the movement",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "pain"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/mode": "paused",
+          "/nextWorkout/exercises/0/kind": "paused",
+          "/nextWorkout/exercises/0/sets": []
+        },
+        "primaryRuleIds": [
+          "R01"
+        ]
+      }
+    },
+    {
+      "id": "C39",
+      "description": "Clean interruption return restores preset",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "interruptedReturn": true,
+              "nextSetOverride": 2
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "return",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/interruptedReturn": false,
+          "/nextState/exercises/example_lift/nextSetOverride": null,
+          "workingSetCount": 3,
+          "/nextState/exercises/example_lift/ceilingStreak": 0
+        },
+        "primaryRuleIds": [
+          "R05"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C40",
+      "description": "Clean strain-reduced dose restores baseline",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "nextSetOverride": 2
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "return",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "example-current",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 10
+                },
+                {
+                  "reps": 10
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/nextSetOverride": null,
+          "/nextState/exercises/example_lift/mode": "baseline",
+          "workingSetCount": 3
+        },
+        "primaryRuleIds": [
+          "R09"
+        ]
+      },
+      "operation": "advanceProgram"
+    },
+    {
+      "id": "C41",
+      "description": "No selection prepares the normal prescription unchanged",
+      "operation": "prepareWorkout",
+      "inputOverrides": {},
+      "expected": {
+        "kind": "prepared",
+        "checks": {
+          "stateUnchanged": true,
+          "prescriptionUnchanged": true,
+          "workingSetCount": 3
+        },
+        "primaryRuleIds": []
+      }
+    },
+    {
+      "id": "C42",
+      "description": "Easier performance does not count a second setback",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "strainStreak": 1
+            }
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 3
+                },
+                {
+                  "reps": 2
+                }
+              ],
+              "finalEffort": "too_hard",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/strainStreak": 1,
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "workingSetCount": 3
+        },
+        "primaryRuleIds": [
+          "R03",
+          "R04"
+        ]
+      }
+    },
+    {
+      "id": "C43",
+      "description": "Easier session cannot clear an interrupted-return flag",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "nextSetOverride": 2,
+              "interruptedReturn": true
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "return",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/interruptedReturn": true,
+          "/nextState/exercises/example_lift/nextSetOverride": 2,
+          "workingSetCount": 2,
+          "/nextWorkout/exercises/0/phase": "return"
+        },
+        "primaryRuleIds": [
+          "R03",
+          "R04"
+        ]
+      }
+    },
+    {
+      "id": "C44",
+      "description": "Mismatched displayed easier ID rejected",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "b039e6cced0856be49ad22253f4bdf41bc02d07e8ad214212972fa6560954b89",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "wrong-derived-id",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "rejected",
+        "checks": {
+          "stateUnchanged": true
+        },
+        "primaryRuleIds": [],
+        "errorCodes": [
+          "stale_prescription"
+        ]
+      }
+    },
+    {
+      "id": "C45",
+      "description": "Easier first exposure does not establish a normal-effort baseline",
+      "operation": "advanceProgram",
+      "inputOverrides": {
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "mode": "baseline",
+              "load": null,
+              "lastCompletedDate": null
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "baseline_setup",
+                "phase": "baseline",
+                "load": null,
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with roughly two good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          },
+          "config": {
+            "initialLoads": {
+              "example_lift": null
+            }
+          }
+        },
+        "event": {
+          "exercises": [
+            {
+              "movementId": "example_lift",
+              "prescriptionId": "296dd3d307f9798a7e330e77f488a45122ac48516609bf4295ca7def8d7be425",
+              "status": "completed",
+              "actualLoad": {
+                "amount": "40",
+                "unit": "lb",
+                "basis": "per_implement"
+              },
+              "actualSets": [
+                {
+                  "reps": 8
+                },
+                {
+                  "reps": 8
+                }
+              ],
+              "finalEffort": "on_target",
+              "problem": "none"
+            }
+          ],
+          "plannedPrescriptionId": "example-current",
+          "prescriptionId": "296dd3d307f9798a7e330e77f488a45122ac48516609bf4295ca7def8d7be425",
+          "sessionMode": "easier"
+        }
+      },
+      "expected": {
+        "kind": "applied",
+        "checks": {
+          "/nextState/exercises/example_lift/mode": "baseline",
+          "/nextState/exercises/example_lift/load/amount": "40",
+          "/nextState/exercises/example_lift/ceilingStreak": 0,
+          "workingSetCount": 3,
+          "/nextWorkout/exercises/0/phase": "baseline"
+        },
+        "primaryRuleIds": [
+          "R03",
+          "R04"
+        ]
+      }
+    },
+    {
+      "id": "C46",
+      "description": "Stricter effort restriction survives an easier request",
+      "operation": "prepareWorkout",
+      "inputOverrides": {
+        "easierToday": true,
+        "state": {
+          "config": {
+            "movements": [
+              {
+                "id": "example_lift",
+                "primaryMuscles": [
+                  "example_target"
+                ],
+                "secondaryMuscles": [],
+                "lowRepLoadingAllowed": true,
+                "automaticLoadProgressionAllowed": true,
+                "automaticRepRangeExtensionAllowed": true,
+                "minimumRir": 5,
+                "availableLoads": [
+                  {
+                    "amount": "38",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "40",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "42",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  },
+                  {
+                    "amount": "50",
+                    "unit": "lb",
+                    "basis": "per_implement"
+                  }
+                ]
+              }
+            ]
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "working",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with at least 5 good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with at least 5 good reps left; stop earlier for pain or loss of control."
+                  },
+                  {
+                    "repFloor": 8,
+                    "repCeiling": 12,
+                    "effortInstruction": "Stop with at least 5 good reps left; stop earlier for pain or loss of control."
+                  }
+                ],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "prepared",
+        "checks": {
+          "stateUnchanged": true,
+          "workingSetCount": 2,
+          "minimumRir": 5
+        },
+        "primaryRuleIds": [
+          "R02",
+          "R03"
+        ]
+      }
+    },
+    {
+      "id": "C47",
+      "description": "Easier request never resumes a paused movement",
+      "operation": "prepareWorkout",
+      "inputOverrides": {
+        "easierToday": true,
+        "state": {
+          "exercises": {
+            "example_lift": {
+              "mode": "paused"
+            }
+          },
+          "activePrescription": {
+            "exercises": [
+              {
+                "movementId": "example_lift",
+                "kind": "paused",
+                "phase": "normal",
+                "load": {
+                  "amount": "40",
+                  "unit": "lb",
+                  "basis": "per_implement"
+                },
+                "sets": [],
+                "restSeconds": 120,
+                "stopInstruction": "Stop for pain or loss of control."
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "kind": "prepared",
+        "checks": {
+          "stateUnchanged": true,
+          "workingSetCount": 0,
+          "/exercises/0/kind": "paused"
+        },
+        "primaryRuleIds": [
+          "R02",
+          "R03"
+        ]
+      }
+    }
+  ]
+}

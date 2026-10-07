@@ -1,0 +1,671 @@
+{
+  "provenance": {
+    "authorship": "Independently authored from R01-R16 table and C01-C47 source projections before ProgramAdvancer existed; never captured from advanceProgram.",
+    "source": "docs/specs/2026-10-05-general-fitness-progression-design.md",
+    "scope": "43 archived transitions; four preparation goldens remain with PreparationTests. Complete results expand explicit patches against independently compiled source inputs. Trace before/after are complete exercise snapshots.",
+    "window": "append means retain last six comparable raw exposures; clear and preserve are explicit per case.",
+    "review": "Human/trainer review is PENDING before beta. Local authoring or task review is not human approval.",
+    "humanReviewChecklist": [
+      "All counters before/after and history resets",
+      "Rule order and notice evidence",
+      "Ineligible completed dates and unresolved return flags",
+      "R13 preset restoration vs R14 extended ceiling",
+      "Version-specific archived omissions and app snapshot completeness"
+    ]
+  },
+  "cases": {
+    "C01": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ]
+    },
+    "C02": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ]
+    },
+    "C25": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ]
+    },
+    "C26": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ],
+      "notices": [
+        {
+          "ruleIds": [
+            "R16"
+          ],
+          "explanationKey": "plateau_check"
+        }
+      ]
+    },
+    "C27": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ]
+    },
+    "C30": {
+      "action": "hold",
+      "explanationKey": "capacity_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R10"
+      ]
+    },
+    "C03": {
+      "action": "hold",
+      "explanationKey": "ceiling_confirmation",
+      "exercisePatch": {
+        "ceilingStreak": 1,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R11"
+      ]
+    },
+    "C04": {
+      "action": "increase_load",
+      "explanationKey": "load_increased",
+      "exercisePatch": {
+        "load": {
+          "amount": "42"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0,
+        "repFloor": 8,
+        "repCeiling": 12
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R13"
+      ]
+    },
+    "C15": {
+      "action": "increase_load",
+      "explanationKey": "load_increased",
+      "exercisePatch": {
+        "load": {
+          "amount": "42"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0,
+        "repFloor": 8,
+        "repCeiling": 12
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R13"
+      ]
+    },
+    "C16": {
+      "action": "increase_load",
+      "explanationKey": "load_increased",
+      "exercisePatch": {
+        "load": {
+          "amount": "42"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0,
+        "repFloor": 4,
+        "repCeiling": 6
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R13"
+      ]
+    },
+    "C34": {
+      "action": "increase_load",
+      "explanationKey": "load_increased",
+      "exercisePatch": {
+        "load": {
+          "amount": "44"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0,
+        "repFloor": 8,
+        "repCeiling": 12
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R13"
+      ]
+    },
+    "C05": {
+      "action": "hold",
+      "explanationKey": "strain_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 1
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R08"
+      ]
+    },
+    "C07": {
+      "action": "hold",
+      "explanationKey": "strain_hold",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 1
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R08"
+      ]
+    },
+    "C06": {
+      "action": "reduce_load",
+      "explanationKey": "load_reduced",
+      "exercisePatch": {
+        "load": {
+          "amount": "38"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R08"
+      ]
+    },
+    "C08": {
+      "action": "pause",
+      "explanationKey": "movement_paused",
+      "exercisePatch": {
+        "mode": "paused",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R01"
+      ]
+    },
+    "C09": {
+      "action": "pause",
+      "explanationKey": "movement_paused",
+      "exercisePatch": {
+        "mode": "paused",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R01"
+      ]
+    },
+    "C38": {
+      "action": "pause",
+      "explanationKey": "movement_paused",
+      "exercisePatch": {
+        "mode": "paused",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R01"
+      ]
+    },
+    "C10": {
+      "action": "hold",
+      "explanationKey": "ineligible_observation",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R07"
+      ]
+    },
+    "C31": {
+      "action": "hold",
+      "explanationKey": "ineligible_observation",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R07"
+      ]
+    },
+    "C33": {
+      "action": "hold",
+      "explanationKey": "ineligible_observation",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R07"
+      ],
+      "notices": [
+        {
+          "ruleIds": [
+            "R07"
+          ],
+          "explanationKey": "rep_ceiling_exceeded"
+        }
+      ]
+    },
+    "C11": {
+      "action": "hold",
+      "explanationKey": "skip_recorded",
+      "exercisePatch": {},
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R07"
+      ]
+    },
+    "C12": {
+      "action": "extend_rep_ceiling",
+      "explanationKey": "rep_ceiling_extended",
+      "exercisePatch": {
+        "repCeiling": 14,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R14"
+      ]
+    },
+    "C35": {
+      "action": "extend_rep_ceiling",
+      "explanationKey": "rep_ceiling_extended",
+      "exercisePatch": {
+        "repCeiling": 14,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R14"
+      ]
+    },
+    "C36": {
+      "action": "extend_rep_ceiling",
+      "explanationKey": "rep_ceiling_extended",
+      "exercisePatch": {
+        "repCeiling": 14,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R14"
+      ]
+    },
+    "C13": {
+      "action": "hold",
+      "explanationKey": "equipment_limit",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R15"
+      ],
+      "notices": [
+        {
+          "ruleIds": [
+            "R11",
+            "R15"
+          ],
+          "explanationKey": "equipment_limit"
+        }
+      ]
+    },
+    "C37": {
+      "action": "hold",
+      "explanationKey": "progression_restricted",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R15"
+      ],
+      "notices": [
+        {
+          "ruleIds": [
+            "R11",
+            "R15"
+          ],
+          "explanationKey": "progression_restricted"
+        }
+      ]
+    },
+    "C14": {
+      "action": "hold",
+      "explanationKey": "maintenance_success",
+      "exercisePatch": {
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "append",
+      "kind": "applied",
+      "ruleIds": [
+        "R11",
+        "R12"
+      ]
+    },
+    "C18": {
+      "action": "hold",
+      "explanationKey": "easier_session_recorded",
+      "exercisePatch": {},
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R03",
+        "R04"
+      ]
+    },
+    "C19": {
+      "action": "hold",
+      "explanationKey": "easier_session_recorded",
+      "exercisePatch": {},
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R03",
+        "R04"
+      ]
+    },
+    "C42": {
+      "action": "hold",
+      "explanationKey": "easier_session_recorded",
+      "exercisePatch": {},
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R03",
+        "R04"
+      ]
+    },
+    "C43": {
+      "action": "hold",
+      "explanationKey": "easier_session_recorded",
+      "exercisePatch": {},
+      "window": "preserve",
+      "kind": "applied",
+      "ruleIds": [
+        "R03",
+        "R04"
+      ]
+    },
+    "C23": {
+      "action": "baseline",
+      "explanationKey": "baseline_established",
+      "exercisePatch": {
+        "load": {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        "mode": "normal",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R06"
+      ]
+    },
+    "C24": {
+      "action": "baseline",
+      "explanationKey": "actual_load_changed",
+      "exercisePatch": {
+        "load": {
+          "amount": "38"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R07"
+      ]
+    },
+    "C28": {
+      "action": "recover",
+      "explanationKey": "interruption_return",
+      "exercisePatch": {
+        "mode": "baseline",
+        "nextSetOverride": 2,
+        "interruptedReturn": true,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R05"
+      ]
+    },
+    "C29": {
+      "action": "recover",
+      "explanationKey": "recovery_dose",
+      "exercisePatch": {
+        "nextSetOverride": 2,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R08"
+      ]
+    },
+    "C39": {
+      "action": "recover",
+      "explanationKey": "interruption_return_complete",
+      "exercisePatch": {
+        "nextSetOverride": null,
+        "interruptedReturn": false,
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R05"
+      ]
+    },
+    "C40": {
+      "action": "recover",
+      "explanationKey": "recovery_return_complete",
+      "exercisePatch": {
+        "nextSetOverride": null,
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R09"
+      ]
+    },
+    "C45": {
+      "action": "hold",
+      "explanationKey": "easier_session_recorded",
+      "exercisePatch": {
+        "load": {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        "mode": "baseline",
+        "ceilingStreak": 0,
+        "strainStreak": 0
+      },
+      "window": "clear",
+      "kind": "applied",
+      "ruleIds": [
+        "R03",
+        "R04"
+      ]
+    },
+    "C20": {
+      "kind": "no_op",
+      "ruleIds": []
+    },
+    "C21": {
+      "kind": "rejected",
+      "ruleIds": [],
+      "errors": [
+        "event_id_conflict"
+      ]
+    },
+    "C22": {
+      "kind": "rejected",
+      "ruleIds": [],
+      "errors": [
+        "ruleset_mismatch"
+      ]
+    },
+    "C32": {
+      "kind": "rejected",
+      "ruleIds": [],
+      "errors": [
+        "stale_prescription"
+      ]
+    },
+    "C44": {
+      "kind": "rejected",
+      "ruleIds": [],
+      "errors": [
+        "stale_prescription"
+      ]
+    }
+  },
+  "fixedFixtureCoverage": {
+    "source": "docs/specs/2026-10-05-fixed-exercise-profile.json",
+    "sourceProfileId": "fixed-home-gym-v0.1",
+    "sourceProfileHash": "508cff9a8cc292defccd8c017da28af28007942946d268b8468f6c5a6cc8bb15",
+    "completeTransitionGoldens": [
+      "F03",
+      "F04",
+      "F05",
+      "F06",
+      "F07",
+      "F14"
+    ],
+    "otherSubstantiveBehaviorTests": [
+      "F01",
+      "F02",
+      "F08",
+      "F10",
+      "F11",
+      "F12",
+      "F13"
+    ],
+    "executedO5": {
+      "id": "F09",
+      "behavior": "setupReset",
+      "expected": {
+        "setupRevision": 2,
+        "ceilingStreak": 0,
+        "strainStreak": 0,
+        "mode": "baseline",
+        "load": null
+      },
+      "test": "ConfigurationTests.F09SetupResetMatchesArchivedExpectationAndFullState",
+      "gate": "Executed full-state setup reset, prescription and decision comparison plus archived F09 projection; included in the all14 substantive behavior gate."
+    }
+  }
+}

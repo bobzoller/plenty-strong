@@ -1,0 +1,42 @@
+name: Unsigned native checks
+on:
+  pull_request:
+  push:
+    branches: [main, 'bobzoller/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: unsigned-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  current:
+    name: Current iOS 27 (minimum gate separate)
+    runs-on: xcode-27
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, primary ref refreshed 2026-10-06
+        with:
+          persist-credentials: false
+      - name: Record ephemeral hosted image (not an immutable image pin)
+        run: |
+          sw_vers
+          printf 'ImageOS=%s ImageVersion=%s\n' "$ImageOS" "$ImageVersion"
+      - name: Current-only core, native tests, crash proof and unsigned Release
+        run: make verify-current
+  minimum:
+    name: Required minimum iOS 18
+    runs-on: xcode-27
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Fail closed if required minimum destination is absent
+        run: make check-minimum
+      - name: Native minimum-runtime unit and UI tests
+        run: make test-app DESTINATION='platform=iOS Simulator,name=iPhone 16,OS=18.0'

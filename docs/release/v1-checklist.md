@@ -1,0 +1,149 @@
+# Plenty Strong v1 candidate checklist
+
+Local release-candidate preparation, not an approved release. All pending, missing or failed required gates block distribution. Deployment target18 is compilation metadata; synthetic tests do not prove service, physical-device or human-policy behavior.
+
+## Final fix build2 source and actual phases
+
+Shipped source `ed276b05375ee903e3861396603ef4eb9953a53e`; tests-only source `85c4d4687460241145eb169e66181fc8f9268a4e`, clean before final UI execution. Plenty Strong0.1.0(2), Xcode27.0/Swift6.4, iPhone17/iOS27.0. Cross-root current safety admission, fresh staged-generation reservation, valid legacy read-only compatibility/export format retention, provider retry floor/owner handoff and stored-identity disclosure are covered by controlled RED/GREEN evidence.
+
+| Phase / source | Actual closed outcome |
+| --- | --- |
+| One full default `make verify-current`, ed276b | FAILED native65/Make2,3888.086s. Core258 expanded PASS9.227s; models216 expanded PASS (55XCTest plus161Swift bodies; one liveDevelopment opt-in skipped); UI33/34, immediate Easier-label assertion failed during awaited save. Default diagnostics closed naturally; no process terminated. |
+| Separate remaining components, clean ed276b | `make crash-proof build-app` exit0/46.575s: four macOS SIGKILL/reopen proofs and unsigned generic-iOS Release build pass. Not iOS kill evidence or a relabeled Make pass. |
+| Narrow Easier test observation correction, ed276b+retained patch | Predicate waits exact Easier label within existing15s; every later actual-set/partial/Finish assertion retained. Focused1/1 PASS27.111s, nativeexit0; only this authorized focused phase uses diagnostics-never. |
+| Clean tests-only85c4 full native UI | All34/34 PASS,0failed/0skipped, case total1031.475s/native command1443.765s/exit0, default diagnostics; only freshly reverified optional collector14750 SIGTERM under ruling81 at actual6:16, partial diagnostics retained (not natural600timeout). Eleven invalid-frame runtime warnings remain. Actual full Debug bundle bytes equal pre-run, including launcher/debug dylib. Shipped/core/model/crash/build/resource Git/blob/SHA inventories equal ed276b; retained component/archive proofs map only through that equality. |
+| Actual required `make verify`, ed276b | FAILED exit2: minimum iOS18 destination absent. No substituted minimum proof. |
+
+Fresh distinct unsigned archive `DerivedData/FinalFixBuild2/PlentyStrong-0.1.0-2-Unsigned.xcarchive`, nativeexit0/29.541s, inventorySHA256 `364341ad63afd87b013a310833a8d8cbe10d9afcb1e89515a163ee63c33ef418`, binaryUUID6EBD7848-957E-3320-83BB-4A515C610C35, binarySHA256 `3fdde7da1f27cc9a4c26b52e1547a86ea911279b8108833318523ca273f3c359`. Actual0.1.0(2), min18, proposed Production/provisioningNO, teamunset/signingNO; no profile/StoreKit configuration/third-party framework. Seven packaged JSON/privacy resources equal source; manifesttrackingfalse/empty arrays. This is local artifact preparation, not signed/live/release proof. The final UI Debug launcher/dylib are distinct from Release; exact source/phase/hash mappings and six fresh raw affected captures are in `candidate-artifacts.json` and `screenshots/manifest.json`.
+
+Original build1 archives/failed commands/collector records below remain preserved historical evidence. The original build2 full Make also remains FAILED. Current local component coverage is phase-bound; minimum/hosted/physical/human/Release-performance/live/signing/privacy/publication gates remain open. Parent owns one scoped rereview before Bob decides local integration. Documentation changes do not alter executable/build identity.
+
+## Historical build1 source and artifacts
+
+Historical build1 final source `c31657ed90ad59148f7e633c3fef3b533a6cf3dc`, clean before execution; Plenty Strong 0.1.0 (1). Xcode 27.0 build 27A266a, Swift 6.4, current iPhone 17 / iOS 27.0. Actual final-source `make verify` exits2 because minimum iOS 18 is absent.
+
+| Phase / immutable source | Actual result / applicability |
+| --- | --- |
+| Source/config/assets first: `4e7e79513afd5a5b6964434e8528d63110d73e64` | One complete `make verify-current` FAILED native exit 65 / Make exit 2: core 258 and app 200 expanded model bodies pass, one live-cloud opt-in skipped, UI 31/32. Original native cancellation presentation route fails; actual default collector600 seconds timeout retained. Independent macOS SIGKILL/crash proof4/4 and unsigned Release build/archive pass. |
+| Test routes: `9ce0b98de0230a0560c94e42b68cf9cc26c9481b` | Focused cancellation/history2/2 pass; new full 32-case default-diagnostics UI 31/32: corrected cancellation passes23.171 seconds, restored next-ceiling lookup below viewport fails. Its optional owned collector alone terminated under narrow ruling67 after all32 results; partial diagnostics retained. Fresh distinct unsigned archive/build pass. |
+| Shared bounded next-target route: `c31657ed90ad59148f7e633c3fef3b533a6cf3dc` | Focused affected history2/2 pass, 63.637s / native 92.752s, then commit/freeze. Full 32-case native UI PASS, 32/32, 968.763s / native1279.948s / exit0 with default diagnostics. Only its verified optional collector terminated under ruling69 after all assertions, actual4:35 elapsed; partial diagnostics retained, not a600-second timeout. Fresh distinct unsigned archive/build and actual resource/configuration audit pass. |
+
+All shipped source/config/assets (46 files), core (42 files) and model/crash-test (19 files) Git blob inventories are byte-identical from 4e to final source. Core/model/crash are retained actual4e passes, not newly rerun at the final source; all C/F rows below refer to that exact mapped evidence. Only UI-test routes changed after 4e. Build1 remains appropriate for identical shipped bytes. The original failed Make command remains FAILED; later UI/artifact commands do not rewrite its outcome.
+
+Final archive `DerivedDataT3Final2/PlentyStrong-0.1.0-1-Unsigned.xcarchive`, inventory SHA256 `d2e3ffcd80a13bef5939a134c45bf627f61747fff1aa75caa138986e6f20dc06`, binary UUID116FB6EC-9B1F-3802-BFFB-290B12C42404. Actual Info/catalog/manifest/dependencies audited; signing absent, team unset and provisioning NO. Earlier4e/9ce artifacts and failures remain distinct. `candidate-artifacts.json` records actual archive/hash/configuration inventory and source mappings; screenshots are raw final-source Debug synthetic-fixture captures, a distinct executable from the unsigned Release archive.
+
+The evidence-only documentation commit identifies the preceding immutable candidate; it cannot contain a self-referential SHA. No T2 artifact, uncommitted source or released tag is substituted. Those historical reviews produced the bounded integration findings addressed in build2; one scoped parent rereview remains.
+
+## Every contract example
+
+C01–C47 use `ProgressionFixtureTests.completeWorkedTransition` (43 arguments) and `PreparationTests.sourceEasierCasesMatchCompleteIndependentPrescriptions` (C17/C46/C47) plus `normalC41ReturnsExactActivePrescriptionWithoutMutation`; `allFortySevenSourceIDsAreRepresented` checks exact union47. Rows retain original build1 execution. The identical TrainingCore tests/resources also executed freshly on ed276b:258 expanded passes/111methods; unchanged at tests-only85c4.
+
+| ID | Source case | Recorded4e result, byte-identical final source |
+| --- | --- | --- |
+| C01 | Natural reps below ceiling | PASS, core at 4e; byte-identical at final source |
+| C02 | Easy work below ceiling can gain reps naturally | PASS, core at 4e; byte-identical at final source |
+| C03 | First ceiling confirmation | PASS, core at 4e; byte-identical at final source |
+| C04 | Second ceiling confirmation increases load | PASS, core at 4e; byte-identical at final source |
+| C05 | Too-hard ceiling work does not qualify | PASS, core at 4e; byte-identical at final source |
+| C06 | Second comparable strain retreats | PASS, core at 4e; byte-identical at final source |
+| C07 | One below-floor set counts strain | PASS, core at 4e; byte-identical at final source |
+| C08 | Pain wins over ceiling performance | PASS, core at 4e; byte-identical at final source |
+| C09 | Control loss wins over easy feedback | PASS, core at 4e; byte-identical at final source |
+| C10 | Partial work cannot confirm | PASS, core at 4e; byte-identical at final source |
+| C11 | Skip preserves counters | PASS, core at 4e; byte-identical at final source |
+| C12 | Large equipment jump extends reps | PASS, core at 4e; byte-identical at final source |
+| C13 | Equipment boundary at maximum ceiling | PASS, core at 4e; byte-identical at final source |
+| C14 | Maintenance at target effort holds | PASS, core at 4e; byte-identical at final source |
+| C15 | Maintenance restores challenge when too easy | PASS, core at 4e; byte-identical at final source |
+| C16 | Strength preset progresses | PASS, core at 4e; byte-identical at final source |
+| C17 | Optional easier control prepares the current workout | PASS, core at 4e; byte-identical at final source |
+| C18 | Easy capped work in an easier session cannot qualify | PASS, core at 4e; byte-identical at final source |
+| C19 | Next workout restores normal work without a readiness check | PASS, core at 4e; byte-identical at final source |
+| C20 | Exact replay | PASS, core at 4e; byte-identical at final source |
+| C21 | Changed duplicate rejected | PASS, core at 4e; byte-identical at final source |
+| C22 | Wrong rules hash rejected | PASS, core at 4e; byte-identical at final source |
+| C23 | Verified starting load establishes baseline | PASS, core at 4e; byte-identical at final source |
+| C24 | Changed actual load is rebaselined | PASS, core at 4e; byte-identical at final source |
+| C25 | Stable maintenance is success | PASS, core at 4e; byte-identical at final source |
+| C26 | Building plateau adds notice only | PASS, core at 4e; byte-identical at final source |
+| C27 | Improving median needs no notice | PASS, core at 4e; byte-identical at final source |
+| C28 | 28-day interruption requests reduced return | PASS, core at 4e; byte-identical at final source |
+| C29 | Lowest load strain reduces sets temporarily | PASS, core at 4e; byte-identical at final source |
+| C30 | Two-day size preset uses four sets | PASS, core at 4e; byte-identical at final source |
+| C31 | Unknown effort alone blocks confirmation | PASS, core at 4e; byte-identical at final source |
+| C32 | Stale prescription rejected | PASS, core at 4e; byte-identical at final source |
+| C33 | Above-ceiling actuals preserved but held | PASS, core at 4e; byte-identical at final source |
+| C34 | Exactly 10 percent allowed | PASS, core at 4e; byte-identical at final source |
+| C35 | Above 10 percent blocked exactly | PASS, core at 4e; byte-identical at final source |
+| C36 | Load restriction permits authorized rep extension | PASS, core at 4e; byte-identical at final source |
+| C37 | All progression explicitly restricted | PASS, core at 4e; byte-identical at final source |
+| C38 | Pain in an easier session still pauses the movement | PASS, core at 4e; byte-identical at final source |
+| C39 | Clean interruption return restores preset | PASS, core at 4e; byte-identical at final source |
+| C40 | Clean strain-reduced dose restores baseline | PASS, core at 4e; byte-identical at final source |
+| C41 | No selection prepares the normal prescription unchanged | PASS, core at 4e; byte-identical at final source |
+| C42 | Easier performance does not count a second setback | PASS, core at 4e; byte-identical at final source |
+| C43 | Easier session cannot clear an interrupted-return flag | PASS, core at 4e; byte-identical at final source |
+| C44 | Mismatched displayed easier ID rejected | PASS, core at 4e; byte-identical at final source |
+| C45 | Easier first exposure does not establish a normal-effort baseline | PASS, core at 4e; byte-identical at final source |
+| C46 | Stricter effort restriction survives an easier request | PASS, core at 4e; byte-identical at final source |
+| C47 | Easier request never resumes a paused movement | PASS, core at 4e; byte-identical at final source |
+
+F01–F14 preserve archived source metadata and substantive behavior, including old setup definitions versus current configuration. Software acceptance is separate from trainer approval.
+
+| ID | Actual covering test | Recorded4e result, byte-identical final source |
+| --- | --- | --- |
+| F01 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F02 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F03 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F03 | PASS, core at 4e; byte-identical at final source |
+| F04 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F04 | PASS, core at 4e; byte-identical at final source |
+| F05 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F05 | PASS, core at 4e; byte-identical at final source |
+| F06 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F06 | PASS, core at 4e; byte-identical at final source |
+| F07 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F07 | PASS, core at 4e; byte-identical at final source |
+| F08 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F09 | ConfigurationTests.F09SetupResetMatchesArchivedExpectationAndFullState | PASS, core at 4e; byte-identical at final source |
+| F10 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F11 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F12 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F13 | ProgressionFixtureTests.originalF01F02F08F10F11F12F13RemainSubstantiveBehaviors | PASS, core at 4e; byte-identical at final source |
+| F14 | ProgressionFixtureTests.originalFixedTransitionsUseArchivedMetadataAndFullGoldens argument F14 | PASS, core at 4e; byte-identical at final source |
+
+## Required acceptance gates
+
+| Gate | Current status | Owner / exact next action / evidence required |
+| --- | --- | --- |
+| Display/name/version/icon | PASS, actual compiled Debug and archived Release | Implementer: actual compiled Debug and Release/archive Info, assets and hashes; Bob confirms store name availability |
+| Current local evidence / original aggregate | Build2 core258/model216/crash4 mapped PASS; full34UI PASS; original Make FAILED; minimum/real gates open | Implementer: clean ed276b original full failure and separate components, tests-only85c4 full34/default UI with exact shipped-source/actual-binary mapping; fresh build2 unsigned artifacts. No original failure silently green |
+| Minimum/current required matrix | BLOCKED, absent iOS18 | Bob approves suitable runtime/device; implementer executes actual minimum iOS 18 and current matrix with source/OS/date/results. No incidental large install |
+| Durable local history, crash and backup negatives | PASS, covering local cases | Candidate repository/backup suite plus native macOS SIGKILL4/4; iOS process-kill, physical backups and Files provider tests remain separate |
+| Saved setup create/select/correction / original labels | PASS, covering local cases | Candidate UI/core/repository tests: separate baseline, opaque text, original recorded labels retained |
+| Independent progression / shared safety | PASS, covering local cases | Candidate variant and model tests; human stop/return comprehension and trainer review still required |
+| Offline flows / actuals versus next targets | PASS, covering local cases | Native synthetic tests/screenshots include original10/10/9 versus saved ceiling 12; Bob/physical tester records airplane-mode/no-optional-account use |
+| Stopping / per-side / easier / accessibility | PASS, covering local cases; human pending | Bob/human tester demonstrates two good reps remaining, pain/control stop, truthful partials and unequal sides; human VoiceOver, iPad/landscape/text extremes |
+| Local StoreKit mechanics | PASS, native local cancellation and synthetic model/UI coverage; real sandbox PENDING | Bob/developer: approved sandbox products, actual purchase/cancel/pending/unverified/duplicate/update/interrupted/relaunch proof with unchanged training bytes |
+| Private Development recovery | PENDING, provisioning NO | Bob approves team/App ID/container/Development capabilities/schema; developer records signed synthetic upload/fetch/errors/notifications/quota/account changes and entitlements |
+| Physical two-iPhone replacement / conflicts | PENDING | Bob/developer tests fresh same-account replacement, both offline conflict arrival orders, all archives/ancestors/rules/prescriptions/actuals/safety equality; see icloud-recovery-acceptance.md |
+| Trainer / product policy | PENDING | Bob + trainer gives dated explicit frozen-policy and human-comprehension approval before external beta; no efficacy inferred from tests |
+| Privacy / zero third-party runtime | PASS, unsigned current artifact audit; signed report pending | Implementer audits actual manifest/config/binary/resources/source; Bob/developer records signed Organizer/privacy report and genuine approved support/privacy/security routes |
+| Owned assets / synthetic screenshots | PASS, original icon and fresh current captures | Implementer records generator/license, visual review, native capture source/hash inventory. Bob approves final large-iPhone/13-inch-iPad captures/layouts before upload |
+| Measured performance | PENDING | Developer/human tester records date/device/OS/source, representative synthetic dataset, startup/restore/sync wall time/memory and agreed limits |
+| O7/O8/M1/M2 retained diagnostics | OPEN | Parent broad review triages invalid frames, native identifiers, collector timeout, SDK/platform warnings and earlier same8s interrupted-delivery failure; later passes do not erase observations |
+| Public source/history/URLs | Source snapshot published; distribution URLs pending | [bobzoller/plenty-strong](https://github.com/bobzoller/plenty-strong) uses an audited new initial lineage with bounded documentation redactions; original private development ancestry and native evidence remain local. Support/privacy/distribution destinations still require approval and verification. |
+| Hosted current-head CI | PENDING, no authorized run | Bob authorizes audited publication/run; developer records exact current-head status of both current/minimum jobs; no secrets/persistent credentialed PR runner |
+| Signing / validated archive | PENDING; local unsigned | Bob verifies distinct developer/device-iCloud roles, team/IDs/profiles and final configuration. Developer produces new fixed signed source/build and actual entitlement/profile/team/Apple validation |
+| Products / Production schema | PENDING, no live change | Bob approves commercial tiers/products and observed Development-to-Production schema diff separately; deploy approved schema before offering Production build |
+| Exact Production replacement recovery | PENDING | Developer proves approved signed Production build upload/fresh replacement equality; Development pass is insufficient |
+| TestFlight / App Store / approved tag | PENDING | Bob approves exact candidate/environment/products/listing/screenshots/destination/audience; operator records authorized writes and Apple processing/review/availability readback |
+
+## Proposed schema and account action payload
+
+The exact proposed addition assumes an empty reviewed container; no live delta exists. `icloud-schema-v1.md` defines private `JournalV1`/`ArchiveV1`: payload Asset, checksum/datasetID/identity String, formatVersion Int64=1, no indexes, private per-dataset `PlentyStrong-v1-<lowercase dataset UUID>` zones, canonical SHA256 record identity and immutable dependency semantics. No public/shared database/query index, container/schema/zone/subscription creation or service execution occurred.
+
+App `us.zoller.PlentyStrong`, private container `iCloud.us.zoller.PlentyStrong`, CloudKit/APNs/remote-notification; team unset, provisioning NO. Debug uses Development/development and always refuses live construction; Release uses Production/production but remains unprovisioned. A separately approved non-DEBUG signed Development smoke deliberately overrides reviewed environment/APNs/provisioning settings and records new exact source/configuration/build identity. Bob manages distinct device-iCloud/developer roles; no account sign-in/credential read occurs here.
+
+`app-store-metadata.md` and `testflight-notes.md` contain concrete proposed listing, privacy answers, consumable IDs/local fixture prices, known limits and contact/destination/audience gates. They authorize no live product, signing, schema promotion, publication or distribution. Every pending real gate needs the owner/action/evidence above; none is silently green.
+
+Any later fix or approved signing/provisioning configuration that changes the executable, configuration or assets requires a new committed source and incremented local build number, rebuilt artifacts and covering checks. Evidence-only documentation does not change the recorded 0.1.0 (2) unsigned candidate.
+
+## Source-publication addendum · October 7, 2026
+
+Developmental source is published at [bobzoller/plenty-strong](https://github.com/bobzoller/plenty-strong), from an audited new initial lineage; original private development ancestry and raw native evidence remain local. Retained dated publication-pending statements above describe the earlier local candidates. Source publication alone closes the public-source destination/payload gate. Original local-native execution identities and their open minimum/hosted/physical/human/performance/live/signing/privacy/distribution gates remain unchanged. No new native or hosted verification is claimed.

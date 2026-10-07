@@ -1,0 +1,34 @@
+# Build2 synthetic candidate screenshots
+
+Six fresh raw native captures from clean tests-only source `85c4d4687460241145eb169e66181fc8f9268a4e`, shipped source `ed276b05375ee903e3861396603ef4eb9953a53e`, Plenty Strong0.1.0(2), full34UI/default diagnostics on iPhone17/iOS27.0. Exact actual Debug launcher/dylib equality maps the original build2 application bytes; all new captures were visually inspected. Every file is1206×2622 and opaque, copied byte-for-byte from the final closed xcresult. No personal data, account UI, image editing or marketing overlay. Manifest preserves original attachment names/test/times/source/binary/hash identities.
+
+Original actual10/10/9 and saved target12 are companion views. The collapsed/expanded details captures are after scrolling: the original first actuals are above that viewport. The inherited collapsed attachment title is retained but its caption describes what is actually visible. These six affected review captures are not a complete App Store set; final approved large-iPhone/13-inch-iPad and human accessibility/layout review remain gates. Historical nine build1 captures remain unchanged below.
+
+| File | Actual content | SHA256 |
+| --- | --- | --- |
+| [build-2/legacy-read-only.png](build-2/legacy-read-only.png) | Valid original numeric schema1 prescription/name/40.1kg total, explicit training unavailable; original archive remains recoverable/exportable. | `62282bd66b2853451889c58168b59d3afdc1a9e1d5117ae2e1d10d8d3f260d27` |
+| [build-2/recorded-actuals.png](build-2/recorded-actuals.png) | Original actual10/10/9, human setup label/outcome/5lb load, next-target heading; paired scrolled target capture shows independently saved ceiling12. | `14200533f0909ac33957fef6a6472b4d905dc8d6d2e472054acbc0ed22354f55` |
+| [build-2/saved-next-target.png](build-2/saved-next-target.png) | Same workout after one native swipe: first saved ceiling12 is partly under the navigation bar; Pull-ups actual8 and its independently saved ceiling12 are visible. First10/10/9 actuals and5lb recorded/target loads are in the unscrolled companion. | `c2e4167229a36ad4f04fbc7adab0064793edb943150df422666c42a1c17ee9c7` |
+| [build-2/today.png](build-2/today.png) | Fixed native Today, local training available while optional services are unavailable; synthetic fixture. | `2f8fa230284b48c189ac62c4e6020455ce74617157b7648fc10bb3969a97a488` |
+| [build-2/stored-details-collapsed.png](build-2/stored-details-collapsed.png) | Scrolled saved target12 and collapsed Stored record details, with later movement actual8 visible. Inherited attachment title overstates first original actuals visibility;10/10/9 are shown in the unscrolled companion. | `104a9af23293f455a6191e5ad86a1a0ca6ca64506faa6f18e99504497cb0659d` |
+| [build-2/stored-details-expanded.png](build-2/stored-details-expanded.png) | Expanded native Stored record details retain the first full original copyable setup identity/base ID; its target and first10/10/9 actuals are above this viewport, shown in companion captures. Pull-ups actual8 remains visible. | `1b96070ed5da03ce7db41c1573c377fb20d200acd15e409d09f26266c81ef411` |
+
+# Preserved historical build1 screenshots
+
+Raw native app captures from clean source `c31657ed90ad59148f7e633c3fef3b533a6cf3dc`, Plenty Strong0.1.0(1), Xcode27.0, iPhone17/iOS27.0 simulator. The final32-case UI run uses native test gestures and DEBUG synthetic fixtures. No personal setups/workouts, account UI, transaction receipts, marketing overlays or image editing are included. `manifest.json` preserves exact original attachment names/test IDs/capture timestamps/dimensions and SHA256s. Each PNG is1206×2622 and opaque.
+
+The Debug screenshot executable and unsigned Release archive are distinct artifacts from the same final source; neither is a signed release or real service proof. The original icon/tool ownership is in `../asset-provenance.md`. These are local review captures, not a complete App Store upload set. Final accepted large-iPhone/13-inch-iPad captures and human layout/accessibility checks remain owner gates; do not stretch or relabel these images.
+
+Recorded actuals and saved-next-target are two raw views of the same synthetic history record:10/10/9 is original performed work, ceiling12 is its independently saved next prescription. A single native swipe exposes that target. Large-text/dark frames preserve real viewport/truncation behavior and support test evidence only. The inherited Empty-store restore screen attachment actually shows restored History; its exported filename/description below correct that claim while retaining the original name in the manifest.
+
+| File | Actual content | SHA256 |
+| --- | --- | --- |
+| [independent-setup-baseline.png](independent-setup-baseline.png) | Synthetic opaque +25lb description; separate starting baseline, no assumed resistance and shared stop controls. | `c04266885f2a482fc4d96c9e5d759d5454f340406e4398375107ea72f0432731` |
+| [large-text-dark-privacy.png](large-text-dark-privacy.png) | Actual extreme text/dark privacy view; long heading truncation and viewport scrolling retained. Diagnostic evidence, not accessibility certification. | `1b8b2856df4d1c01caaf3eec6560ca6adc7ceec70e1ebb535f7295dc48807153` |
+| [large-text-onboarding.png](large-text-onboarding.png) | Actual extreme text/dark acceptance fixture with selected goal and pinned confirmation. Diagnostic evidence, not marketing layout. | `2280b8bb8b2e26471a20a1d70b92ece925e641d635d040ddee2625f2c78b7827` |
+| [per-side-actuals.png](per-side-actuals.png) | Actual left7/right5, per-side instruction and pain/control stops. Lower partial controls require normal scrolling. | `ee8e105a1c86bd2142f6d5b53652a6a42947b0d14436ba28dd6db4006c2aa893` |
+| [recorded-actuals.png](recorded-actuals.png) | Original actual10/10/9, source setup label and next-target heading. Use with saved-next-target.png. | `aa6adef7f1bf1a2efb39c3d0233fc5f0c5b18e41c9435ecfbe9ecf4e4a778eae` |
+| [restored-history.png](restored-history.png) | Actual History after synthetic empty-store JSON recovery. Original inherited attachment name says empty-store restore screen; this image does not show onboarding/Files/provider UI. | `fe37c13677bd7651f0c3b118b41e16799912fea7be5ecbeab3f9a79afa5e014f` |
+| [saved-next-target.png](saved-next-target.png) | Same stored workout after one native swipe: saved5lb target/ceiling12, separate from recorded actuals. | `88c71ed5b527041e03ecd80c0ff7e36df8c5c5f35313a938ec504c2796355499` |
+| [saved-setup-picker.png](saved-setup-picker.png) | Synthetic Demo neutral grip correction/selectable saved setup; identity/progress retained and descriptions do not calculate resistance. | `f29be2ad7a814e42dd3410aee960d3bdac9a53a17d07ff90f2fcf62c4cde282d` |
+| [today.png](today.png) | Synthetic Today: offline availability, fixed routine and stopping instruction. | `0fd23640a47877014ea1c4517c2ce3f2c6065ba67596c26ce347874918be2577` |

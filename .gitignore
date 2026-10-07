@@ -1,0 +1,11 @@
+.worktrees/
+.superpowers/
+.git-local-origin.git/
+.build/
+DerivedData*/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.xcresult/
+*.xcarchive/
+__pycache__/

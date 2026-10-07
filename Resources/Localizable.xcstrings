@@ -1,0 +1,338 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "No account, no subscription, no telemetry.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No account, no subscription, no telemetry."
+          }
+        }
+      }
+    },
+    "Up to %lld good reps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to %lld good reps"
+          }
+        }
+      }
+    },
+    "Today": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        }
+      }
+    },
+    "History": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "Stop when you think you could do two more good reps. Stop earlier for pain or loss of control.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop when you think you could do two more good reps. Stop earlier for pain or loss of control."
+          }
+        }
+      }
+    },
+    "iCloud recovery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iCloud recovery"
+          }
+        }
+      }
+    },
+    "Enable iCloud recovery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable iCloud recovery"
+          }
+        }
+      }
+    },
+    "Turn off recovery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn off recovery"
+          }
+        }
+      }
+    },
+    "Recovery incomplete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery incomplete"
+          }
+        }
+      }
+    },
+    "Recovery unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery unavailable"
+          }
+        }
+      }
+    },
+    "Recovery conflict needs review": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery conflict needs review"
+          }
+        }
+      }
+    },
+    "All known completed workouts uploaded": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All known completed workouts uploaded"
+          }
+        }
+      }
+    },
+    "1 completed workout waiting to upload": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 completed workout waiting to upload"
+          }
+        }
+      }
+    },
+    "Unfinished workouts remain on this phone and are not recovered through iCloud.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unfinished workouts remain on this phone and are not recovered through iCloud."
+          }
+        }
+      }
+    },
+    "Optional iCloud recovery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional iCloud recovery"
+          }
+        }
+      }
+    },
+    "Choose a saved program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a saved program"
+          }
+        }
+      }
+    },
+    "Compare retained branches and safety": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare retained branches and safety"
+          }
+        }
+      }
+    },
+    "This version cannot create a separate program while retained programs need recovery review, contain a saved workout, or have safety restrictions beyond the new defaults.": {},
+    "Imported histories require verified recovery records in the current account; association alone does not upload them.": {},
+    "This tip is unavailable right now.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This tip is unavailable right now."
+          }
+        }
+      }
+    },
+    "The tip could not be verified. Your training is available.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tip could not be verified. Your training is available."
+          }
+        }
+      }
+    },
+    "The tip could not be completed. Please try again later.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tip could not be completed. Please try again later."
+          }
+        }
+      }
+    },
+    "The app is free. No account, no subscription, no telemetry. If it helps you, you can leave a tip. Tips unlock nothing.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app is free. No account, no subscription, no telemetry. If it helps you, you can leave a tip. Tips unlock nothing."
+          }
+        }
+      }
+    },
+    "Leave a tip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave a tip"
+          }
+        }
+      }
+    },
+    "Loading tips…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading tips…"
+          }
+        }
+      }
+    },
+    "Completing your tip…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completing your tip…"
+          }
+        }
+      }
+    },
+    "Your tip is awaiting approval. You can keep training while it is pending.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your tip is awaiting approval. You can keep training while it is pending."
+          }
+        }
+      }
+    },
+    "Thank you for helping keep Plenty Strong free.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thank you for helping keep Plenty Strong free."
+          }
+        }
+      }
+    },
+    "Tips are unavailable right now. All training features and backups are free.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tips are unavailable right now. All training features and backups are free."
+          }
+        }
+      }
+    },
+    "Try again": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        }
+      }
+    },
+    "Optional tips": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional tips"
+          }
+        }
+      }
+    },
+    "Tip receipts could not be opened. Your training is available.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tip receipts could not be opened. Your training is available."
+          }
+        }
+      }
+    },
+    "The tip receipt could not be saved. Your training is available.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tip receipt could not be saved. Your training is available."
+          }
+        }
+      }
+    },
+    "Tips are voluntary and unlock nothing. All training features are free.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tips are voluntary and unlock nothing. All training features are free."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
