@@ -25,7 +25,7 @@ struct OnboardingView<Restore: View>: View {
                 Text("Sunday · Tuesday · Thursday")
                 Text("Required: dumbbells in 5 lb steps, 5–80 lb per dumbbell; a pull-up bar; an adjustable bench.")
                     .accessibilityIdentifier("onboarding.equipment")
-                Text("Dumbbell loads are per hand unless the movement says total. Reps on each side are recorded separately. Starting weights are your choice; no performed reps are filled in.")
+                Text("Dumbbell loads are per hand unless the movement says total. Reps on each side are recorded separately. Each set has a rep goal. Starting weights are your choice; actual reps stay blank until you enter them.")
                 Text("Modifications is optional text describing your setup. Each saved setup keeps its own baseline and history.")
             }
         }

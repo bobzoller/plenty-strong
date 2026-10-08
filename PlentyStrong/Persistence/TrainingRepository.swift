@@ -86,8 +86,14 @@ import TrainingCore
         }
         return try Data(contentsOf: url)
     }
-    private func bundledArchives() throws -> (ArchivedObject, [ArchivedObject]) {
-        let rules = try archiveData("ruleset-swift1", relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/ruleset-swift1.json")
+    private func bundledArchives(ruleset: Ruleset) throws -> (ArchivedObject, [ArchivedObject]) {
+        let name: String
+        switch ruleset.version {
+        case "general-fitness-swift1": name = "ruleset-swift1"
+        case "general-fitness-exact-v1": name = "ruleset-exact-v1"
+        default: throw EngineError(code: "unsupported_version", field: "rules")
+        }
+        let rules = try archiveData(name, relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/\(name).json")
         let profile = try archiveData("fixed-exercise-profile", relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/fixed-exercise-profile.json")
         let source = try archiveData("2026-10-05-fixed-exercise-profile", relative: "docs/specs/2026-10-05-fixed-exercise-profile.json")
         func object(_ bytes: Data, key: String) throws -> ArchivedObject {
@@ -156,9 +162,9 @@ import TrainingCore
     }
     func initialize(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot, datasetID requestedDatasetID: UUID? = nil) throws -> StoreSnapshot {
         let programUUID: UUID = try transaction {
-            guard rules.version == "general-fitness-swift1", config.profileHash != nil, let programUUID = UUID(uuidString: config.programID) else { throw EngineError(code: "unsupported_version", field: "initialize") }
+            guard ["general-fitness-swift1", "general-fitness-exact-v1"].contains(rules.version), config.profileHash != nil, let programUUID = UUID(uuidString: config.programID) else { throw EngineError(code: "unsupported_version", field: "initialize") }
             guard config.programID == programUUID.uuidString.lowercased() else { throw BackupService.invalid("program_uuid_spelling") }
-            let archives = try bundledArchives()
+            let archives = try bundledArchives(ruleset: rules)
             guard archives.0.id == rules.hash else { throw BackupService.invalid("initial_rules") }
             let initialized = try initializeProgram(config: config, rules: rules, firstWorkout: firstWorkout)
             let existing = try modelContext.fetch(FetchDescriptor<ProgramHeadRecord>())
@@ -232,6 +238,44 @@ import TrainingCore
         if document.formatVersion == 1 { health = .ready }
         else { health = try recoveryHealth(programID: id, batch: RecoveryVerifier().verify(BackupService.recoveryRecords(document))) }
         return StoreSnapshot(state: head.returnedState, draft: draft, history: history, decisions: history.flatMap(\.decisions), health: health)
+    }
+    /// Exact archive lookup; original drafts and repair commands use their own policy.
+    func rules(for state: ProgramState) throws -> Ruleset {
+        try requireOpen()
+        let rules = try rule(state.rulesetHash)
+        guard state.rulesetVersion == rules.version else { throw BackupService.invalid("state_rules") }
+        _ = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+        return rules
+    }
+    func activateExactPolicy(programID: UUID, expectedRevision: Int, expectedHeadHash: String) throws -> StoreSnapshot {
+        try transaction {
+            let current = try snapshot(programID: programID)
+            guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
+            let parent = try projectedEnvelope(current.state.config.programID)
+            guard current.state.revision == expectedRevision else { throw EngineError(code: "stale_revision", field: "expectedRevision") }
+            guard parent.envelopeHash == expectedHeadHash else { throw EngineError(code: "stale_head", field: "expectedHeadHash") }
+            guard current.draft == nil else { throw EngineError(code: "policy_activation_draft_locked", field: "draft") }
+            let source = try rules(for: current.state)
+            let destination = try RulesetCatalog.exactV1()
+            if current.state.schemaVersion == 3, source == destination { return }
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(rawBackup()))
+            let prefix = try RecoveryVerifier.ancestors(parent.envelopeHash, envelopes: proof.envelopes).compactMap { proof.envelopes[$0] }
+            let evidence = try policyActivationEvidenceEventIDs(state: current.state, history: prefix)
+            let pending = current.state.activePrescription
+            let command = JournalCommand.activatePolicy(sourceRulesetHash: source.hash, destinationRulesetHash: destination.hash,
+                normalEvidenceEventIDs: evidence, next: WorkoutSlot(date: pending.date, slotID: pending.slotID))
+            let result = try BackupService.transition(state: current.state, command: command, rules: destination, legacyHistory: prefix)
+            if try !modelContext.fetch(FetchDescriptor<RuleArchiveRecord>()).contains(where: { $0.contentHash == destination.hash }) {
+                let archives = try bundledArchives(ruleset: destination)
+                guard archives.0.id == destination.hash else { throw BackupService.invalid("activation_archive") }
+                try putArchives(rules: [archives.0], profiles: [])
+            }
+            let accepted = try envelope(programID: current.state.config.programID, eventID: UUID().uuidString.lowercased(),
+                datasetID: parent.datasetID, command: command, parent: parent, result: result, rules: destination)
+            try persist(accepted)
+            _ = try exportBackup()
+        }
+        return try snapshot(programID: programID)
     }
     func finalize(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
         let result: AdvanceResult = try transaction {
@@ -608,7 +652,9 @@ extension TrainingRepository {
     private func recoveryHealth(programID: String, batch: VerifiedCloudBatch) throws -> StoreHealth {
         let state = try recoveryState()
         let resolved = Set(state.resolvedQuarantineKeys)
-        if batch.heads[programID, default: []].count > 1 { return .integrityConflict }
+        let heads = batch.heads[programID, default: []]
+        if try RecoveryVerifier.hasMixedPolicyConflict(programID: programID, envelopes: batch.envelopes, heads: heads) { return .mixedPolicyConflict }
+        if heads.count > 1 { return .integrityConflict }
         let programProblems = batch.quarantined.filter { $0.programID == programID }
         let problems = programProblems.filter { !resolved.contains(BackupService.hash($0.record.bytes)) }
         if programProblems.contains(where: { $0.reason == "unsupported_version" }) { return .unsupportedVersion }
@@ -725,6 +771,7 @@ extension TrainingRepository {
             let unresolved = proof.quarantined.filter { !state.resolvedQuarantineKeys.contains(BackupService.hash($0.record.bytes)) } + rejected
             let programHealth = try proof.heads.keys.map { try recoveryHealth(programID: $0, batch: proof) }
             let health: StoreHealth = programHealth.contains(.unsupportedVersion) ? .unsupportedVersion :
+                programHealth.contains(.mixedPolicyConflict) ? .mixedPolicyConflict :
                 programHealth.contains(.integrityConflict) || !unresolved.isEmpty ? .integrityConflict :
                 !proof.waiting.isEmpty || programHealth.contains(.incompleteRecovery) ? .incompleteRecovery : .ready
             let waitingKeys = Set(try proof.waiting.map { try $0.key })
@@ -784,12 +831,20 @@ extension TrainingRepository {
     private func importGraph(_ document: BackupDocument) throws -> ImportReceipt {
         let incoming = try BackupService.validate(document)
         let original = try rawBackup()
+        let representedRecords = try BackupService.recoveryRecords(original)
         let incomingRecords = try BackupService.recoveryRecords(document)
-        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(original) + incomingRecords)
+        let proof = try RecoveryVerifier().verify(representedRecords + incomingRecords)
         var state = try recoveryState()
         state.graphRequired = true
         var originals = try Dictionary(state.originals.map { (try $0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        for record in (original.journal.isEmpty && state.originals.isEmpty ? document.recovery!.originals : incomingRecords) { originals[try record.key] = record }
+        let represented = try Dictionary(representedRecords.map { (try $0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let importedOriginals = original.journal.isEmpty && state.originals.isEmpty ? document.recovery!.originals : incomingRecords
+        for record in importedOriginals {
+            let key = try record.key
+            // Native rows already represent these exact portable descriptors.
+            // Retain every differing payload or transport descriptor as an original.
+            if represented[key] != record { originals[key] = record }
+        }
         state.originals = originals.sorted { $0.key < $1.key }.map(\.value)
         state.resolvedQuarantineKeys = Array(Set(state.resolvedQuarantineKeys + (document.recovery?.resolvedQuarantineKeys ?? []))).sorted()
         try putArchives(rules: document.rules, profiles: document.profiles)

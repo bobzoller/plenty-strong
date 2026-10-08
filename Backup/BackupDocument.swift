@@ -21,7 +21,10 @@ struct ImportReceipt: Equatable, Sendable {
     var identical: Int
     var conflicted: Int
 }
-enum StoreHealth: String, Codable, Sendable { case ready, integrityConflict, unsupportedVersion, incompleteRecovery }
+enum StoreHealth: String, Codable, Sendable {
+    case ready, integrityConflict, unsupportedVersion, incompleteRecovery
+    case mixedPolicyConflict = "mixed_policy_conflict"
+}
 struct StoreSnapshot: Equatable, Sendable {
     var state: ProgramState
     var draft: WorkoutDraft?

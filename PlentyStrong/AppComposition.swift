@@ -278,8 +278,8 @@ import TrainingCore
                 try await requireSafeNewProgram(config, repository: repository)
                 let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
                 let first = try WorkoutScheduler.nextSlot(onOrAfter: today, config: config)
-                let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.fixedV1(), firstWorkout: first)
-                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations)
+                let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.exactV1(), firstWorkout: first)
+                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
                 #if DEBUG
                 if uiTesting, ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion"), let model = workout {
                     // Synthetic restored-draft regression fixture, created through the real writer.
@@ -289,10 +289,10 @@ import TrainingCore
                     draft.acknowledgedMovementIDs = draft.logs.map(\.movementID)
                     for i in draft.logs.indices { draft.logs[i].status = .completed }
                     draft.logs[0].actualLoad = model.movement(for: draft.displayed.exercises[0]).availableLoads[0]
-                    draft.logs[0].actualSets = [ActualSet(reps: 4)]
+                    draft.logs[0].actualSets = [ActualSet(reps: 4, setIndex: draft.planned.exercises[0].sets.first?.targetReps != nil ? 0 : nil)]
                     draft.logs[0].problem = .pain; draft.workingSetsStarted = true
                     try await repository.saveDraft(draft)
-                    workout = WorkoutViewModel(repository: repository, snapshot: try await repository.snapshot(programID: model.programID), timeZoneID: timeZoneID, now: now, operations: operations)
+                    workout = WorkoutViewModel(repository: repository, snapshot: try await repository.snapshot(programID: model.programID), timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
                 }
                 #endif
             }
@@ -345,7 +345,7 @@ extension AppComposition {
         if let model = workout, model.snapshot.state.config.programID == snapshot.state.config.programID {
             try model.adoptRecoverySnapshot(snapshot, operation: operation)
         } else {
-            workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations)
+            workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
             showingWorkout = false
         }
         try await workout?.refreshWorkingAdmission(operation: operation)
@@ -512,7 +512,7 @@ extension AppComposition {
             // Local adoption may have finished during the service await; never
             // replace its authoritative health with an older transport status.
             let selectedHealth = workout?.snapshot.health
-            if selectedHealth == .integrityConflict || recoveryPrograms.contains(where: { $0.health == .integrityConflict }) { cloudStatus.phase = .conflict }
+            if [.integrityConflict, .mixedPolicyConflict].contains(selectedHealth) || recoveryPrograms.contains(where: { [.integrityConflict, .mixedPolicyConflict].contains($0.health) }) { cloudStatus.phase = .conflict }
             else if stagedScope != nil || (selectedHealth != nil && selectedHealth != .ready) || recoveryPrograms.contains(where: { $0.health != .ready }) {
                 cloudStatus.phase = .incomplete
                 if stagedScope != nil { cloudStatus.retryReason = stagedReason }
@@ -564,7 +564,7 @@ extension AppComposition {
                 guard ticket == self.cloudGeneration, self.cloudEnabled, self.verifiedCloudScope == scope else { return }
                 self.cloudStatus = status
                 self.cloudStatus.retryReason = retryReason
-                if self.recoveryPrograms.contains(where: { $0.health == .integrityConflict }) { self.cloudStatus.phase = .conflict }
+                if self.recoveryPrograms.contains(where: { [.integrityConflict, .mixedPolicyConflict].contains($0.health) }) { self.cloudStatus.phase = .conflict }
                 else if self.recoveryPrograms.contains(where: { $0.health != .ready }) { self.cloudStatus.phase = .incomplete }
             } catch {
                 guard ticket == self.cloudGeneration, self.cloudEnabled else { return }
@@ -625,7 +625,7 @@ extension AppComposition {
             let config = try selectFixedProgram(goal: goal, programID: UUID())
             try await requireSafeNewProgram(config, repository: repository)
             let date = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
-            let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.fixedV1(), firstWorkout: WorkoutScheduler.nextSlot(onOrAfter: date, config: config), datasetID: UUID())
+            let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.exactV1(), firstWorkout: WorkoutScheduler.nextSlot(onOrAfter: date, config: config), datasetID: UUID())
             try await installSelectedSnapshot(snapshot, repository: repository, operation: operation)
             preferences.activeProgramID = config.programID; try savePreferences()
             try await refreshRecoveryPrograms()
@@ -670,7 +670,8 @@ extension AppComposition {
 /// changed, migrated, or assigned invented profile/variant identifiers here.
 enum AppTrainingCompatibility {
     static func supports(_ snapshot: StoreSnapshot) -> Bool {
-        guard snapshot.state.schemaVersion == 2, let rules = try? RulesetCatalog.fixedV1(),
+        guard [2,3].contains(snapshot.state.schemaVersion), let rules = try? RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash),
+              (try? ProgramPolicy.resolve(schemaVersion: snapshot.state.schemaVersion, rules: rules)) != nil,
               snapshot.state.rulesetHash == rules.hash,
               (try? validate(config: snapshot.state.config, rules: rules)) != nil else { return false }
         let bases = Set(snapshot.state.config.movements.map(\.id))

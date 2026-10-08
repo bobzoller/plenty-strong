@@ -12,8 +12,17 @@ struct ConflictResolutionView: View {
     @State private var confirmSelection = false
     @State private var message: String?
     private var heads: [String] { proof?.heads[programID] ?? [] }
+    private var mixedPolicyConflict: Bool {
+        guard let proof else { return false }
+        return (try? RecoveryVerifier.hasMixedPolicyConflict(programID: programID, envelopes: proof.envelopes, heads: heads)) != false
+    }
     var body: some View {
         List {
+            if mixedPolicyConflict {
+                Section { Text("Workouts use different prescription versions. Your records are preserved; resolve this version conflict before continuing.").accessibilityIdentifier("sync.mixed-policy-conflict")
+                    NavigationLink("Export all preserved records") { BackupSettingsView(composition: composition) }
+                }
+            }
             Section("Compare before choosing") {
                 Text("All original actuals, decisions and rules stay stored. Choose one whole progression and configuration path. Pain and control restrictions from every verified branch survive; choosing a branch cannot clear a pause. All unpaused setups require a new baseline.").accessibilityIdentifier("sync.safety-union")
                 ForEach(heads, id: \.self) { hash in
@@ -21,7 +30,7 @@ struct ConflictResolutionView: View {
                         NavigationLink("Branch \(hash.prefix(8)) · \(envelope.returnedState.config.goal.title) · revision \(envelope.returnedState.revision)") {
                             BranchComparisonView(proof: proof!, head: hash)
                         }.accessibilityIdentifier("sync.branch-details.\(hash)")
-                        Button(selectedHead == hash ? "Selected path \(hash.prefix(8))" : "Choose path and configuration \(hash.prefix(8))") { selectedHead = hash; definitionChoices = [:] }.accessibilityIdentifier("sync.choose-branch.\(hash)")
+                        Button(selectedHead == hash ? "Selected path \(hash.prefix(8))" : "Choose path and configuration \(hash.prefix(8))") { selectedHead = hash; definitionChoices = [:] }.disabled(mixedPolicyConflict).accessibilityIdentifier("sync.choose-branch.\(hash)")
                     }
                 }
             }
@@ -48,7 +57,7 @@ struct ConflictResolutionView: View {
                 }
             }
             Button("Confirm selected progression and configuration") { confirmSelection = true }
-                .disabled(selectedHead == nil || reviewed != requiredChecksums || composition.busy || composition.workout?.snapshot.draft != nil || proof?.quarantined.contains(where: { $0.programID == programID && $0.reason == "unsupported_version" }) == true)
+                .disabled(mixedPolicyConflict || selectedHead == nil || reviewed != requiredChecksums || composition.busy || composition.workout?.snapshot.draft != nil || proof?.quarantined.contains(where: { $0.programID == programID && $0.reason == "unsupported_version" }) == true)
                 .accessibilityIdentifier("sync.resolve-conflict")
             if let message { Text(message).accessibilityIdentifier("sync.resolution-result") }
         }.navigationTitle("Recovery branch review")

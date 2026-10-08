@@ -72,20 +72,20 @@ struct RecoveryVerifier {
                     guard record.recordID == (try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: id)) else { throw BackupService.invalid("archive_identity") }
                     if fields?["archiveKind"] != nil { _ = try CausalOriginalArchive.validate(record) }
                     let archived = ArchivedObject(id: id, bytes: record.bytes, checksum: BackupService.hash(record.bytes))
-                    if ruleArchive { rules[id] = archived } else { profiles[id] = archived }
+                    if ruleArchive { _ = try BackupService.rules([archived], hash: id); rules[id] = archived } else { profiles[id] = archived }
                 } else {
                     guard record.recordType == CloudRecordKind.journal.recordType,
                           let identity = fields?["eventId"] as? String,
                           record.recordID == (try CloudRecordCodec.recordName(kind: .journal, datasetID: dataset, identity: identity)),
                           fields?["datasetId"] as? String == dataset.uuidString.lowercased() else { throw BackupService.invalid("journal_identity") }
-                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2].contains(schema) else {
+                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2, 3].contains(schema) else {
                         throw EngineError(code: "unsupported_version", field: "schemaVersion")
                     }
                     // Unknown discriminators are version boundaries. Missing or
                     // type-invalid fields of a known format are corrupt originals.
                     let command = fields?["command"] as? [String: Any]
                     if let kind = command?["kind"] as? String {
-                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict"].contains(kind) else {
+                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy"].contains(kind) else {
                             throw EngineError(code: "unsupported_version", field: "command.kind")
                         }
                         if let change = command?["change"] as? [String: Any], let changeKind = change["kind"] as? String {
@@ -104,7 +104,7 @@ struct RecoveryVerifier {
                     candidates[envelope.envelopeHash] = (envelope, record)
                 }
             } catch {
-                let reason = (error as? EngineError)?.code == "unsupported_version" ? "unsupported_version" : "invalid_record"
+                let reason = (error as? EngineError).map { ["unsupported_version", "unknown_ruleset"].contains($0.code) } == true ? "unsupported_version" : "invalid_record"
                 try reject(record, reason: reason, program: program)
             }
         }
@@ -131,13 +131,14 @@ struct RecoveryVerifier {
                     guard Set(archiveHashes).count == archiveHashes.count, !archiveHashes.isEmpty, archiveHashes.allSatisfy({ profiles[$0] != nil }),
                           selection.reviewedQuarantineChecksums.allSatisfy({ checksum in originals.contains { BackupService.hash($0.bytes) == checksum } }) else { continue }
                 }
+                if case let .activatePolicy(source, _, _, _) = envelope.command, rules[source] == nil { continue }
                 let parents = Self.dependencies(envelope)
                 guard parents.allSatisfy({ verified[$0] != nil }) else { continue }
                 do {
                     let rule = try BackupService.rules([archive], hash: envelope.rulesetHash)
                     let config = envelope.returnedState.config
                     guard envelope.rulesetVersion == rule.version else { throw BackupService.invalid("rules_version") }
-                    if envelope.schemaVersion == 2 {
+                    if [2,3].contains(envelope.schemaVersion) {
                         guard envelope.profileID == config.profileID, envelope.profileHash == config.profileHash,
                               envelope.sourceProfileID == config.sourceProfileID, envelope.sourceProfileHash == config.sourceProfileHash,
                               rule.profileID == envelope.profileID, rule.profileHash == envelope.profileHash else { throw BackupService.invalid("archive_references") }
@@ -176,7 +177,14 @@ struct RecoveryVerifier {
                                   }) else { throw BackupService.invalid("resolution_original_sources") }
                             let result = try resolveCloudBranches(Self.resolutionInput(envelopes: verified, heads: heads, selection: selection, next: next, rules: rule))
                             replayed = ConfigurationResult(state: result.state, workout: result.workout, decisions: result.decisions)
-                        } else { replayed = try BackupService.transition(state: parent.returnedState, command: envelope.command, rules: rule) }
+                        } else {
+                            var prefix: [JournalEnvelope] = []
+                            if case let .activatePolicy(source, destination, _, _) = envelope.command {
+                                guard source == parent.rulesetHash, destination == envelope.rulesetHash else { throw BackupService.invalid("activation_rules") }
+                                prefix = try Self.ancestors(parentHash, envelopes: verified).compactMap { verified[$0] }
+                            }
+                            replayed = try BackupService.transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: prefix)
+                        }
                         guard replayed.state.revision == parent.returnedState.revision + 1 else { throw BackupService.invalid("revision") }
                     }
                     guard try BackupService.bytes(replayed.state) == BackupService.bytes(envelope.returnedState),
@@ -233,9 +241,23 @@ struct RecoveryVerifier {
         }
         return seen
     }
+    static func hasMixedPolicyConflict(programID: String, envelopes: [String: JournalEnvelope], heads: [String]) throws -> Bool {
+        guard heads.count > 1 else { return false }
+        let states = heads.compactMap { envelopes[$0]?.returnedState }
+        guard states.count == heads.count, states.allSatisfy({ $0.config.programID == programID }) else { throw BackupService.invalid("conflict_heads") }
+        if Set(states.map { "\($0.schemaVersion):\($0.rulesetHash)" }).count > 1 { return true }
+        let paths = try heads.map { try ancestors($0, envelopes: envelopes) }
+        let common = paths.dropFirst().reduce(paths[0]) { $0.intersection($1) }
+        guard let ancestor = common.compactMap({ envelopes[$0] }).sorted(by: {
+            ($0.returnedState.revision, $0.envelopeHash) > ($1.returnedState.revision, $1.envelopeHash)
+        }).first else { return true }
+        return ancestor.returnedState.schemaVersion != states[0].schemaVersion || ancestor.rulesetHash != states[0].rulesetHash
+    }
     static func resolutionInput(envelopes: [String: JournalEnvelope], heads: [String], selection: BranchSelection,
                                 next: WorkoutSlot, rules: Ruleset) throws -> BranchResolutionInput {
         guard !heads.isEmpty, (heads.count >= 2 || !selection.reviewedQuarantineChecksums.isEmpty), Set(heads).count == heads.count else { throw BackupService.invalid("resolution_heads") }
+        guard let program = envelopes[heads[0]]?.programID,
+              try !hasMixedPolicyConflict(programID: program, envelopes: envelopes, heads: heads) else { throw EngineError(code: "mixed_policy_conflict", field: "branches") }
         let paths = try heads.map { try ancestors($0, envelopes: envelopes) }
         let common = paths.dropFirst().reduce(paths[0]) { $0.intersection($1) }
         guard let ancestor = common.compactMap({ envelopes[$0] }).sorted(by: {

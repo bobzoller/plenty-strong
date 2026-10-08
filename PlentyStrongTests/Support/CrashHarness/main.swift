@@ -37,11 +37,16 @@ func run() async throws {
         let next = WorkoutSlot(date: try LocalDate(iso8601: "2026-10-06"), slotID: config.weeklySlots[1].id)
         var draftLogs = logs
         if mode == "setup-variant" { for i in draftLogs.indices { draftLogs[i].actualSets = []; draftLogs[i].finalEffort = .unknown } }
-        try await repository.saveDraft(WorkoutDraft(id: eventID, programID: config.programID, expectedRevision: 0,
-            planned: p, displayed: p, date: p.date, timeZoneID: "Pacific/Honolulu", sessionMode: .normal,
-            logs: draftLogs, workingSetsStarted: mode != "setup-variant"))
+        if mode != "setup-activation" {
+            try await repository.saveDraft(WorkoutDraft(id: eventID, programID: config.programID, expectedRevision: 0,
+                planned: p, displayed: p, date: p.date, timeZoneID: "Pacific/Honolulu", sessionMode: .normal,
+                logs: draftLogs, workingSetsStarted: mode != "setup-variant"))
+        }
+        if mode == "setup-activation" {
+            try BackupService.bytes(await repository.exportBackup()).write(to: directory.appendingPathComponent("original-backup.json"))
+        }
         try BackupService.bytes(CrashInput(programID: id, event: event, next: next, base: p.exercises[0].baseMovementID!)).write(to: inputURL)
-        print("SETUP disk revision=0 journal=1 head=1 draft=1 outbox=1")
+        print("SETUP disk revision=0 journal/head/draft/outbox/quarantine=\(try await repository.counts())")
     } else {
         let input = try JSONDecoder().decode(CrashInput.self, from: Data(contentsOf: inputURL))
         if mode.hasPrefix("commit") {
@@ -55,19 +60,37 @@ func run() async throws {
                     while true { pause() }
                 }
             }
-            if mode == "commit-variant" {
+            if mode == "commit-activation" {
+                let document = try await repository.exportBackup()
+                _ = try await repository.activateExactPolicy(programID: input.programID, expectedRevision: 0, expectedHeadHash: document.heads[input.programID.uuidString.lowercased()]!)
+            } else if mode == "commit-variant" {
                 _ = try await repository.applyVariantChange(programID: input.programID, expectedRevision: 0,
                     change: .create(baseMovementID: input.base, variantID: "crash-variant", modifications: "Grip"),
                     next: input.next, invalidateEmptyDraft: true)
             } else {
                 _ = try await repository.finalize(programID: input.programID, expectedRevision: 0, event: input.event, next: input.next)
             }
-        } else if mode == "verify" || mode == "verify-variant" {
+        } else if mode == "verify" || mode == "verify-variant" || mode == "verify-activation" {
             let expected = Int(args[4])!
             let snapshot = try await repository.snapshot(programID: input.programID)
             let counts = try await repository.counts()
-            let expectedCounts = expected == 0 ? [1,1,1,1,0] : [2,1,0,2,0]
+            let expectedCounts = expected == 0 ? [1,1,mode == "verify-activation" ? 0 : 1,1,0] : [2,1,0,2,0]
             guard snapshot.state.revision == expected, counts == expectedCounts else { throw BackupService.invalid("crash_atomicity") }
+            if mode == "verify-activation" {
+                let document = try await repository.exportBackup()
+                let original = try JSONDecoder().decode(BackupDocument.self, from: Data(contentsOf: directory.appendingPathComponent("original-backup.json")))
+                guard snapshot.state.schemaVersion == (expected == 0 ? 2 : 3),
+                      document.journal.first == original.journal.first,
+                      original.rules.allSatisfy({ document.rules.contains($0) }),
+                      document.rules.count == (expected == 0 ? 1 : 2),
+                      document.heads[input.programID.uuidString.lowercased()] == snapshot.history.last?.envelopeHash else { throw BackupService.invalid("activation_crash_atomicity") }
+                if expected == 0 { guard document == original else { throw BackupService.invalid("activation_partial_commit") } }
+                else {
+                    guard case .activatePolicy = snapshot.history.last!.command,
+                          snapshot.history.last!.inputStateHash == (try BackupService.hash(snapshot.history.first!.returnedState)),
+                          snapshot.state.activePrescription.exercises.allSatisfy({ $0.sets.allSatisfy { $0.targetReps == 8 } }) else { throw BackupService.invalid("activation_chain") }
+                }
+            }
             if mode == "verify-variant" {
                 guard (snapshot.state.config.activeVariantIDs![input.base] == "crash-variant") == (expected == 1),
                       (snapshot.state.exercises["crash-variant"] != nil) == (expected == 1) else { throw BackupService.invalid("variant_crash_atomicity") }

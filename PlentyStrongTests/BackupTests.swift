@@ -131,3 +131,55 @@ extension BackupTests {
         #expect(try await destination.exportBackup() == document)
     }
 }
+
+extension BackupTests {
+    @Test func mixedArchivesReplayBothFormats() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        _ = try await s.repository.finalize(programID: s.programID, expectedRevision: 0, event: s.firstEvent, next: s.next)
+        let prefix = try await s.repository.exportBackup()
+        let activated = try await activateSynthetic(s.repository, id: s.programID)
+        _ = try await s.repository.finalize(programID: s.programID, expectedRevision: activated.state.revision,
+            event: exactActivationEvent(state: activated.state), next: WorkoutSlot(date: try LocalDate(iso8601: "2026-10-08"), slotID: "THU"))
+        let v1 = try await s.repository.exportBackup()
+        #expect(v1.formatVersion == 1)
+        #expect(Array(v1.journal.prefix(prefix.journal.count)) == prefix.journal)
+        #expect(prefix.rules.allSatisfy { v1.rules.contains($0) })
+        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(v1))
+        var v2 = v1; v2.formatVersion = 2
+        v2.recovery = BackupService.graphManifest(batch, originals: [], quarantines: [], resolved: [])
+        for document in [v1,v2] {
+            let destination = try empty()
+            _ = try await destination.importBackup(document)
+            let first = try await destination.exportBackup()
+            _ = try await destination.importBackup(document)
+            #expect(try await destination.exportBackup() == first)
+            #expect(try await destination.snapshot(programID: s.programID).state.schemaVersion == 3)
+            var missing = document; missing.rules.removeAll { $0.id == RulesetCatalog.fixedRulesetHash }
+            await #expect(throws: (any Error).self) { try await destination.importBackup(missing) }
+            #expect(try await destination.exportBackup() == first)
+            var future = document
+            var rule = try JSONDecoder().decode(Ruleset.self, from: future.rules.first { $0.id == RulesetCatalog.exactRulesetHash }!.bytes)
+            rule.version = "general-fitness-exact-future"
+            guard case .object(var fields) = try JSONDecoder().decode(CanonicalValue.self, from: JSONEncoder().encode(rule)) else { throw BackupService.invalid("fixture") }
+            fields.removeValue(forKey: "hash"); rule.hash = try CanonicalJSON.sha256(.object(fields))
+            future.rules.append(try BackupService.object(rule, id: rule.hash))
+            await #expect(throws: (any Error).self) { try await destination.importBackup(future) }
+            #expect(try await destination.exportBackup() == first)
+        }
+        // A fresh exact root is admitted directly and portable in both formats.
+        let destination = try empty()
+        let id = UUID(), config = try selectFixedProgram(goal: .size, programID: id)
+        _ = try await destination.initialize(config: config, rules: RulesetCatalog.exactV1(), firstWorkout: WorkoutSlot(date: try LocalDate(iso8601: "2026-10-11"), slotID: "SUN"))
+        let direct = try await destination.exportBackup()
+        #expect(try BackupService.validate(direct).heads[config.programID]?.schemaVersion == 3)
+        var directGraph = direct; directGraph.formatVersion = 2
+        directGraph.recovery = BackupService.graphManifest(try RecoveryVerifier().verify(BackupService.recoveryRecords(direct)), originals: [], quarantines: [], resolved: [])
+        #expect(try BackupService.validate(directGraph).heads[config.programID]?.schemaVersion == 3)
+    }
+    @Test func oldClientStyleAdmissionRejectsSchema3() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        let exact = try await activateSynthetic(s.repository, id: s.programID)
+        #expect(throws: (any Error).self) { try ProgramPolicy.resolve(schemaVersion: exact.state.schemaVersion, rules: RulesetCatalog.fixedV1()) }
+        #expect(exact.history.last!.schemaVersion == 3)
+    }
+}

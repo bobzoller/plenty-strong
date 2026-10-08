@@ -442,3 +442,68 @@ extension CloudConflictTests {
         #expect(try await restored.snapshot(programID: a.programID) == resolved)
     }
 }
+
+extension CloudConflictTests {
+    @Test func mixedPolicyForkPreservesOriginalsAndBlocksWork() async throws {
+        for independentActivations in [false,true] {
+            let s = try await RepositoryTestHarness.make(goal: .size)
+            let root = try await s.repository.exportBackup()
+            let (other, _) = try recoveryEmpty(); _ = try await other.importBackup(root)
+            _ = try await activateSynthetic(s.repository, id: s.programID)
+            if independentActivations { _ = try await activateSynthetic(other, id: s.programID) }
+            else {
+                var pain = s.firstEvent; pain.exercises[0].problem = .pain; pain.exercises[0].status = .stopped
+                _ = try await other.finalize(programID: s.programID, expectedRevision: 0, event: pain, next: s.next)
+            }
+            let before = try await s.repository.exportBackup(), otherBefore = try await other.exportBackup()
+            _ = try await CloudIngestor(repository: s.repository).ingest(recoveryRecords(other), scope: recoveryScope)
+            let conflicted = try await s.repository.snapshot(programID: s.programID)
+            #expect(conflicted.health.rawValue == "mixed_policy_conflict")
+            let exported = try await s.repository.exportBackup()
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(exported))
+            #expect(proof.heads[conflicted.state.config.programID]!.count == 2)
+            for item in before.journal + otherBefore.journal {
+                #expect(proof.originals.contains { $0.bytes == item.bytes })
+            }
+            await #expect(throws: (any Error).self) { try await activateSynthetic(s.repository, id: s.programID) }
+            let event = exactActivationEvent(state: conflicted.state)
+            let receipt = try await s.repository.finalize(programID: s.programID, expectedRevision: conflicted.state.revision, event: event, next: s.next)
+            if case let .rejected(_, errors) = receipt.result { #expect(errors.contains("store_mixed_policy_conflict")) }
+            else { Issue.record("Mixed-policy training admitted") }
+            let heads = proof.heads[conflicted.state.config.programID]!
+            await #expect(throws: (any Error).self) {
+                try await s.repository.resolveConflict(programID: s.programID, expectedHeadHashes: heads,
+                    selection: BranchSelection(selectedHeadHash: heads[0]), next: s.next)
+            }
+            #expect(try await s.repository.exportBackup() == exported)
+            let (clone, _) = try recoveryEmpty(); _ = try await clone.importBackup(exported)
+            #expect(try await clone.snapshot(programID: s.programID).health == .mixedPolicyConflict)
+        }
+    }
+}
+
+extension CloudConflictTests {
+    @Test func schema3SamePolicyConflictKeepsExplicitSelectionAndUnionedPause() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        let activated = try await activateSynthetic(s.repository, id: s.programID)
+        let shared = try await s.repository.exportBackup()
+        let (other, _) = try recoveryEmpty(); _ = try await other.importBackup(shared)
+        let selected = exactActivationEvent(state: activated.state)
+        var pain = exactActivationEvent(state: activated.state)
+        pain.exercises[0].problem = .pain; pain.exercises[0].status = .stopped
+        _ = try await s.repository.finalize(programID: s.programID, expectedRevision: 1, event: selected, next: s.next)
+        _ = try await other.finalize(programID: s.programID, expectedRevision: 1, event: pain, next: s.next)
+        let selectedHead = try await s.repository.exportBackup().heads[activated.state.config.programID]!
+        _ = try await CloudIngestor(repository: s.repository).ingest(recoveryRecords(other), scope: recoveryScope)
+        #expect(try await s.repository.snapshot(programID: s.programID).health == .integrityConflict)
+        let document = try await s.repository.exportBackup()
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let result = try await s.repository.resolveConflict(programID: s.programID, expectedHeadHashes: proof.heads[activated.state.config.programID]!,
+            selection: BranchSelection(selectedHeadHash: selectedHead), next: s.next)
+        #expect(result.health == .ready && result.state.schemaVersion == 3)
+        #expect(result.state.baseSafety![pain.exercises[0].baseMovementID!]!.paused)
+        #expect(result.history.contains { $0.eventID == selected.eventID } && result.history.contains { $0.eventID == pain.eventID })
+        #expect(result.state.exercises.values.allSatisfy { $0.mode == .paused || $0.mode == .baseline })
+        #expect(try BackupService.validate(await s.repository.exportBackup()).heads[result.state.config.programID]?.schemaVersion == 3)
+    }
+}

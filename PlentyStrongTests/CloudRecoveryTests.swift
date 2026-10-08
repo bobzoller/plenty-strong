@@ -355,3 +355,33 @@ extension CloudRecoveryTests {
         #expect(try await clone.snapshot(programID: id) == resolved)
     }
 }
+
+extension CloudRecoveryTests {
+    @Test func exactUnknownAndMalformedCloudRecordsAreQuarantined() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        _ = try await activateSynthetic(s.repository, id: s.programID)
+        let original = try await s.repository.exportBackup()
+        let records = try await recoveryRecords(s.repository)
+        let activation = records.first { (try? JSONDecoder().decode(JournalEnvelope.self, from: $0.observation.payload).schemaVersion) == 3 }!.observation
+        var envelope = try JSONDecoder().decode(JournalEnvelope.self, from: activation.payload)
+        envelope.schemaVersion = 4; envelope.returnedState.schemaVersion = 4
+        envelope.envelopeHash = try BackupService.envelopeHash(envelope)
+        let future = try BackupService.bytes(envelope)
+        envelope = try JSONDecoder().decode(JournalEnvelope.self, from: activation.payload)
+        envelope.returnedState.exercises[envelope.returnedState.exercises.keys.sorted()[0]]!.exactRepState!.normalTargets = []
+        envelope.envelopeHash = try BackupService.envelopeHash(envelope)
+        let malformed = try BackupService.bytes(envelope)
+        func record(_ bytes: Data) -> DownloadedCloudRecord {
+            DownloadedCloudRecord(observation: CloudObservation(recordID: activation.recordID, zoneName: activation.zoneName,
+                recordType: activation.recordType, claimedChecksum: BackupService.hash(bytes), payload: bytes, systemFields: Data()))
+        }
+        _ = try await CloudIngestor(repository: s.repository).ingest([record(future), record(malformed)], scope: recoveryScope)
+        let retained = try await s.repository.exportBackup()
+        #expect(retained.journal == original.journal && retained.heads == original.heads)
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(retained))
+        #expect(proof.quarantined.contains { $0.record.bytes == future && $0.reason == "unsupported_version" })
+        #expect(proof.quarantined.contains { $0.record.bytes == malformed && $0.reason == "replay_failed" })
+        #expect(proof.envelopes.count == original.journal.count)
+        #expect(try await s.repository.snapshot(programID: s.programID).health == .unsupportedVersion)
+    }
+}

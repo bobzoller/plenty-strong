@@ -33,8 +33,11 @@ enum BackupService {
     static func rules(_ archives: [ArchivedObject], hash: String) throws -> Ruleset {
         guard let archive = archives.first(where: { $0.id == hash }) else { throw invalid("missing_rules") }
         let rule = try JSONDecoder().decode(Ruleset.self, from: archive.bytes)
+        guard ["general-fitness-swift1", "general-fitness-v0.2", "general-fitness-exact-v1"].contains(rule.version) else { throw EngineError(code: "unsupported_version", field: "rules") }
         try rule.validateIntegrity()
-        guard ["general-fitness-swift1", "general-fitness-v0.2"].contains(rule.version), rule.hash == hash else { throw EngineError(code: "unsupported_version", field: "rules") }
+        guard rule.hash == hash else { throw invalid("rules_hash") }
+        _ = try RulesetCatalog.resolve(version: rule.version, hash: rule.hash)
+        guard try archiveHash(archive.bytes, key: "hash") == hash else { throw invalid("rules_hash") }
         return rule
     }
     struct Replay {
@@ -61,7 +64,7 @@ enum BackupService {
         var histories: [String: [JournalEnvelope]] = [:]
         var heads: [String: JournalEnvelope] = [:]
         for envelope in envelopes {
-            guard envelope.schemaVersion == 2, envelope.returnedState.schemaVersion == 2 else {
+            guard [2, 3].contains(envelope.schemaVersion), envelope.returnedState.schemaVersion == envelope.schemaVersion else {
                 throw EngineError(code: "unsupported_version", field: "schemaVersion")
             }
             guard envelope.datasetID == document.datasetID,
@@ -87,7 +90,11 @@ enum BackupService {
                 guard let parent, envelope.parentEnvelopeHash == parent.envelopeHash,
                       envelope.inputRevision == parent.returnedState.revision,
                       envelope.inputStateHash == (try hash(parent.returnedState)) else { throw invalid("parent") }
-                replayed = try transition(state: parent.returnedState, command: envelope.command, rules: rule)
+                if case let .activatePolicy(source, destination, _, _) = envelope.command {
+                    guard source == parent.rulesetHash, destination == envelope.rulesetHash else { throw invalid("activation_rules") }
+                    _ = try rules(document.rules, hash: source)
+                }
+                replayed = try transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: histories[envelope.programID] ?? [])
                 guard replayed.state.revision == parent.returnedState.revision + 1 else { throw invalid("revision") }
             }
             guard try bytes(replayed.state) == bytes(envelope.returnedState),
@@ -113,14 +120,20 @@ enum BackupService {
         if case let .workout(event, _) = command { return try hash(event) }
         return try hash(command)
     }
-    static func transition(state: ProgramState, command: JournalCommand, rules: Ruleset) throws -> ConfigurationResult {
+    static func transition(state: ProgramState, command: JournalCommand, rules: Ruleset, legacyHistory: [JournalEnvelope] = []) throws -> ConfigurationResult {
+        if case let .activatePolicy(source, destination, evidence, next) = command {
+            guard state.schemaVersion == 2, source == state.rulesetHash, destination == rules.hash,
+                  evidence == (try policyActivationEvidenceEventIDs(state: state, history: legacyHistory)) else { throw invalid("activation_evidence") }
+            let sourceRules = try RulesetCatalog.resolve(version: state.rulesetVersion, hash: source)
+            return try activateProgramPolicy(state: state, sourceRules: sourceRules, destinationRules: rules, legacyHistory: legacyHistory, nextWorkout: next)
+        }
+        _ = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+        guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else { throw invalid("command_rules") }
         switch command {
+        case .activatePolicy: throw invalid("activation")
         case .initialize: throw invalid("nonroot_initialize")
         case let .workout(event, next):
-            guard state.schemaVersion != 2 || event.exercises.allSatisfy({ log in
-                log.baseMovementID == state.config.variants?[log.movementID]?.baseMovementID &&
-                log.modificationsSnapshot != nil && log.modificationsSnapshot!.utf8.elementsEqual(state.config.variants?[log.movementID]?.modifications.utf8 ?? "".utf8)
-            }) else { throw invalid("raw_observation_snapshot") }
+            guard rawVariantSnapshotsMatch(state: state, event: event) else { throw invalid("raw_observation_snapshot") }
             switch advanceProgram(AdvanceInput(state: state, event: event, rules: rules, nextSlotID: next.slotID, nextWorkoutDate: next.date)) {
             case let .applied(state, workout, decisions): return ConfigurationResult(state: state, workout: workout, decisions: decisions)
             case let .rejected(_, errors): throw EngineError(code: errors.joined(separator: ","), field: "workout")
@@ -135,6 +148,12 @@ enum BackupService {
     }
     static func validateDraft(_ draft: WorkoutDraft, state: ProgramState, rules: Ruleset) throws {
         let displayed = try prepareWorkout(state: state, rules: rules, easierToday: draft.sessionMode == .easier)
+        if state.schemaVersion == 3 {
+            for log in draft.logs {
+                guard let row = displayed.exercises.first(where: { $0.movementID == log.movementID }) else { throw invalid("draft_log") }
+                try validateIndexedExactLog(log, prescription: row)
+            }
+        }
         let acknowledged = draft.acknowledgedMovementIDs ?? []
         guard Set(acknowledged).count == acknowledged.count,
               Set(acknowledged).isSubset(of: Set(displayed.exercises.map(\.movementID))),
@@ -187,7 +206,10 @@ extension BackupService {
     static func validateGraph(_ document: BackupDocument) throws -> Replay {
         guard let graph = document.recovery, graph.version == 1 else { throw invalid("graph_version") }
         try [document.journal, document.rules, document.profiles, document.drafts].forEach(validateObjects)
-        for archive in document.rules { guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") } }
+        for archive in document.rules {
+            guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") }
+            _ = try rules([archive], hash: archive.id)
+        }
         for archive in document.profiles { guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") } }
         guard Set(graph.quarantines.map(\.id)).count == graph.quarantines.count,
               graph.quarantines.allSatisfy({ hash($0.bytes) == $0.id }) else { throw invalid("portable_quarantine") }
