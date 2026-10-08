@@ -78,7 +78,8 @@ struct WorkoutDetailView: View {
                                     Text(MovementPrescriptionSummary.goal(nextRow, policy: savedPolicy, repCounting: envelope.returnedState.config.movements.first { $0.id == log.baseMovementID }?.repCounting ?? .total)).accessibilityIdentifier(index == 0 ? "history.next-goal" : "history.next-goal.\(log.movementID)")
                                 } else { Text("This setup was not in the next issued workout.") }
                                 if let retained = target.exactRepState?.normalTargets {
-                                    Text("Retained normal goals when saved: \(retained.map(String.init).joined(separator: " / ")) reps").accessibilityIdentifier(index == 0 ? "history.retained-goal" : "history.retained-goal.\(log.movementID)")
+                                    let counting = envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.repCounting ?? .total
+                                    Text("Retained normal goals when saved: \(retained.map(String.init).joined(separator: " / ")) reps\(counting == .perSide ? " per side" : "")").accessibilityIdentifier(index == 0 ? "history.retained-goal" : "history.retained-goal.\(log.movementID)")
                                 }
                             } else if savedPolicy != nil {
                                 Text(target.mode == .paused ? "Paused — no working sets" : "Up to \(target.repCeiling) good reps")

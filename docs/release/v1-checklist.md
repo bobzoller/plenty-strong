@@ -1,6 +1,18 @@
 # Plenty Strong v1 candidate checklist
 
-## Exact-rep branch gates · October 8, 2026
+## Current review fix · build 5 · October 8, 2026
+
+Retained normal goals now include “per side” using the saved movement counting metadata. The existing per-side native regression checks the literal qualified label and ordinary “reps” label while preserving raw left 7 / right unrecorded through Finish and History. Its intentional RED failed the missing qualifier; focused GREEN passed.
+
+Fresh covering evidence: all five complete detail-consumer UI classes passed 28/0/0 under default diagnostics (Exact 7, History 9, Offline 4, Tip Jar 3, Cloud Recovery 5; native exit 0). Diagnostic collection itself timed out after 600 seconds, and seven invalid-frame warnings remain unresolved. Fresh `make check-current build-app` and the distinct unsigned archive/audit passed. Refreshed actual `make verify` failed with exit 2 because the required iPhone 16 / iOS 18 destination has zero matches.
+
+Previous-source evidence at `2d2a51d3efb123452832db00f2281398735bc81a` remains explicitly separate: 13 unaffected UI cases (Workout 11, Movement Setup 1, Shell 1) were not rerun. Core/model/fixture/tooling and six macOS crash-proof dependencies are unchanged and retain dependency-bound prior evidence; old app-host binary equality does not bind this new view or executable. The original full `make verify-current` remains FAILED 2/native 65. This is an assembled component matrix, not a new full Make or 41-case UI pass.
+
+Frozen runtime manifest SHA256 `e904e32efed8b4c5671bf5b8a2f03b6d86f628c58652eeef58c74a261f98628c` binds 154 inputs (151 unchanged); source archive SHA256 `6cb704ba63e0704c5380c4ad538986775f93bf5bbc9dacb1599a87a645c28b9e`. Release-document updates followed verification and are excluded from that runtime packet. Fresh artifact `DerivedData/Task6FixRound1UnsignedArchive/PlentyStrong-0.1.0-5-Unsigned.xcarchive`: actual 0.1.0(5), minimum 18.0, UUID `16EA4BF3-0907-3EA3-BF81-3942EE252DB5`, binary SHA256 `0f3d1f192f70b997550450455c988885427ca12856ff0b7d4d0d109fdc90efc3`, inventory SHA256 `3156c1413c3e8a23e8c353bc8009b16187ac6f5131f17c884de0e77a5ea182fb`. Binary/dSYM UUIDs and packaged resources match. Codesign checks return 1 because the artifact is unsigned; no embedded profile/signature directory. Build 4 evidence and archive remain preserved below.
+
+Synthetic native screenshots show the complete retained per-side label and original raw sides; largest-text dark/Reduce Motion entry and both stop labels remain visible with the keyboard. Viewport limits, warning attribution, and human/minimum/device/cloud/signing/distribution gates remain open. No signing, installation, provisioning, upload, push, merge or publication occurred.
+
+## Historical exact-rep build 4 gates · October 8, 2026
 
 This branch introduces schema 3 / `general-fitness-exact-v1`. The historical candidate phases below remain historical evidence; their counts and artifacts are not verification of this amended source. Current Task 6 source/commands/native terminal results, immutable archive hashes and synthetic screenshots are retained in its local report.
 

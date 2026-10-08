@@ -1,6 +1,12 @@
 # TestFlight candidate notes
 
-## Exact-rep branch additions · October 8, 2026
+## Current local review fix · 0.1.0(5)
+
+Retained normal per-side history goals now preserve their saved counting qualifier. Fresh five-class UI coverage passed 28/0/0/native 0; previous-source Workout/Movement Setup/Shell 13 cases and unchanged lower dependencies remain separately attributed, not a new full 41-case or Make pass. Fresh current preflight, unsigned Release build and distinct build 5 archive/audit passed; actual minimum `make verify` failed 2 because iOS 18 is absent. Seven frame warnings remain unresolved and default diagnostics collection timed out 600 seconds despite test success.
+
+The build 5 binary/dSYM UUID is `16EA4BF3-0907-3EA3-BF81-3942EE252DB5`; binary SHA256 `0f3d1f192f70b997550450455c988885427ca12856ff0b7d4d0d109fdc90efc3`. Frozen runtime/source/archive inventory hashes, dependency limits and preserved build 4 evidence are in `v1-checklist.md` and the local Task 6 fix report. Old app-host equality is not evidence for this new executable. No installation, signing, upload or distribution occurred; all human/device/service/minimum gates remain independent.
+
+## Historical exact-rep build 4 additions · October 8, 2026
 
 These notes describe a local implementation, not an uploaded or distributable build. Revalidate the final source/artifact and all gates in `v1-checklist.md` before any separately approved phone replacement, signing or TestFlight action.
 
