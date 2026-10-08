@@ -68,7 +68,8 @@ public func validate(config: ProgramConfig, rules: Ruleset) throws {
             }
         }
     }
-    guard (rules.version == "general-fitness-swift1") == (config.coveragePolicy == "fixed_profile") else { try reject("rules_profile_mismatch", "rules.version") }
+    let policy = try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules)
+    guard policy.usesVariants == (config.coveragePolicy == "fixed_profile") else { try reject("rules_profile_mismatch", "rules.version") }
     if config.coveragePolicy == "fixed_profile" {
         // Catalog/selection reads and validates the full archive once at its explicit
         // boundary. Preparation, transitions and replay validate supplied frozen

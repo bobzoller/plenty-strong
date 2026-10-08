@@ -1,6 +1,10 @@
 import Foundation
 
 public func prepareWorkout(state: ProgramState, rules: Ruleset, easierToday: Bool = false) throws -> WorkoutPrescription {
+    switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
+    case .fixedExactV1: return try prepareExactWorkout(state: state, rules: rules, easierToday: easierToday)
+    case .numericV02, .fixedCeilingsV1: break
+    }
     try rules.validateIntegrity()
     guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else {
         throw EngineError(code: "ruleset_mismatch", field: "rules")

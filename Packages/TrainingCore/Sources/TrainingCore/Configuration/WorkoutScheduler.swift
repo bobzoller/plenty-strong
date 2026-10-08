@@ -68,8 +68,9 @@ public func reschedulePendingWorkout(state: ProgramState, slot: WorkoutSlot, rul
     guard slot.date != state.activePrescription.date || slot.slotID != state.activePrescription.slotID else {
         return unchangedConfiguration(state)
     }
-    let decision = try configurationDecision(id: nil, action: .notice, key: "workout_rescheduled",
-        before: state.activePrescription, after: slot)
+    let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+    let decision = try configurationDecision(id: nil, action: .notice, ruleIDs: policy.usesExactTargets ? ["X12"] : [], key: "workout_rescheduled",
+        before: state.activePrescription, after: slot, ruleset: policy.usesExactTargets ? rules : nil)
     return try finishConfiguration(original: state, updated: state, rules: rules, slot: slot, decisions: [decision])
 }
 
@@ -80,7 +81,7 @@ public func prepareInterruptedReturn(state: ProgramState, asOf: LocalDate, rules
     if let last = state.lastSessionDate, asOf < last { throw EngineError(code: "backdated_date", field: "asOf") }
     var updated = state
     var decisions: [Decision] = []
-    let ids = state.schemaVersion == 2 ? state.config.activeVariantIDs!.values.sorted() : state.exercises.keys.sorted()
+    let ids = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants ? state.config.activeVariantIDs!.values.sorted() : state.exercises.keys.sorted()
     for id in ids {
         if let decision = try markInterruptedReturn(state: &updated, id: id, asOf: asOf, rules: rules) { decisions.append(decision) }
     }
@@ -91,6 +92,27 @@ public func prepareInterruptedReturn(state: ProgramState, asOf: LocalDate, rules
 
 func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDate, rules: Ruleset) throws -> Decision? {
     let before = state.exercises[id]!
+    let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+    if policy.usesExactTargets {
+        let base = state.config.variants![id]!.baseMovementID
+        guard before.mode != .paused, state.baseSafety![base]!.paused != true,
+              before.exactRepState?.setupReviewRequired != true else { return nil }
+        var after = before
+        guard let last = before.exactRepState!.lastSuitableNormalDate else {
+            guard before.mode != .baseline else { return nil }
+            seedExactBaseline(&after)
+            state.exercises[id] = after
+            return try exactDecision(id: id, action: .baseline, rule: "X03", key: "no_capacity_evidence",
+                before: before, after: after, rules: rules)
+        }
+        guard asOf >= last else { throw EngineError(code: "backdated_date", field: "asOf") }
+        guard !before.interruptedReturn, last.days(until: asOf) >= (try rules.resolvedParameters.interruptionDays) else { return nil }
+        let movement = state.config.movements.first { $0.id == base }!
+        try beginExactInterruptedReturn(&after, movement: movement, rules: rules)
+        state.exercises[id] = after
+        return try exactDecision(id: id, action: .recover, rule: "X08", key: "interruption_return",
+            before: before, after: after, rules: rules)
+    }
     guard let last = before.lastCompletedDate else { return nil }
     guard asOf >= last else { throw EngineError(code: "backdated_date", field: "asOf") }
     guard !before.interruptedReturn, last.days(until: asOf) >= (try rules.resolvedParameters.interruptionDays) else { return nil }

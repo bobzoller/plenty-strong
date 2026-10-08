@@ -4,6 +4,10 @@ import Foundation
 /// revision checks and immutable original commands, including ineligible rows.
 public func advanceProgram(_ input: AdvanceInput) -> AdvanceResult {
     do {
+        switch try ProgramPolicy.resolve(schemaVersion: input.state.schemaVersion, rules: input.rules) {
+        case .fixedExactV1: return advanceExactProgram(input)
+        case .numericV02, .fixedCeilingsV1: break
+        }
         let eventHash = try CanonicalJSON.sha256(canonicalValue(input.event))
         // Replay precedes calendar/planned-ID checks; O6 applies this same ordering
         // before its revision guard. A replay never reinterprets old observations.

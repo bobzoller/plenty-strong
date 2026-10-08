@@ -5,7 +5,8 @@ import Foundation
 public func changeMovementVariant(state: ProgramState, change: VariantChange, rules: Ruleset,
                                   nextWorkout: WorkoutSlot) throws -> ConfigurationResult {
     try validateConfigurationInput(state: state, rules: rules, slot: nextWorkout)
-    guard state.schemaVersion == 2 else { throw EngineError(code: "unsupported_variant_policy", field: "schemaVersion") }
+    let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+    guard policy.usesVariants else { throw EngineError(code: "unsupported_variant_policy", field: "schemaVersion") }
     var updated = state
     let id: String
     let key: String
@@ -28,7 +29,8 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
         updated.exercises[id] = ExerciseState(load: nil, mode: state.baseSafety![base]!.paused ? .paused : .baseline,
             normalSets: preset.normalSets, repFloor: range.floor, repCeiling: range.ceiling,
             ceilingStreak: 0, strainStreak: 0, lastCompletedDate: nil, nextSetOverride: nil,
-            interruptedReturn: false, recentComparable: [], setupRevision: 1)
+            interruptedReturn: false, recentComparable: [], setupRevision: 1,
+            exactRepState: policy.usesExactTargets ? ExactRepState(normalTargets: Array(repeating: range.floor, count: preset.normalSets), shortfallStreak: 0, lastSuitableNormalDate: nil, setupReviewRequired: false) : nil)
     case let .select(base, variant):
         guard state.config.movements.contains(where: { $0.id == base }),
               state.config.variants![variant]?.baseMovementID == base else {
@@ -39,6 +41,10 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
         key = "variant_selected"
         checkGap = true
         updated.config.activeVariantIDs![base] = variant
+        if policy.usesExactTargets {
+            resetExactComparisons(&updated.exercises[id]!)
+            if updated.exercises[id]!.mode != .paused { updated.exercises[id]!.mode = .baseline }
+        }
     case let .correctDescription(variant, description):
         guard let saved = state.config.variants![variant] else { throw EngineError(code: "unknown_variant", field: "variantId") }
         let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,8 +54,8 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
         updated.config.variants![id]!.modifications = trimmed
     }
     try validate(config: updated.config, rules: rules)
-    var decisions = [try configurationDecision(id: id, action: .notice, key: key,
-        before: state.config, after: updated.config)]
+    var decisions = [try configurationDecision(id: id, action: .notice, ruleIDs: policy.usesExactTargets ? ["X12"] : [], key: key,
+        before: state.config, after: updated.config, ruleset: policy.usesExactTargets ? rules : nil)]
     if checkGap, let gap = try markInterruptedReturn(state: &updated, id: id, asOf: nextWorkout.date, rules: rules) {
         decisions.append(gap)
     }

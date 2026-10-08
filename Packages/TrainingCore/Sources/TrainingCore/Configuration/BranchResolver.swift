@@ -67,6 +67,12 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
           Set(input.branches.map(\.headHash)) == Set(heads), input.branches.count == heads.count,
           let selected = input.branches.first(where: { $0.headHash == input.selection.selectedHeadHash }) else { try reject("heads") }
     let original = selected.state
+    guard input.commonAncestor.schemaVersion == original.schemaVersion,
+          input.commonAncestor.rulesetHash == original.rulesetHash,
+          input.branches.allSatisfy({ $0.state.schemaVersion == original.schemaVersion && $0.state.rulesetHash == original.rulesetHash }) else {
+        throw EngineError(code: "mixed_policy_conflict", field: "branches")
+    }
+    let policy = try ProgramPolicy.resolve(schemaVersion: original.schemaVersion, rules: input.rules)
     try validateConfigurationInput(state: original, rules: input.rules, slot: input.next)
     guard input.commonAncestor.config.programID == original.config.programID, input.commonAncestor.schemaVersion == original.schemaVersion,
           input.commonAncestor.rulesetHash == original.rulesetHash else { try reject("commonAncestor") }
@@ -123,7 +129,7 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
         }
     }
     for (base, restriction) in input.safetyRestrictions { try union(base, restriction) }
-    if original.schemaVersion == 2 {
+    if policy.usesVariants {
         let ids = Set(input.branches.flatMap { $0.state.config.variants!.keys })
         for id in ids.sorted() {
             let definitions = input.branches.filter { $0.state.config.variants![id] != nil }.sorted { $0.headHash < $1.headHash }
@@ -158,8 +164,9 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
         guard let movement = updated.config.movements.first(where: { $0.id == base }) else { try reject("variant_base") }
         let paused = safety[base]!.paused
         rebaseline(&updated.exercises[id]!, movement: movement, config: updated.config, preset: preset, paused: paused)
-        decisions.append(try configurationDecision(id: id, action: paused ? .pause : .baseline, ruleIDs: ["CLOUD01"],
-            key: paused ? "cloud_resolution_pause" : "cloud_resolution_baseline", before: before, after: updated.exercises[id]!))
+        if policy.usesExactTargets { seedExactBaseline(&updated.exercises[id]!) }
+        decisions.append(try configurationDecision(id: id, action: paused ? .pause : .baseline, ruleIDs: policy.usesExactTargets ? ["X13"] : ["CLOUD01"],
+            key: paused ? "cloud_resolution_pause" : "cloud_resolution_baseline", before: before, after: updated.exercises[id]!, ruleset: policy.usesExactTargets ? input.rules : nil))
     }
     let result = try finishConfiguration(original: original, updated: updated, rules: input.rules, slot: input.next, decisions: decisions)
     return BranchResolution(state: result.state, workout: result.workout, decisions: result.decisions, preservedHeadHashes: heads)

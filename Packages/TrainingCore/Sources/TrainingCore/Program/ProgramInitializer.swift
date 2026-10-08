@@ -12,7 +12,8 @@ public struct InitializedProgram: Equatable, Sendable {
 
 public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot) throws -> InitializedProgram {
     try validate(config: config, rules: rules)
-    let app = rules.version == "general-fitness-swift1"
+    let policy = try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules)
+    let app = policy.usesVariants
     let preset = try rules.preset(goal: config.goal, daysPerWeek: config.daysPerWeek)
     var exercises: [String: ExerciseState] = [:]
     var safety: [String: MovementSafetyState] = [:]
@@ -27,20 +28,26 @@ public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkou
             exercises[id] = ExerciseState(load: isDefault ? config.initialLoads[movement.id]! : nil,
                 mode: .baseline, normalSets: preset.normalSets, repFloor: range.floor, repCeiling: range.ceiling,
                 ceilingStreak: 0, strainStreak: 0, lastCompletedDate: nil, nextSetOverride: nil,
-                interruptedReturn: false, recentComparable: [], setupRevision: app ? 1 : nil)
+                interruptedReturn: false, recentComparable: [], setupRevision: app ? 1 : nil,
+                exactRepState: policy.usesExactTargets ? ExactRepState(normalTargets: Array(repeating: range.floor, count: preset.normalSets), shortfallStreak: 0, lastSuitableNormalDate: nil, setupReviewRequired: false) : nil)
         }
         if app { safety[movement.id] = MovementSafetyState(paused: false, minimumRir: movement.minimumRir, sourceEventIDs: []) }
     }
-    var state = ProgramState(schemaVersion: app ? 2 : 1, rulesetVersion: rules.version, rulesetHash: rules.hash,
+    var state = ProgramState(schemaVersion: policy.usesExactTargets ? 3 : app ? 2 : 1, rulesetVersion: rules.version, rulesetHash: rules.hash,
         config: config, revision: 0, exercises: exercises, lastSessionDate: nil,
         activePrescription: WorkoutPrescription(id: "", date: firstWorkout.date, slotID: firstWorkout.slotID, exercises: []),
         processedEvents: [:], baseSafety: app ? safety : nil)
     state.activePrescription = try plannedWorkout(state: state, rules: rules, slot: firstWorkout)
+    if policy.usesExactTargets { try validateExactRepContract(state: state, rules: rules) }
     return InitializedProgram(state: state, workout: state.activePrescription)
 }
 
 /// Shared construction boundary for initialization and later pure transitions.
 func plannedWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws -> WorkoutPrescription {
+    switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
+    case .fixedExactV1: return try plannedExactWorkout(state: state, rules: rules, slot: slot)
+    case .numericV02, .fixedCeilingsV1: break
+    }
     guard let weeklySlot = state.config.weeklySlots.first(where: { $0.id == slot.slotID }) else {
         throw EngineError(code: "invalid_slot", field: "slotId")
     }

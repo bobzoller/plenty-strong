@@ -17,6 +17,7 @@ public struct ConfigurationResult: Equatable, Sendable {
 public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
                                rules: Ruleset, nextWorkout: WorkoutSlot) throws -> ConfigurationResult {
     try validateConfigurationInput(state: state, rules: rules, slot: nextWorkout)
+    let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
     var updated = state
     var decisions: [Decision] = []
     var affected: [String] = []
@@ -35,9 +36,9 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
         let current = state.baseSafety?[base]?.minimumRir ?? movement.minimumRir
         guard value >= current else { throw EngineError(code: "clearance_required", field: "minimumRir") }
         guard value != current else { return unchangedConfiguration(state) }
-        if state.schemaVersion == 2 { updated.baseSafety![base]!.minimumRir = value }
+        if policy.usesVariants { updated.baseSafety![base]!.minimumRir = value }
         else { updated.config.movements[updated.config.movements.firstIndex { $0.id == base }!].minimumRir = value }
-        affected = variantIDs(for: base, in: state)
+        affected = try variantIDs(for: base, in: state, rules: rules)
         key = "minimum_rir_changed"
     case let .resetSetup(id):
         guard let existing = state.exercises[id] else { throw EngineError(code: "unknown_variant", field: "variantId") }
@@ -49,9 +50,9 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
     case let .safeResume(base, clearance):
         guard state.config.movements.contains(where: { $0.id == base }) else { throw EngineError(code: "unknown_movement", field: "baseMovementId") }
         guard clearance else { throw EngineError(code: "clearance_required", field: "externalClearanceConfirmed") }
-        affected = variantIDs(for: base, in: state)
+        affected = try variantIDs(for: base, in: state, rules: rules)
         resumeAuthorized = true
-        if state.schemaVersion == 2 { updated.baseSafety![base]!.paused = false }
+        if policy.usesVariants { updated.baseSafety![base]!.paused = false }
         key = "safe_resume"
     }
     for id in affected {
@@ -61,15 +62,18 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
         rebaseline(&updated.exercises[id]!, movement: movement, config: updated.config,
                    preset: try rules.preset(goal: updated.config.goal, daysPerWeek: updated.config.daysPerWeek),
                    paused: updated.baseSafety?[base]?.paused == true || (before.mode == .paused && !resumeAuthorized))
-        decisions.append(try configurationDecision(id: id, action: .baseline, key: key,
-                                                   before: before, after: updated.exercises[id]!))
+        if policy.usesExactTargets {
+            seedExactBaseline(&updated.exercises[id]!, clearSetupReview: key == "setup_reset")
+        }
+        decisions.append(try configurationDecision(id: id, action: .baseline, ruleIDs: policy.usesExactTargets ? ["X12"] : [], key: key,
+                                                   before: before, after: updated.exercises[id]!, ruleset: policy.usesExactTargets ? rules : nil))
     }
     return try finishConfiguration(original: state, updated: updated, rules: rules, slot: nextWorkout, decisions: decisions)
 }
 
 func validateConfigurationInput(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws {
     try validateConfigurationState(state: state, rules: rules)
-    if state.schemaVersion == 2 { try WorkoutScheduler.validate(slot: slot, config: state.config) }
+    if try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants { try WorkoutScheduler.validate(slot: slot, config: state.config) }
     if let last = state.lastSessionDate, slot.date <= last {
         throw EngineError(code: "non_future_workout", field: "slot.date")
     }
@@ -80,14 +84,14 @@ func validateConfigurationInput(state: ProgramState, rules: Ruleset, slot: Worko
 
 func validateConfigurationState(state: ProgramState, rules: Ruleset) throws {
     _ = try prepareWorkout(state: state, rules: rules)
-    let expectedIDs = state.schemaVersion == 2 ? Set(state.config.variants!.keys) : Set(state.config.movements.map(\.id))
+    let expectedIDs = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants ? Set(state.config.variants!.keys) : Set(state.config.movements.map(\.id))
     guard Set(state.exercises.keys) == expectedIDs else {
         throw EngineError(code: "invalid_state", field: "exercises")
     }
 }
 
-func variantIDs(for base: String, in state: ProgramState) -> [String] {
-    state.schemaVersion == 2 ? state.config.variants!.values.filter { $0.baseMovementID == base }.map(\.id).sorted() : [base]
+func variantIDs(for base: String, in state: ProgramState, rules: Ruleset) throws -> [String] {
+    try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants ? state.config.variants!.values.filter { $0.baseMovementID == base }.map(\.id).sorted() : [base]
 }
 
 func rebaseline(_ exercise: inout ExerciseState, movement: Movement, config: ProgramConfig,
@@ -120,13 +124,22 @@ func finishConfiguration(original: ProgramState, updated: ProgramState, rules: R
 }
 
 func configurationDecision(id: String?, action: DecisionAction, ruleIDs: [String] = [], key: String,
-                           before: some Encodable, after: some Encodable) throws -> Decision {
+                           before: some Encodable, after: some Encodable, ruleset: Ruleset? = nil) throws -> Decision {
     func fields(_ value: some Encodable) throws -> [String: CanonicalValue] {
         guard case .object(let fields) = try JSONDecoder().decode(CanonicalValue.self, from: JSONEncoder().encode(value)) else {
             throw EngineError(code: "invalid_state", field: "decisions")
         }
         return fields
     }
-    return try Decision(movementID: id, action: action, ruleIDs: ruleIDs, sourceIDs: [],
-                        evidenceClass: .appAdaptation, explanationKey: key, before: fields(before), after: fields(after))
+    let archived = try ruleIDs.map { ruleID -> RuleRecord? in
+        guard let ruleset else { return nil }
+        guard let rule = ruleset.rules?.first(where: { $0.id == ruleID }) else {
+            throw EngineError(code: "invalid_exact_transition", field: "decisions")
+        }
+        return rule
+    }.compactMap { $0 }
+    return try Decision(movementID: id, action: action, ruleIDs: ruleIDs,
+                        sourceIDs: Array(Set(archived.flatMap(\.sourceIDs))).sorted(),
+                        evidenceClass: archived.first?.evidenceClass ?? .appAdaptation,
+                        explanationKey: key, before: fields(before), after: fields(after))
 }

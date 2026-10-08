@@ -133,7 +133,7 @@ private func validateExactComparable(_ exposure: Exposure, variant: MovementVari
           context.load == exposure.load, exposure.load == log.actualLoad,
           (movement.loadingMode == .externalLoad ? (exposure.load != nil && movement.availableLoads.contains(exposure.load!)) : exposure.load == nil),
           exposure.actualSets == log.actualSets, exposure.effort == log.finalEffort, exposure.problem == log.problem,
-          !exposure.eventID.isEmpty, exposure.phase == .normal, exposure.sessionMode == .normal,
+          !exposure.eventID.isEmpty, (exposure.phase == .normal || exposure.phase == .baseline), exposure.sessionMode == .normal,
           log.status == .completed, log.finalEffort != .unknown, log.problem == .none, log.mixedLoads == false,
           log.skippedSetIndices == [], log.actualSets.count == exposure.plannedSetCount,
           log.actualSets.allSatisfy({ actual in
