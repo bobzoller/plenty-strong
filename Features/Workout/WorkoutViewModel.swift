@@ -217,6 +217,51 @@ import TrainingCore
         draft.logs[i].actualLoad = load
         try await save(draft)
     }
+    /// Skips occupy intended slots without fabricating a performed observation.
+    func nextSetIndex(for movementID: String) -> Int? {
+        guard let draft = snapshot.draft, let i = draft.logs.firstIndex(where: { $0.movementID == movementID }),
+              !handled(movementID), draft.logs[i].problem == .none,
+              draft.displayed.exercises[i].kind != .paused else { return nil }
+        return nextSetIndex(log: draft.logs[i], row: draft.displayed.exercises[i])
+    }
+    private func nextSetIndex(log: ExerciseLog, row: ExercisePrescription) -> Int? {
+        if snapshot.state.schemaVersion != 3 { return log.actualSets.count < row.sets.count ? log.actualSets.count : nil }
+        let occupied = Set(log.actualSets.compactMap(\.setIndex)).union(log.skippedSetIndices ?? [])
+        return row.sets.indices.first { !occupied.contains($0) }
+    }
+    func skipSet(movementID: String, index setIndex: Int) async throws {
+        try await operations.perform { _ in try await skipSetBody(movementID: movementID, index: setIndex) }
+    }
+    private func skipSetBody(movementID: String, index setIndex: Int) async throws {
+        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        let row = draft.displayed.exercises[i]
+        guard snapshot.state.schemaVersion == 3, row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
+        if draft.logs[i].skippedSetIndices?.contains(setIndex) == true { return }
+        guard !handled(movementID), draft.logs[i].problem == .none, row.kind != .paused else { throw EngineError(code: "movement_stopped", field: "set") }
+        guard nextSetIndex(log: draft.logs[i], row: row) == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
+        draft.logs[i].skippedSetIndices!.append(setIndex)
+        // The movement remains editable until its explicit outcome is chosen.
+        try await save(draft)
+    }
+    func recordMixedLoads(movementID: String) async throws {
+        try await operations.perform { _ in try await recordMixedLoadsBody(movementID: movementID) }
+    }
+    private func recordMixedLoadsBody(movementID: String) async throws {
+        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        guard snapshot.state.schemaVersion == 3 else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
+        if draft.logs[i].mixedLoads == true { return }
+        guard !handled(movementID), draft.logs[i].problem == .none, draft.displayed.exercises[i].kind != .paused else { throw EngineError(code: "movement_stopped", field: "load") }
+        draft.logs[i].mixedLoads = true
+        draft.logs[i].status = .partial
+        acknowledge(movementID, draft: &draft)
+        try await save(draft)
+    }
+    private func requireMissReason(_ actual: ActualSet, row: ExercisePrescription, index: Int) throws {
+        guard snapshot.state.schemaVersion == 3 else { return }
+        if let target = row.sets[index].targetReps, actual.reps < target, actual.missedGoalReason == nil {
+            throw EngineError(code: "missed_goal_reason_required", field: "missedGoalReason")
+        }
+    }
     func recordSet(movementID: String, index setIndex: Int, actual: ActualSet) async throws {
         try await operations.perform { _ in try await recordSetBody(movementID: movementID, index: setIndex, actual: actual) }
     }
@@ -229,12 +274,15 @@ import TrainingCore
         }
         let row = draft.displayed.exercises[i]; let movement = movement(for: row)
         guard row.kind != .paused, draft.logs[i].problem == .none, !handled(movementID) else { throw EngineError(code: "movement_stopped", field: "set") }
-        if setIndex < draft.logs[i].actualSets.count, draft.logs[i].actualSets[setIndex] == indexedActual { return }
-        guard setIndex == draft.logs[i].actualSets.count, setIndex < row.sets.count,
+        if snapshot.state.schemaVersion == 3 {
+            if draft.logs[i].actualSets.first(where: { $0.setIndex == setIndex }) == indexedActual { return }
+        } else if setIndex >= 0, setIndex < draft.logs[i].actualSets.count, draft.logs[i].actualSets[setIndex] == indexedActual { return }
+        guard row.sets.indices.contains(setIndex), nextSetIndex(log: draft.logs[i], row: row) == setIndex,
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
-              actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
+              snapshot.state.schemaVersion == 3 || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
         if movement.repCounting == .total, actual.leftReps != nil || actual.rightReps != nil { throw EngineError(code: "unexpected_side_reps", field: "set") }
         guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
+        try requireMissReason(indexedActual, row: row, index: setIndex)
         try await requireWorkingExposure(row)
         draft.logs[i].actualSets.append(indexedActual); draft.workingSetsStarted = true
         // Canonical archives store integer seconds. Round only the UI deadline up
@@ -249,6 +297,7 @@ import TrainingCore
     private func recordEffortBody(movementID: String, effort: Effort) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         draft.logs[i].finalEffort = effort
+        if snapshot.state.schemaVersion == 3 { draft.logs[i].effortScope = .allWorkingSets }
         try await save(draft)
     }
     func recordProblem(movementID: String, problem: Problem, pendingActual: ActualSet? = nil) async throws {
@@ -266,13 +315,18 @@ import TrainingCore
     private func appendPending(_ actual: ActualSet?, at index: Int, to draft: inout WorkoutDraft) throws {
         guard let actual else { return }
         let row = draft.displayed.exercises[index]
-        guard !handled(row.movementID), row.kind != .paused, draft.logs[index].actualSets.count < row.sets.count,
+        guard !handled(row.movementID), row.kind != .paused, let slot = nextSetIndex(log: draft.logs[index], row: row),
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
               movement(for: row).repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil) else {
             throw EngineError(code: "invalid_set", field: "pendingActual")
         }
         // Unknown load/missing side remain unknown. Raw set and outcome commit together.
-        draft.logs[index].actualSets.append(actual); draft.workingSetsStarted = true
+        var retained = actual
+        if snapshot.state.schemaVersion == 3 {
+            guard actual.setIndex == nil || actual.setIndex == slot else { throw EngineError(code: "invalid_set", field: "setIndex") }
+            retained.setIndex = slot
+        }
+        draft.logs[index].actualSets.append(retained); draft.workingSetsStarted = true
     }
     private func acknowledge(_ id: String, draft: inout WorkoutDraft) {
         if draft.acknowledgedMovementIDs == nil { draft.acknowledgedMovementIDs = [] }
@@ -285,6 +339,9 @@ import TrainingCore
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
         guard !handled(movementID) || status == draft.logs[i].status else { throw EngineError(code: "movement_stopped", field: "status") }
+        if status == .completed, let pendingActual, let slot = nextSetIndex(log: draft.logs[i], row: row) {
+            try requireMissReason(pendingActual, row: row, index: slot)
+        }
         try appendPending(pendingActual, at: i, to: &draft)
         let log = draft.logs[i]
         if log.problem != .none && status != .stopped { throw EngineError(code: "movement_stopped", field: "status") }
@@ -302,7 +359,10 @@ import TrainingCore
     }
     private func validCompletion(_ log: ExerciseLog, row: ExercisePrescription) -> Bool {
         let metadata = movement(for: row)
-        return row.kind != .paused && !row.sets.isEmpty && log.problem == .none &&
+        let indexedComplete = snapshot.state.schemaVersion != 3 ||
+            (log.skippedSetIndices == [] && log.mixedLoads == false &&
+             Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
+        return indexedComplete && row.kind != .paused && !row.sets.isEmpty && log.problem == .none &&
             log.actualSets.count == row.sets.count && log.actualSets.allSatisfy { set in
                 set.reps > 0 && (metadata.repCounting != .perSide ||
                     (set.leftReps != nil && set.leftReps == set.rightReps && set.reps == set.leftReps))

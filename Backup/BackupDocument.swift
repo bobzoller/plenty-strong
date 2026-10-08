@@ -50,7 +50,7 @@ struct WorkoutDraft: Codable, Equatable, Sendable {
     // Persisted UI deadlines use whole reference seconds; recording rounds up by <1s.
     // Supported bounds are Foundation's distantPast...distantFuture dates, inclusive.
     static var supportedRestDeadlineRange: ClosedRange<Date> { .distantPast ... .distantFuture }
-    var hasObservations: Bool { workingSetsStarted || logs.contains { !$0.actualSets.isEmpty || $0.problem != .none } }
+    var hasObservations: Bool { workingSetsStarted || logs.contains { !$0.actualSets.isEmpty || $0.problem != .none || !($0.skippedSetIndices ?? []).isEmpty || $0.mixedLoads == true } }
 }
 
 /// Format 2 explicitly describes a causal graph. Legacy datasetID is descriptive

@@ -152,6 +152,16 @@ enum BackupService {
             for log in draft.logs {
                 guard let row = displayed.exercises.first(where: { $0.movementID == log.movementID }) else { throw invalid("draft_log") }
                 try validateIndexedExactLog(log, prescription: row)
+                // Ordinary editable/completed work requires a reason; explicit
+                // nonqualifying stops retain pending raw data without one.
+                let handled = draft.acknowledgedMovementIDs?.contains(log.movementID) == true
+                if log.problem == .none && (log.status == .completed || !handled) {
+                    for actual in log.actualSets {
+                        if actual.reps < row.sets[actual.setIndex!].targetReps!, actual.missedGoalReason == nil {
+                            throw invalid("draft_missed_goal_reason")
+                        }
+                    }
+                }
             }
         }
         let acknowledged = draft.acknowledgedMovementIDs ?? []

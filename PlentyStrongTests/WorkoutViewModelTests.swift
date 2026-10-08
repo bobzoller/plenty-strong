@@ -14,6 +14,24 @@ import TrainingCore
         let model = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: "Pacific/Honolulu", now: { ISO8601DateFormatter().date(from: "\(date)T20:00:00Z")! })
         return (model, repository, url)
     }
+    func testLegacySlotSelectionAndMalformedIndexKeepOriginalSemantics() async throws {
+        let (model, repository, _) = try await make()
+        try await model.start(easierToday: false)
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        if model.movement(for: row).loadingMode == .externalLoad {
+            try await model.confirmLoad(movementID: row.movementID, load: XCTUnwrap(model.movement(for: row).availableLoads.first))
+        }
+        XCTAssertEqual(model.nextSetIndex(for: row.movementID), 0)
+        for index in [-1, Int.max] {
+            do { try await model.recordSet(movementID: row.movementID, index: index, actual: ActualSet(reps: 8)); XCTFail("Malformed legacy index") } catch {}
+        }
+        do { try await model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 0)); XCTFail("Legacy ordinary logging remains positive-only") } catch {}
+        try await model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 7))
+        XCTAssertEqual(model.nextSetIndex(for: row.movementID), 1)
+        XCTAssertEqual(model.log(for: row.movementID)?.actualSets, [ActualSet(reps: 7)])
+        XCTAssertNil(model.log(for: row.movementID)?.effortScope)
+        await repository.close()
+    }
     func testAllGoalsStartWithUnknownLoadsAndFixedDose() async throws {
         for goal in Goal.allCases {
             let (model, repository, _) = try await make(goal: goal)

@@ -365,12 +365,30 @@ import TrainingCore
                 // Ordinary saves may append performed sets and update effort/status,
                 // but cannot rewrite recorded reps/sides/load or remove a safety flag.
                 // Corrections require an explicit path that retains the originals.
+                if current.state.schemaVersion == 3 {
+                    guard Set(existing.acknowledgedMovementIDs ?? []).isSubset(of: Set(draft.acknowledgedMovementIDs ?? [])) else { throw BackupService.invalid("draft_observation_changed") }
+                }
                 for original in existing.logs {
                     guard let updated = draft.logs.first(where: { $0.movementID == original.movementID }),
                           updated.actualSets.starts(with: original.actualSets),
                           original.actualSets.isEmpty || updated.actualLoad == original.actualLoad,
                           original.problem == .none || updated.problem == original.problem else {
                         throw BackupService.invalid("draft_observation_changed")
+                    }
+                    if current.state.schemaVersion == 3 {
+                        guard let originalSkipped = original.skippedSetIndices, let updatedSkipped = updated.skippedSetIndices,
+                              updatedSkipped.starts(with: originalSkipped),
+                              original.mixedLoads != true || updated.mixedLoads == true,
+                              original.effortScope == updated.effortScope else { throw BackupService.invalid("draft_observation_changed") }
+                        if existing.acknowledgedMovementIDs?.contains(original.movementID) == true {
+                            guard updated.actualSets == original.actualSets,
+                                  updated.actualLoad == original.actualLoad,
+                                  updated.skippedSetIndices == original.skippedSetIndices,
+                                  updated.mixedLoads == original.mixedLoads,
+                                  updated.status == original.status ||
+                                    (expectedExistingDraft != nil && original.status == .completed && (updated.status == .partial || updated.status == .skipped)) ||
+                                    (updated.problem != .none && updated.status == .stopped) else { throw BackupService.invalid("draft_observation_changed") }
+                        }
                     }
                 }
             }
