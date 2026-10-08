@@ -265,7 +265,9 @@ public struct ExerciseState: Codable, Equatable, Sendable {
     public var recentComparable: [Exposure]
     public var setupRevision: Int?
 
-    public init(load: Load?, mode: ExerciseMode, normalSets: Int, repFloor: Int, repCeiling: Int, ceilingStreak: Int, strainStreak: Int, lastCompletedDate: LocalDate?, nextSetOverride: Int?, interruptedReturn: Bool, recentComparable: [Exposure], setupRevision: Int? = nil) {
+    public var exactRepState: ExactRepState?
+
+    public init(load: Load?, mode: ExerciseMode, normalSets: Int, repFloor: Int, repCeiling: Int, ceilingStreak: Int, strainStreak: Int, lastCompletedDate: LocalDate?, nextSetOverride: Int?, interruptedReturn: Bool, recentComparable: [Exposure], setupRevision: Int? = nil, exactRepState: ExactRepState? = nil) {
         self.load = load
         self.mode = mode
         self.normalSets = normalSets
@@ -278,6 +280,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         self.interruptedReturn = interruptedReturn
         self.recentComparable = recentComparable
         self.setupRevision = setupRevision
+        self.exactRepState = exactRepState
     }
 
     enum CodingKeys: String, CodingKey {
@@ -293,6 +296,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         case interruptedReturn
         case recentComparable
         case setupRevision
+        case exactRepState
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -308,6 +312,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         interruptedReturn = try c.decode(Bool.self, forKey: .interruptedReturn)
         recentComparable = try c.decode([Exposure].self, forKey: .recentComparable)
         setupRevision = try c.decodeIfPresent(Int.self, forKey: .setupRevision)
+        exactRepState = try c.decodeIfPresent(ExactRepState.self, forKey: .exactRepState)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -323,6 +328,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         try c.encode(interruptedReturn, forKey: .interruptedReturn)
         try c.encode(recentComparable, forKey: .recentComparable)
         try c.encodeIfPresent(setupRevision, forKey: .setupRevision)
+        try c.encodeIfPresent(exactRepState, forKey: .exactRepState)
     }
 }
 

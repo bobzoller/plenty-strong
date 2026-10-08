@@ -3,6 +3,7 @@ import Foundation
 public enum PrescriptionKind: String, Codable, Equatable, Sendable, CaseIterable {
     case working
     case baselineSetup = "baseline_setup"
+    case setupReview = "setup_review"
     case paused
 }
 
@@ -34,16 +35,36 @@ public struct SetPrescription: Codable, Equatable, Sendable {
     public var repCeiling: Int
     public var effortInstruction: String
 
-    public init(repFloor: Int, repCeiling: Int, effortInstruction: String) {
+    public var targetReps: Int?
+
+    public init(repFloor: Int, repCeiling: Int, effortInstruction: String, targetReps: Int? = nil) {
         self.repFloor = repFloor
         self.repCeiling = repCeiling
         self.effortInstruction = effortInstruction
+        self.targetReps = targetReps
     }
 
     enum CodingKeys: String, CodingKey {
         case repFloor
         case repCeiling
         case effortInstruction
+        case targetReps
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        repFloor = try c.decode(Int.self, forKey: .repFloor)
+        repCeiling = try c.decode(Int.self, forKey: .repCeiling)
+        effortInstruction = try c.decode(String.self, forKey: .effortInstruction)
+        targetReps = try c.decodeIfPresent(Int.self, forKey: .targetReps)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(repFloor, forKey: .repFloor)
+        try c.encode(repCeiling, forKey: .repCeiling)
+        try c.encode(effortInstruction, forKey: .effortInstruction)
+        try c.encodeIfPresent(targetReps, forKey: .targetReps)
     }
 
 }

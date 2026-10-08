@@ -49,7 +49,9 @@ public struct RuleParameters: Codable, Equatable, Sendable {
     public var plateauExposures: Int
     public var ceilingCopyTemplate: String
 
-    public init(normalMinimumRir: Int, normalEffortInstruction: String, stopInstruction: String, easierMinimumRir: Int, confirmationCount: Int, setbackCount: Int, maximumLoadIncreasePercent: Int, repCeilingExtension: Int, maximumRepCeiling: Int, maximumStrengthRepCeiling: Int, interruptionDays: Int, plateauExposures: Int, ceilingCopyTemplate: String) {
+    public var exactRep: ExactRepParameters?
+
+    public init(normalMinimumRir: Int, normalEffortInstruction: String, stopInstruction: String, easierMinimumRir: Int, confirmationCount: Int, setbackCount: Int, maximumLoadIncreasePercent: Int, repCeilingExtension: Int, maximumRepCeiling: Int, maximumStrengthRepCeiling: Int, interruptionDays: Int, plateauExposures: Int, ceilingCopyTemplate: String, exactRep: ExactRepParameters? = nil) {
         self.normalMinimumRir = normalMinimumRir
         self.normalEffortInstruction = normalEffortInstruction
         self.stopInstruction = stopInstruction
@@ -63,6 +65,7 @@ public struct RuleParameters: Codable, Equatable, Sendable {
         self.interruptionDays = interruptionDays
         self.plateauExposures = plateauExposures
         self.ceilingCopyTemplate = ceilingCopyTemplate
+        self.exactRep = exactRep
     }
 
     enum CodingKeys: String, CodingKey {
@@ -79,6 +82,43 @@ public struct RuleParameters: Codable, Equatable, Sendable {
         case interruptionDays
         case plateauExposures
         case ceilingCopyTemplate
+        case exactRep
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        normalMinimumRir = try c.decode(Int.self, forKey: .normalMinimumRir)
+        normalEffortInstruction = try c.decode(String.self, forKey: .normalEffortInstruction)
+        stopInstruction = try c.decode(String.self, forKey: .stopInstruction)
+        easierMinimumRir = try c.decode(Int.self, forKey: .easierMinimumRir)
+        confirmationCount = try c.decode(Int.self, forKey: .confirmationCount)
+        setbackCount = try c.decode(Int.self, forKey: .setbackCount)
+        maximumLoadIncreasePercent = try c.decode(Int.self, forKey: .maximumLoadIncreasePercent)
+        repCeilingExtension = try c.decode(Int.self, forKey: .repCeilingExtension)
+        maximumRepCeiling = try c.decode(Int.self, forKey: .maximumRepCeiling)
+        maximumStrengthRepCeiling = try c.decode(Int.self, forKey: .maximumStrengthRepCeiling)
+        interruptionDays = try c.decode(Int.self, forKey: .interruptionDays)
+        plateauExposures = try c.decode(Int.self, forKey: .plateauExposures)
+        ceilingCopyTemplate = try c.decode(String.self, forKey: .ceilingCopyTemplate)
+        exactRep = try c.decodeIfPresent(ExactRepParameters.self, forKey: .exactRep)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(normalMinimumRir, forKey: .normalMinimumRir)
+        try c.encode(normalEffortInstruction, forKey: .normalEffortInstruction)
+        try c.encode(stopInstruction, forKey: .stopInstruction)
+        try c.encode(easierMinimumRir, forKey: .easierMinimumRir)
+        try c.encode(confirmationCount, forKey: .confirmationCount)
+        try c.encode(setbackCount, forKey: .setbackCount)
+        try c.encode(maximumLoadIncreasePercent, forKey: .maximumLoadIncreasePercent)
+        try c.encode(repCeilingExtension, forKey: .repCeilingExtension)
+        try c.encode(maximumRepCeiling, forKey: .maximumRepCeiling)
+        try c.encode(maximumStrengthRepCeiling, forKey: .maximumStrengthRepCeiling)
+        try c.encode(interruptionDays, forKey: .interruptionDays)
+        try c.encode(plateauExposures, forKey: .plateauExposures)
+        try c.encode(ceilingCopyTemplate, forKey: .ceilingCopyTemplate)
+        try c.encodeIfPresent(exactRep, forKey: .exactRep)
     }
 
 }
@@ -201,14 +241,14 @@ public struct Ruleset: Codable, Equatable, Sendable {
     /// Archived numeric v0.2 has textual tables. Resolve its exact approved constants
     /// without adding fields to its encoded object/hash. Fixed catalogs store constants.
     public func preset(goal: Goal, daysPerWeek: Int) throws -> GoalPreset {
-        guard ["general-fitness-v0.2", "general-fitness-swift1"].contains(version) else {
+        guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1"].contains(version) else {
             throw EngineError(code: "unknown_ruleset", field: "rules.version")
         }
         try validateIntegrity()
-        guard [2, 3].contains(daysPerWeek), version != "general-fitness-swift1" || daysPerWeek == 3 else {
+        guard [2, 3].contains(daysPerWeek), version == "general-fitness-v0.2" || daysPerWeek == 3 else {
             throw EngineError(code: "invalid_day_count", field: "daysPerWeek")
         }
-        if version == "general-fitness-swift1" {
+        if version != "general-fitness-v0.2" {
             guard let preset = presets?[goal.rawValue] else { throw EngineError(code: "missing_preset", field: "presets") }
             return preset
         }
@@ -222,11 +262,11 @@ public struct Ruleset: Codable, Equatable, Sendable {
 
     public var resolvedParameters: RuleParameters {
         get throws {
-            guard ["general-fitness-v0.2", "general-fitness-swift1"].contains(version) else {
+            guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1"].contains(version) else {
                 throw EngineError(code: "unknown_ruleset", field: "rules.version")
             }
             try validateIntegrity()
-            if version == "general-fitness-swift1" {
+            if version != "general-fitness-v0.2" {
                 guard let parameters else { throw EngineError(code: "missing_parameters", field: "parameters") }
                 return parameters
             }
@@ -244,8 +284,23 @@ public struct Ruleset: Codable, Equatable, Sendable {
         guard case .object(var fields) = canonical else { throw EngineError(code: "invalid_ruleset", field: "rules") }
         fields.removeValue(forKey: "hash")
         canonical = .object(fields)
-        guard try CanonicalJSON.sha256(canonical) == hash,
-              sourceIDs == (1...13).map({ String(format: "E%02d", $0) }),
+        guard try CanonicalJSON.sha256(canonical) == hash else {
+            throw EngineError(code: "invalid_ruleset", field: "rules.hash")
+        }
+        if version == "general-fitness-exact-v1" {
+            guard hash == RulesetCatalog.exactRulesetHash,
+                  sourceRulesetHash == RulesetCatalog.fixedRulesetHash,
+                  profileID == "fixed-home-gym-v0.2", profileHash == RulesetCatalog.fixedProfileHash,
+                  contractVersion == 3, presets?.count == 4,
+                  parameters?.exactRep == ExactRepParameters(),
+                  sourceIDs == (1...9).map({ String(format: "EX%02d", $0) }),
+                  ruleIDs == (1...13).map({ String(format: "X%02d", $0) }),
+                  rules?.map(\.id) == ruleIDs, sources?.map(\.id) == sourceIDs else {
+                throw EngineError(code: "invalid_ruleset", field: "rules.catalog")
+            }
+            return
+        }
+        guard sourceIDs == (1...13).map({ String(format: "E%02d", $0) }),
               ruleIDs == (1...16).map({ String(format: "R%02d", $0) }) else { throw EngineError(code: "invalid_ruleset", field: "rules.hash") }
         if version == "general-fitness-swift1" {
             guard hash == RulesetCatalog.fixedRulesetHash, sourceRulesetHash == RulesetCatalog.numericRulesetHash,

@@ -2,6 +2,7 @@ import Foundation
 
 /// Only immutable, bundled resources are admitted; no caller-supplied executable policy.
 public enum RulesetCatalog {
+    public static let exactRulesetHash = "b5b1100ee68edbe76384c31a3c8e1af918b4f5e3737f701ed0a6745989c3c73f"
     public static let fixedProfileHash = "e63a0543d54108af99637ed52dacebc1276e766b4314bc095891248efd7ce8ce"
     public static let fixedRulesetHash = "cc6520f0de45d47979942d3dda21eccc2e9779638ef1c18c7fdc44c4862b8463"
     public static let numericRulesetHash = "cba4084ab7e12b7074a3b87aba813f72fbff2d0560992edd0b566661bfc60beb"
@@ -20,6 +21,24 @@ public enum RulesetCatalog {
 
     public static func numericV02() throws -> Ruleset {
         try loadRules(named: "numeric-v02-ruleset")
+    }
+
+    public static func exactV1() throws -> Ruleset {
+        let rules = try loadRules(named: "ruleset-exact-v1")
+        let profile = try fixedProfile()
+        guard rules.profileID == profile.profileID, rules.profileHash == profile.contentHash else {
+            throw EngineError(code: "profile_hash_mismatch", field: "rules.profileHash")
+        }
+        return rules
+    }
+
+    public static func resolve(version: String, hash: String) throws -> Ruleset {
+        switch (version, hash) {
+        case ("general-fitness-v0.2", numericRulesetHash): try numericV02()
+        case ("general-fitness-swift1", fixedRulesetHash): try fixedV1()
+        case ("general-fitness-exact-v1", exactRulesetHash): try exactV1()
+        default: throw EngineError(code: "unknown_ruleset", field: "rules.version")
+        }
     }
 
     static func fixedProfile() throws -> FixedExerciseProfile {
@@ -41,7 +60,15 @@ public enum RulesetCatalog {
     }
 
     private static func loadRules(named name: String) throws -> Ruleset {
-        let rules = try JSONDecoder().decode(Ruleset.self, from: resource(named: name))
+        let data = try resource(named: name)
+        if name == "ruleset-exact-v1" {
+            guard case .object(var fields) = try JSONDecoder().decode(CanonicalValue.self, from: data),
+                  fields.removeValue(forKey: "hash") == .string(exactRulesetHash),
+                  try CanonicalJSON.sha256(.object(fields)) == exactRulesetHash else {
+                throw EngineError(code: "invalid_ruleset", field: "rules.hash")
+            }
+        }
+        let rules = try JSONDecoder().decode(Ruleset.self, from: data)
         try rules.validateIntegrity()
         return rules
     }

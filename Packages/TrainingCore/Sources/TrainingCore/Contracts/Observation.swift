@@ -30,16 +30,41 @@ public struct ActualSet: Codable, Equatable, Sendable {
     public var leftReps: Int?
     public var rightReps: Int?
 
-    public init(reps: Int, leftReps: Int? = nil, rightReps: Int? = nil) {
+    public var setIndex: Int?
+    public var missedGoalReason: MissedGoalReason?
+
+    public init(reps: Int, leftReps: Int? = nil, rightReps: Int? = nil, setIndex: Int? = nil, missedGoalReason: MissedGoalReason? = nil) {
         self.reps = reps
         self.leftReps = leftReps
         self.rightReps = rightReps
+        self.setIndex = setIndex
+        self.missedGoalReason = missedGoalReason
     }
 
     enum CodingKeys: String, CodingKey {
         case reps
         case leftReps
         case rightReps
+        case setIndex
+        case missedGoalReason
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reps = try c.decode(Int.self, forKey: .reps)
+        leftReps = try c.decodeIfPresent(Int.self, forKey: .leftReps)
+        rightReps = try c.decodeIfPresent(Int.self, forKey: .rightReps)
+        setIndex = try c.decodeIfPresent(Int.self, forKey: .setIndex)
+        missedGoalReason = try c.decodeIfPresent(MissedGoalReason.self, forKey: .missedGoalReason)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(reps, forKey: .reps)
+        try c.encodeIfPresent(leftReps, forKey: .leftReps)
+        try c.encodeIfPresent(rightReps, forKey: .rightReps)
+        try c.encodeIfPresent(setIndex, forKey: .setIndex)
+        try c.encodeIfPresent(missedGoalReason, forKey: .missedGoalReason)
     }
 
 }
@@ -55,7 +80,11 @@ public struct ExerciseLog: Codable, Equatable, Sendable {
     public var baseMovementID: String?
     public var modificationsSnapshot: String?
 
-    public init(movementID: String, prescriptionID: String, status: LogStatus, actualLoad: Load?, actualSets: [ActualSet], finalEffort: Effort, problem: Problem, baseMovementID: String? = nil, modificationsSnapshot: String? = nil) {
+    public var effortScope: EffortScope?
+    public var skippedSetIndices: [Int]?
+    public var mixedLoads: Bool?
+
+    public init(movementID: String, prescriptionID: String, status: LogStatus, actualLoad: Load?, actualSets: [ActualSet], finalEffort: Effort, problem: Problem, baseMovementID: String? = nil, modificationsSnapshot: String? = nil, effortScope: EffortScope? = nil, skippedSetIndices: [Int]? = nil, mixedLoads: Bool? = nil) {
         self.movementID = movementID
         self.prescriptionID = prescriptionID
         self.status = status
@@ -65,6 +94,9 @@ public struct ExerciseLog: Codable, Equatable, Sendable {
         self.problem = problem
         self.baseMovementID = baseMovementID
         self.modificationsSnapshot = modificationsSnapshot
+        self.effortScope = effortScope
+        self.skippedSetIndices = skippedSetIndices
+        self.mixedLoads = mixedLoads
     }
 
     enum CodingKeys: String, CodingKey {
@@ -77,6 +109,9 @@ public struct ExerciseLog: Codable, Equatable, Sendable {
         case problem
         case baseMovementID = "baseMovementId"
         case modificationsSnapshot
+        case effortScope
+        case skippedSetIndices
+        case mixedLoads
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -89,6 +124,9 @@ public struct ExerciseLog: Codable, Equatable, Sendable {
         problem = try c.decode(Problem.self, forKey: .problem)
         baseMovementID = try c.decodeIfPresent(String.self, forKey: .baseMovementID)
         modificationsSnapshot = try c.decodeIfPresent(String.self, forKey: .modificationsSnapshot)
+        effortScope = try c.decodeIfPresent(EffortScope.self, forKey: .effortScope)
+        skippedSetIndices = try c.decodeIfPresent([Int].self, forKey: .skippedSetIndices)
+        mixedLoads = try c.decodeIfPresent(Bool.self, forKey: .mixedLoads)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -101,6 +139,9 @@ public struct ExerciseLog: Codable, Equatable, Sendable {
         try c.encode(problem, forKey: .problem)
         try c.encodeIfPresent(baseMovementID, forKey: .baseMovementID)
         try c.encodeIfPresent(modificationsSnapshot, forKey: .modificationsSnapshot)
+        try c.encodeIfPresent(effortScope, forKey: .effortScope)
+        try c.encodeIfPresent(skippedSetIndices, forKey: .skippedSetIndices)
+        try c.encodeIfPresent(mixedLoads, forKey: .mixedLoads)
     }
 }
 
@@ -160,7 +201,10 @@ public struct Exposure: Codable, Equatable, Sendable {
     public var setupRevision: Int?
     public var repCounting: RepCounting?
 
-    public init(eventID: String, date: LocalDate, log: ExerciseLog? = nil, movementID: String? = nil, baseMovementID: String? = nil, modificationsSnapshot: String? = nil, load: Load?, plannedSetCount: Int, repFloor: Int, repCeiling: Int, effortInstruction: String? = nil, actualSets: [ActualSet], effort: Effort, problem: Problem, sessionMode: SessionMode, phase: PrescriptionPhase, loadingMode: LoadingMode? = nil, setupRevision: Int? = nil, repCounting: RepCounting? = nil) {
+    public var prescribedTargets: [Int]?
+    public var exactRepContext: ExactRepContext?
+
+    public init(eventID: String, date: LocalDate, log: ExerciseLog? = nil, movementID: String? = nil, baseMovementID: String? = nil, modificationsSnapshot: String? = nil, load: Load?, plannedSetCount: Int, repFloor: Int, repCeiling: Int, effortInstruction: String? = nil, actualSets: [ActualSet], effort: Effort, problem: Problem, sessionMode: SessionMode, phase: PrescriptionPhase, loadingMode: LoadingMode? = nil, setupRevision: Int? = nil, repCounting: RepCounting? = nil, prescribedTargets: [Int]? = nil, exactRepContext: ExactRepContext? = nil) {
         self.eventID = eventID
         self.date = date
         self.log = log
@@ -180,6 +224,8 @@ public struct Exposure: Codable, Equatable, Sendable {
         self.loadingMode = loadingMode
         self.setupRevision = setupRevision
         self.repCounting = repCounting
+        self.prescribedTargets = prescribedTargets
+        self.exactRepContext = exactRepContext
     }
 
     enum CodingKeys: String, CodingKey {
@@ -202,6 +248,8 @@ public struct Exposure: Codable, Equatable, Sendable {
         case loadingMode
         case setupRevision
         case repCounting
+        case prescribedTargets
+        case exactRepContext
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -224,6 +272,8 @@ public struct Exposure: Codable, Equatable, Sendable {
         loadingMode = try c.decodeIfPresent(LoadingMode.self, forKey: .loadingMode)
         setupRevision = try c.decodeIfPresent(Int.self, forKey: .setupRevision)
         repCounting = try c.decodeIfPresent(RepCounting.self, forKey: .repCounting)
+        prescribedTargets = try c.decodeIfPresent([Int].self, forKey: .prescribedTargets)
+        exactRepContext = try c.decodeIfPresent(ExactRepContext.self, forKey: .exactRepContext)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -246,6 +296,8 @@ public struct Exposure: Codable, Equatable, Sendable {
         try c.encodeIfPresent(loadingMode, forKey: .loadingMode)
         try c.encodeIfPresent(setupRevision, forKey: .setupRevision)
         try c.encodeIfPresent(repCounting, forKey: .repCounting)
+        try c.encodeIfPresent(prescribedTargets, forKey: .prescribedTargets)
+        try c.encodeIfPresent(exactRepContext, forKey: .exactRepContext)
     }
 }
 
