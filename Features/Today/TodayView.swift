@@ -15,6 +15,7 @@ struct TodayView: View {
                 if model.snapshot.decisions.contains(where: { $0.explanationKey == "workout_rescheduled" }) { Text("Missed slots were rescheduled without recording a completed workout.") }
             }
             if model.snapshot.health != .ready { Text("Local store requires attention: \(model.snapshot.health.rawValue)").accessibilityIdentifier("store.health") }
+            if model.snapshot.health == .mixedPolicyConflict { Text("Recovery histories use different training policies. All original branches are retained and working admission is blocked. Export originals for review; choosing or dropping a branch is currently unsupported.").accessibilityIdentifier("store.mixed-policy-conflict") }
             if let error = model.errorText { Text(error).foregroundStyle(.red).accessibilityIdentifier("save.error") }
             Button(model.snapshot.draft == nil ? "Start workout" : "Resume workout") {
                 Task {
@@ -26,16 +27,12 @@ struct TodayView: View {
             }.disabled(model.busy || model.snapshot.health != .ready)
                 .accessibilityIdentifier("today.start")
             Section("Prescription") {
-                ForEach(model.snapshot.state.activePrescription.exercises, id: \.movementID) { row in
+                ForEach((model.snapshot.draft?.displayed ?? model.snapshot.state.activePrescription).exercises, id: \.movementID) { row in
                     VStack(alignment: .leading) {
                         Text(model.movement(for: row).name ?? "Movement").font(.headline)
-                        if let load = row.load { Text("Prescription: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
                         if model.blockedWorkingMovementIDs.contains(row.movementID) { Text("Additional work unavailable: another saved program has a pause or stricter effort reserve. Recorded observations can be kept and finished safely.") }
-                        if row.kind == .paused { Text("Paused — no working sets") }
-                        else if let set = row.sets.first {
-                            Text("\(row.sets.count) sets · Up to \(set.repCeiling) good reps")
-                            Text(set.effortInstruction)
-                        }
+                        PrescriptionComparisonView(summary: .make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft), repCounting: model.movement(for: row).repCounting)
+                        if row.kind == .setupReview { Text("Review this movement in Movement setup, or reset its baseline in Settings. A new setup keeps its own history and cannot clear a safety pause.") }
                     }
                 }
             }

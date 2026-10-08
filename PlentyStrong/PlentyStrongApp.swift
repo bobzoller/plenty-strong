@@ -52,7 +52,7 @@ private struct SyntheticAccessibilityOverrides: ViewModifier {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-ui-testing") {
-            content.dynamicTypeSize(args.contains("-ui-large-text") ? .accessibility3 : .large)
+            content.dynamicTypeSize(args.contains("-ui-large-text") ? .accessibility5 : .large)
                 .preferredColorScheme(args.contains("-ui-dark") ? .dark : nil)
         } else { content }
         #else

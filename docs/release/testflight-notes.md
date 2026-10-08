@@ -1,5 +1,22 @@
 # TestFlight candidate notes
 
+## Exact-rep branch additions · October 8, 2026
+
+These notes describe a local implementation, not an uploaded or distributable build. Revalidate the final source/artifact and all gates in `v1-checklist.md` before any separately approved phone replacement, signing or TestFlight action.
+
+Fresh local artifact: Plenty Strong0.1.0(4), unsigned archive/audit passed; binary/dSYM UUID `0278447B-AF15-3347-8932-C9EC615543C5`, binary SHA256 `90cb390d0d52d3a3a9b8c854837d72f00f8742bc9d32825e59a725bdc7ce5d9b`. Source/archive inventory hashes and exact phase bindings are in `v1-checklist.md`. Historical build2 remains below; build3 is reserved from the earlier phone handoff. This build was not installed, signed, uploaded or distributed.
+
+The original full current Make remains FAILED2/native65. Source-bound core/models plus a test-only TipJar correction, fresh full UI41/0/0, six separate macOS crash proofs and unsigned Release build/archive form the current component evidence. Default UI diagnostic collection failed its600s timeout and16 invalid-frame warnings remain unresolved; the native UI command nevertheless returned0. Actual minimum `make verify` remains FAILED2/unavailable because iOS18 is absent. These results do not authorize beta distribution or close the human/device/service gates.
+
+After approved distribution, human participants must distinguish **Last time** raw actuals, **Today's goal** exact per-set attempts and blank **Actual** entry, plus historical issued goals and saved next goals. Demonstrate 40:10/10/9 beside 40:10/10/10; different-load/easier/partial/legacy context; missing sides and internal skips; all-working-set effort definitions; correctly stopping early without a failure badge; reason-specific shortfalls; pain/control override; baseline/return and equipment/setup review. The combined integer policy is evidence-informed, not a scientifically validated forecast.
+
+Use synthetic versioned upgrade fixtures: reopen an unfinished legacy ceiling draft with its original feedback, retain a frozen Finish retry, finalize it, then activate at a later draft-free boundary. Export/restore both legacy and exact journal prefixes without changing archive bytes or fabricating prior targets/all-set scope. Current/minimum runtime, physical-device recovery, human VoiceOver/comprehension, trainer, live-service and signing gates remain independent.
+
+Live cloud rollout additionally requires the deferred cross-policy conflict-resolution capability. `mixed_policy_conflict` currently retains all original branches and blocks work; selecting a winner or dropping legacy/exact observations is unsupported. Local fake-cloud tests do not authorize provisioning, promotion or live recovery.
+
+
+## Historical build 2 notes
+
 Unsubmitted local draft for Plenty Strong 0.1.0 (2). The local unsigned archive cannot be installed through TestFlight. No uploaded build, tester group, invitation or Apple review status exists. Fixed source/artifact identity and gate results are in `v1-checklist.md`.
 
 ## Beta description

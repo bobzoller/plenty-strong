@@ -28,6 +28,18 @@ import TrainingCore
         self.activatesExactPolicy = activatesExactPolicy
     }
     var hasAmbiguousFinish: Bool { submitted != nil && !finished }
+    /// Read-only identity projection of this model's accepted frozen Finish.
+    /// Later Settings changes may replace snapshot.state but not this payload.
+    var completedEnvelope: JournalEnvelope? {
+        guard finished, let (event, next, _) = submitted else { return nil }
+        let matches = snapshot.history.filter { envelope in
+            guard envelope.programID == snapshot.state.config.programID,
+                  envelope.eventID == event.eventID,
+                  case let .workout(recorded, savedNext) = envelope.command else { return false }
+            return recorded == event && savedNext == next
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
     func adoptRecoverySnapshot(_ value: StoreSnapshot, operation: TrainingOperationGate.Lease) throws {
         try operations.requireOwnership(operation)
         guard value.state.config.programID == snapshot.state.config.programID, value.draft == snapshot.draft else { throw EngineError(code: "recovery_draft_binding", field: "draft") }

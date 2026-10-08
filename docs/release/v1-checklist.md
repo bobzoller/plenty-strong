@@ -1,5 +1,29 @@
 # Plenty Strong v1 candidate checklist
 
+## Exact-rep branch gates · October 8, 2026
+
+This branch introduces schema 3 / `general-fitness-exact-v1`. The historical candidate phases below remain historical evidence; their counts and artifacts are not verification of this amended source. Current Task 6 source/commands/native terminal results, immutable archive hashes and synthetic screenshots are retained in its local report.
+
+| Required gate | Status / evidence requirement |
+| --- | --- |
+| Projection and exact UI | PASS native projection8/0 and focused39/0/0; final entire UI41/0/0/native0 with default diagnostics. Synthetic layout/value evidence only;16 frame warnings unresolved |
+| Original full current Make | FAILED native65/Make2: sole TipJar entry-reveal assertion; core/models passed. Preserve this literal command failure |
+| Source-bound current components | PASS assembled evidence: core333 expanded cases; models256 expanded passes/1 optional live-development skip; authorized TipJar-only correction followed by full UI41/0/0; separate six macOS crash proofs and unsigned Release build/archive. App/model source and tested binaries equal original failed Make; no literal Make pass claimed |
+| Minimum iOS 18 | UNAVAILABLE / required gate remains OPEN: refreshed inventory, actual `make verify` exit2 because iPhone16/iOS18 has0 matches. No runtime installed or substituted |
+| Versioned-data upgrade | Native current evidence covers retained legacy draft/mode/setup/Finish, later activation/restart, indexed raw actuals, frozen archive replay, lossless backup and fake-cloud recovery; minimum/device/human/service validation remains independent |
+| Human comprehension / trainer / VoiceOver | OPEN: prior versus goal versus actual versus next; all-set scope, reason-specific stopping, per-side gaps, easier/return and setup review; screenshots are supporting layout evidence only |
+| Mixed-policy cloud conflict resolution | DEFERRED / blocks live rollout: retain every original, show `mixed_policy_conflict`, do not pick/drop a branch |
+| Physical device / Files providers / live services / signing / distribution | OPEN, independently authorized; no phone update, cloud activation, signing, push, merge or publication performed |
+
+Task6 runtime source manifest SHA256 `21436a03f009044c9bb2a3e9ead47848c37eae94f3b8186db6af156096e3741c` binds154 frozen inputs; its source archive SHA256 is `16ef6f3868f356346ca9e03405229ebc6388553f655f5a7f30c5d4b98b2d1e40`. Exactly one UI test file changed after the failed full Make;153 original inputs, app launcher/debug dylib and hosted model test binary remain byte-identical. Original source manifest `8287cec03eaa274df94caa9a802e8b6541ba4ba0467e317519a1b8155ccb6cff` and failed bundle remain retained. Release-document status edits followed runtime verification and are excluded from that154-input manifest. Exact commands, terminal matrix, binary/source bindings and screenshot manifests are in the local Task6 report/evidence.
+
+Fresh local unsigned archive `DerivedData/Task6UnsignedArchive/PlentyStrong-0.1.0-4-Unsigned.xcarchive` passed native archive/audit. Actual identity0.1.0(4), minimum18.0, Xcode27A266a; binary/dSYM UUID `0278447B-AF15-3347-8932-C9EC615543C5`; binary SHA256 `90cb390d0d52d3a3a9b8c854837d72f00f8742bc9d32825e59a725bdc7ce5d9b`; archive inventory SHA256 `a7735847b1b3f4fdcf6cc6aab8a2811257463c5bf2b341df65624780140760c6`. Packaged JSON/privacy resources match source. Codesign display/verification return1 because it is not signed; no profile/signature directory. This artifact is separate from historical build2 and the reserved earlier device build3. No install, signing, provisioning, cloud activation, upload or distribution occurred.
+
+Final full UI native tests passed41/0/0 in1944.478s, command operation2572.689s; diagnostic collection itself FAILED: `Failure collecting diagnostics from simulator: Timed out after 600.0 seconds`. The process ended naturally with native0; partial diagnostic evidence and16 invalid-frame warnings remain. Finite screenshots/full-frame hit/value assertions do not resolve warning source or severity. Runner debugger-version lookup noURL/no-version and duplicate simulator accessibility-class diagnostics are retained; unsigned archive emits AppIntents metadata extraction skipped because no framework dependency exists. These are separate from the expected negative CoreData/StoreKit tests below.
+
+The precise integer policy is an evidence-informed product adaptation, not a validated forecast. Expected corrupt-store/injected-migration CoreData and simulated StoreKit-failure diagnostics belong to negative-test evidence; an empty xcresult runtime-warning array never means silent logs.
+
+
 Local release-candidate preparation, not an approved release. All pending, missing or failed required gates block distribution. Deployment target18 is compilation metadata; synthetic tests do not prove service, physical-device or human-policy behavior.
 
 ## Final fix build2 source and actual phases

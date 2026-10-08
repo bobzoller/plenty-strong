@@ -17,17 +17,40 @@ struct WorkoutView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if model.finished {
                     Text("Workout saved on this device").font(.title2).accessibilityIdentifier("workout.saved")
-                    Text("Next: \(model.snapshot.state.activePrescription.slotID), \(model.snapshot.state.activePrescription.date.iso8601)").accessibilityIdentifier("workout.next-prescription")
-                    ForEach(model.snapshot.state.activePrescription.exercises, id: \.movementID) { row in
-                        VStack(alignment: .leading) {
-                            Text(model.movement(for: row).name ?? "Movement").font(.headline)
-                            if row.kind == .paused { Text("Paused") }
-                            else if let set = row.sets.first {
-                                Text("\(row.sets.count) sets · Up to \(set.repCeiling) good reps")
-                                Text(set.effortInstruction)
+                    if let envelope = model.completedEnvelope, case let .workout(event, _) = envelope.command {
+                        let issued = MovementPrescriptionSummary.issuedWorkout(envelope: envelope, history: model.snapshot.history)
+                        ForEach(event.exercises, id: \.movementID) { log in
+                            VStack(alignment: .leading) {
+                                Text(envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.name ?? "Movement").font(.headline)
+                                if let row = issued?.displayed.exercises.first(where: { $0.movementID == log.movementID }) {
+                                    let issuedMovement = issued?.state.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }
+                                    Text("Today's goal: \(MovementPrescriptionSummary.goal(row, policy: issued?.policy, repCounting: issuedMovement?.repCounting ?? .total))").accessibilityIdentifier("workout.completed-goal.\(log.movementID)")
+                                    let issuedLoad = row.load.map { "Issued load: \(MovementPrescriptionSummary.load($0))" } ?? issuedMovement.map { $0.loadingMode == .externalLoad ? "Issued load: no numeric load prescribed" : "Issued load: bodyweight / your setup — no numeric load inferred" } ?? "Issued load unavailable — movement metadata unverified"
+                                    Text(issuedLoad)
+                                        .accessibilityIdentifier("workout.completed-issued-load.\(log.movementID)")
+                                } else {
+                                    Text("Recorded goal unavailable")
+                                    Text("Issued load unavailable — original prescription unverified").accessibilityIdentifier("workout.completed-issued-load.\(log.movementID)")
+                                }
+                                Text(log.actualSets.isEmpty ? "Actual: no performed sets" : "Actual: \(WorkoutDetailView.reps(log))").accessibilityIdentifier("workout.completed-actual.\(log.movementID)")
+                                let loadingMode = envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.loadingMode
+                                Text(log.actualLoad.map { "Actual load: \(MovementPrescriptionSummary.load($0))" } ?? (loadingMode != nil && loadingMode != .externalLoad ? "Actual load: bodyweight / your setup — no numeric load recorded" : "Actual load: not recorded"))
+                                    .accessibilityIdentifier("workout.completed-actual-load.\(log.movementID)")
+                                Text("Outcome: \(log.status.rawValue)")
                             }
-                            if let load = row.load { Text("Prescription: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
                         }
+                        Text("Next saved prescription").font(.headline)
+                        Text("Next: \(envelope.returnedPrescription.slotID), \(envelope.returnedPrescription.date.iso8601)").accessibilityIdentifier("workout.next-prescription")
+                        ForEach(envelope.returnedPrescription.exercises, id: \.movementID) { row in
+                            VStack(alignment: .leading) {
+                                Text(envelope.returnedState.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }?.name ?? "Movement").font(.headline)
+                                if row.kind == .paused { Text("Paused") }
+                                else { Text(MovementPrescriptionSummary.goal(row, policy: MovementPrescriptionSummary.make(row: row, state: envelope.returnedState, history: model.snapshot.history, draft: nil).policy, repCounting: envelope.returnedState.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }?.repCounting ?? .total)).accessibilityIdentifier("workout.next-goal.\(row.movementID)") }
+                                if let load = row.load { Text("Prescription: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
+                            }
+                        }
+                    } else {
+                        Text("Saved completion details unavailable — open History to view the retained original record.")
                     }
                     Button("Back to Today", action: close)
                 } else if model.snapshot.draft == nil {
@@ -68,10 +91,17 @@ struct WorkoutView: View {
             }.padding().disabled(model.busy || model.snapshot.health != .ready)
         }
         .safeAreaInset(edge: .bottom) {
-            if let error = model.errorText {
-                Text(error).foregroundStyle(.red).padding().frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial).accessibilityIdentifier("save.error")
+            VStack(alignment: .leading, spacing: 6) {
+                if !model.finished, !model.needsDateChoice, movementIndex < rows.count, model.snapshot.draft != nil {
+                    let row = rows[movementIndex]
+                    ViewThatFits(in: .horizontal) {
+                        HStack { stopButtons(row) }
+                        VStack(alignment: .leading) { stopButtons(row) }
+                    }.disabled(model.busy || model.log(for: row.movementID)?.problem != Problem.none)
+                }
+                if let error = model.errorText { Text(error).foregroundStyle(.red).accessibilityIdentifier("save.error") }
             }
+            .padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
         }
         .toolbar {
             if !model.finished {
@@ -128,15 +158,21 @@ struct WorkoutView: View {
         if model.canChangePreparation, pendingActual == nil { Button("Movement setup") { showingSetup = true }.accessibilityIdentifier("movement.setup") }
         if row.kind == .paused {
             Text("Paused — no working sets. A new setup cannot clear the safety pause.").accessibilityIdentifier("movement.paused")
-        } else if let set = row.sets.first {
-            VStack(alignment: .leading) {
-                Text("Up to \(set.repCeiling) good reps\(metadata.repCounting == .perSide ? " per side" : " total")").font(.headline)
-                Text(set.effortInstruction)
-            }.accessibilityElement(children: .combine).accessibilityIdentifier("movement.instruction")
+        } else {
+            PrescriptionComparisonView(summary: .make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft), repCounting: metadata.repCounting)
+            if row.kind == .setupReview {
+                Text("Choose a manageable saved setup or create a new setup. To restart this setup's baseline, return to Today and use Settings. Existing history and safety remain.")
+                if model.canChangePreparation { Button("Review movement setup") { showingSetup = true }.accessibilityIdentifier("movement.review-setup") }
+            }
             if metadata.loadingMode == .externalLoad {
                 if let prescribed = row.load { Text("Prescription: \(prescribed.amount) \(prescribed.unit.rawValue) \(prescribed.basis == .perImplement ? "per hand" : "total"). Confirm the actual load below.") }
                 Text(log?.actualLoad.map { "Confirmed: \($0.amount) \($0.unit.rawValue) \($0.basis == .perImplement ? "per hand" : "total")" } ?? (model.handled(row.movementID) ? "Actual load unrecorded; original observations retained" : "Confirm actual dumbbell load before recording sets"))
                 if log?.actualSets.isEmpty == true, !model.handled(row.movementID) {
+                    if let prescribed = row.load {
+                        Button("Confirm prescribed load: \(MovementPrescriptionSummary.load(prescribed))") {
+                            Task { await model.run { try await model.confirmLoad(movementID: row.movementID, load: prescribed) } }
+                        }.accessibilityIdentifier("load.confirm-prescribed")
+                    }
                     ScrollView(.horizontal) {
                         HStack {
                             ForEach(metadata.availableLoads, id: \.amount) { load in
@@ -147,13 +183,12 @@ struct WorkoutView: View {
                         }
                     }
                 } else if !model.handled(row.movementID) { Button("Correct load") { correctingLoad = true }.accessibilityIdentifier("load.correct") }
+                if log?.actualSets.isEmpty == false, !model.handled(row.movementID) {
+                    Button("Different loads used — keep as partial") { Task { await model.run { try await model.recordMixedLoads(movementID: row.movementID); pendingActual = nil } } }.disabled(pendingActual != nil).accessibilityIdentifier("load.mixed")
+                }
             } else { Text("Bodyweight / your setup — no numeric load is inferred") }
         }
-        VStack(alignment: .leading) {
-            Text("Pain or loss of control? Stop this movement now.")
-            Button("Pain — stop") { problem(.pain, row: row) }.accessibilityIdentifier("problem.pain")
-            Button("Loss of control — stop") { problem(.controlLost, row: row) }.accessibilityIdentifier("problem.control_lost")
-        }.disabled(log?.problem != Problem.none)
+        Text("Stopping early to preserve effort or control is correct. Actual reps are recorded independently.")
         SetEntryView(model: model, row: row, pendingActual: $pendingActual).id(row.movementID)
         if let deadline = model.snapshot.draft?.restDeadline {
             TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -172,12 +207,16 @@ struct WorkoutView: View {
             if log?.actualSets.isEmpty == true, pendingActual == nil { statusButton("Skip movement", status: .skipped, id: "movement.skip", row: row) }
             statusButton("Stop movement", status: .stopped, id: "movement.stop", row: row)
         }
-        if !row.sets.isEmpty, log?.actualSets.isEmpty == false, (log?.actualSets.count == row.sets.count || model.handled(row.movementID)) { EffortPicker(model: model, movementID: row.movementID) }
+        if !row.sets.isEmpty, log?.actualSets.isEmpty == false, (model.nextSetIndex(for: row.movementID) == nil || model.handled(row.movementID)) { EffortPicker(model: model, movementID: row.movementID) }
 
         if model.handled(row.movementID) { Button("Next movement") { movementIndex += 1; pendingActual = nil }.accessibilityIdentifier("movement.next") }
     }
     private func statusButton(_ title: String, status: LogStatus, id: String, row: ExercisePrescription) -> some View {
         Button(title) { Task { await model.run { try await model.recordStatus(movementID: row.movementID, status: status, pendingActual: pendingActual); pendingActual = nil } } }.accessibilityIdentifier(id)
+    }
+    @ViewBuilder private func stopButtons(_ row: ExercisePrescription) -> some View {
+        Button("Pain — stop") { problem(.pain, row: row) }.accessibilityIdentifier("problem.pain")
+        Button("Loss of control — stop") { problem(.controlLost, row: row) }.accessibilityIdentifier("problem.control_lost")
     }
     private func problem(_ problem: Problem, row: ExercisePrescription) {
         Task { await model.run { try await model.recordProblem(movementID: row.movementID, problem: problem, pendingActual: pendingActual); pendingActual = nil } }

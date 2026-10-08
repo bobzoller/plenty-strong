@@ -140,6 +140,9 @@ import TrainingCore
                     if let index = arguments.firstIndex(of: "-ui-clock-offset"), arguments.indices.contains(index + 1),
                        let value = TimeInterval(arguments[index + 1]), value.isFinite { offset = value } else { offset = 0 }
                     now = { Date(timeIntervalSince1970: 1791316800 + offset) }
+                    #if targetEnvironment(simulator)
+                    if arguments.contains("-fixture-exact-reps") { now = { ISO8601DateFormatter().date(from: "2026-10-08T20:00:00Z")!.addingTimeInterval(offset) } }
+                    #endif
                     timeZoneID = "Pacific/Honolulu"
                     optionalServicesUnavailable = ProcessInfo.processInfo.arguments.contains("-cloud-disabled") || ProcessInfo.processInfo.arguments.contains("-products-unavailable")
                 }
@@ -153,6 +156,13 @@ import TrainingCore
                 cloudEnabled = preferences.enabled
                 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
+                #if targetEnvironment(simulator)
+                if uiTesting, backup.heads.isEmpty, arguments.contains("-fixture-exact-reps") {
+                    let modeIndex = arguments.firstIndex(of: "-fixture-exact-mode")
+                    let mode = modeIndex.flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "normal"
+                    try await seedExactHistory(repository, mode: mode)
+                }
+                #endif
                 if uiTesting, backup.heads.isEmpty,
                    let index = arguments.firstIndex(of: "-fixture"), arguments.indices.contains(index + 1), (["history-10-10-9", "cloud-pending", "cloud-quota", "cloud-conflict", "cloud-partial"].contains(arguments[index + 1])) {
                     try await seedHistory(repository)
@@ -188,6 +198,51 @@ import TrainingCore
         } catch { errorText = "Local training could not be opened. Your stored data has been retained. \(error)" }
     }
     #if DEBUG
+    #if targetEnvironment(simulator)
+    /// Disposable simulator-only records, produced by the same journal writer and
+    /// core transitions as real local training. Optional services remain inert.
+    private func seedExactHistory(_ repository: TrainingRepository, mode: String) async throws {
+        guard ["normal", "no-history", "baseline", "legacy-unfinished", "easier", "per-side", "setup-review"].contains(mode) else { throw BackupService.invalid("exact_fixture_mode") }
+        var config = try selectFixedProgram(goal: .size, programID: UUID())
+        let firstBase = "incline_db_press_24"
+        let load = Load(amount: mode == "setup-review" ? "5" : "40", unit: .lb, basis: .perImplement)
+        config.initialLoads[firstBase] = load
+        let legacy = mode == "legacy-unfinished"
+        let fresh = ["no-history", "baseline", "legacy-unfinished", "per-side"].contains(mode)
+        let rules = try legacy ? RulesetCatalog.fixedV1() : RulesetCatalog.exactV1()
+        let first = WorkoutSlot(date: try LocalDate(iso8601: mode == "per-side" ? "2026-10-06" : fresh ? "2026-10-08" : "2026-10-01"), slotID: mode == "per-side" ? "TUE" : "THU")
+        var snapshot = try await repository.initialize(config: config, rules: rules, firstWorkout: first)
+        if !fresh {
+            for (date, slot) in [("2026-10-04", "SUN"), ("2026-10-08", "THU")] {
+                let prescription = snapshot.state.activePrescription
+                let logs = prescription.exercises.enumerated().map { index, row in
+                    ExerciseLog(movementID: row.movementID, prescriptionID: prescription.id, status: index == 0 ? .completed : .skipped,
+                        actualLoad: index == 0 ? load : nil,
+                        actualSets: index == 0 ? (mode == "setup-review" ? [1,1,1] : [10,10,9]).enumerated().map {
+                            ActualSet(reps: $0.element, setIndex: $0.offset, missedGoalReason: mode == "setup-review" ? .effortLimit : nil)
+                        } : [], finalEffort: index == 0 ? (mode == "setup-review" ? .tooHard : .onTarget) : .unknown, problem: .none,
+                        baseMovementID: row.baseMovementID, modificationsSnapshot: row.modificationsSnapshot, effortScope: .allWorkingSets, skippedSetIndices: [], mixedLoads: false)
+                }
+                let event = CompletedWorkout(eventID: UUID().uuidString.lowercased(), date: prescription.date, slotID: prescription.slotID, prescriptionID: prescription.id, plannedPrescriptionID: prescription.id, sessionMode: .normal, exercises: logs)
+                let receipt = try await repository.finalize(programID: UUID(uuidString: config.programID)!, expectedRevision: snapshot.state.revision, event: event, next: WorkoutSlot(date: LocalDate(iso8601: date), slotID: slot))
+                guard case .applied = receipt.result else { throw BackupService.invalid("exact_fixture_rejected") }
+                snapshot = receipt.snapshot
+            }
+        }
+        if legacy || mode == "easier" {
+            let model = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: "Pacific/Honolulu", now: now)
+            try await model.start(easierToday: mode == "easier")
+        }
+        if mode == "per-side" {
+            let planned = snapshot.state.activePrescription
+            let displayed = try prepareWorkout(state: snapshot.state, rules: rules)
+            let logs = displayed.exercises.map { row in
+                ExerciseLog(movementID: row.movementID, prescriptionID: displayed.id, status: .partial, actualLoad: nil, actualSets: [], finalEffort: .unknown, problem: .none, baseMovementID: row.baseMovementID, modificationsSnapshot: row.modificationsSnapshot, effortScope: .allWorkingSets, skippedSetIndices: [], mixedLoads: false)
+            }
+            try await repository.saveDraft(WorkoutDraft(id: UUID(), programID: config.programID, expectedRevision: snapshot.state.revision, planned: planned, displayed: displayed, date: planned.date, timeZoneID: "Pacific/Honolulu", sessionMode: .normal, logs: logs, workingSetsStarted: false, acknowledgedMovementIDs: []))
+        }
+    }
+    #endif
     private func fixtureRecords(_ source: TrainingRepository, scope: CloudScope) async throws -> [DownloadedCloudRecord] {
         let document = try await source.exportBackup()
         try await source.bindDataset(datasetID: UUID(uuidString: document.datasetID)!, to: scope)
@@ -278,10 +333,20 @@ import TrainingCore
                 try await requireSafeNewProgram(config, repository: repository)
                 let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
                 let first = try WorkoutScheduler.nextSlot(onOrAfter: today, config: config)
-                let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.exactV1(), firstWorkout: first)
-                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
                 #if DEBUG
-                if uiTesting, ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion"), let model = workout {
+                let legacyRepairFixture = uiTesting && ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion")
+                let initializationRules = try legacyRepairFixture ? RulesetCatalog.fixedV1() : RulesetCatalog.exactV1()
+                #else
+                let initializationRules = try RulesetCatalog.exactV1()
+                #endif
+                let snapshot = try await repository.initialize(config: config, rules: initializationRules, firstWorkout: first)
+                #if DEBUG
+                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: !legacyRepairFixture)
+                #else
+                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
+                #endif
+                #if DEBUG
+                if legacyRepairFixture, let model = workout {
                     // Synthetic restored-draft regression fixture, created through the real writer.
                     // Only during fresh test-program initialization; existing stores are never seeded.
                     try await model.start(easierToday: false, operation: operation)

@@ -11,7 +11,10 @@ final class TipJarTests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture", "history-10-10-9", "-local-storekit-tips"]
         app.launch()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
+        capture("Tip training entry before bounded reveal", app: app)
+        app.revealWorkoutControl(app.textFields["set.reps"])
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
+        capture("Tip training entry fully revealed before purchase", app: app)
         let capabilities = [app.buttons["workout.easier"].exists, app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists]
         XCTAssertEqual(capabilities, [true, true, true])
         XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
@@ -24,12 +27,20 @@ final class TipJarTests: XCTestCase {
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
         XCTAssertEqual(app.staticTexts["history.actual-reps"].label, "10, 10, 9")
         app.selectNativeTab("Today", identifier: "tab.today")
+        app.revealWorkoutControl(app.textFields["set.reps"])
+        capture("Tip training entry fully revealed after purchase", app: app)
         XCTAssertEqual([app.buttons["workout.easier"].exists, app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists], capabilities)
         XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
         XCTAssertEqual(app.textFields["set.reps"].value as? String, pendingEntry)
         app.selectNativeTab("Settings", identifier: "tab.settings")
         app.navigationBars.buttons.firstMatch.tap(); app.buttons["settings.backup"].tap(); app.buttons["backup.export"].tap()
         XCTAssertTrue(app.buttons["backup.share"].waitForExistence(timeout: 10))
+    }
+    @MainActor private func capture(_ name: String, app: XCUIApplication) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name; screenshot.lifetime = .keepAlways; add(screenshot)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = name + " hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
     }
     @MainActor func testNativeLocalPurchaseCancellationKeepsTipsAndTrainingUsable() throws {
         let session = try SKTestSession(configurationFileNamed: "Tips")
@@ -69,7 +80,10 @@ final class TipJarTests: XCTestCase {
         XCTAssertTrue(app.buttons["backup.share"].waitForExistence(timeout: 10))
         app.selectNativeTab("Today", identifier: "tab.today")
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 10)); app.buttons["today.start"].tap()
-        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10)); app.buttons["workout.easier"].tap()
+        app.revealWorkoutControl(app.textFields["set.reps"])
+        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
+        app.revealWorkoutControl(app.buttons["workout.easier"])
+        app.buttons["workout.easier"].tap()
         let easier = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Easier workout"), object: app.staticTexts["workout.session-mode"])
         XCTAssertEqual(XCTWaiter.wait(for: [easier], timeout: 10), .completed)
     }

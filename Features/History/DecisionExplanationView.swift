@@ -5,6 +5,19 @@ struct DecisionExplanationView: View {
     let decision: Decision
     static func copy(for key: String) -> String {
         switch key {
+        case "exact_rep_increment": "Goals met at about-right effort add one total rep to the lowest eligible set, with earlier sets first on a tie. Too-easy work adds two reps per set within the ceiling. These are bounded attempts; stop for effort, pain or control."
+        case "achieved_vector_adopted": "Your controlled achieved reps became the next goals without an extra increment."
+        case "effort_limited_repeat": "Stopping to preserve effort is correct. The first comparable effort-limited shortfall repeats the issued goals."
+        case "effort_limited_rebase": "Two consecutive comparable effort-limited shortfalls set goals to the achieved reps, without a bonus."
+        case "baseline_fitted": "This setup's achieved reps established its baseline without a progression bonus."
+        case "strain_reduce_targets": "At least one set was too hard. Goals are reduced from achieved reps while preserving the intended reserve."
+        case "strain_reduce_load": "Two comparable strains reduced to the nearest available lower load and restarted baseline at the preset floor."
+        case "first_set_floor_hold": "The first set fell below the fitting floor. Keep the goals once; a second comparable strain triggers a load or setup review. Later-set fatigue alone does not trigger this rule."
+        case "setup_review_required": "Repeated strain has no manageable lower load in this setup. Working sets wait for setup review. History, goals and safety are retained."
+        case "equipment_limit_hold": "Available equipment or the maximum ceiling limits automatic progression. Keep the permitted goals and review the setup."
+        case "observation_conflict": "The observations and effort feedback conflict. Raw results are kept; goals and comparison credit do not advance."
+        case "return_observation_held": "The reduced return goals stay in place until controlled, known, non-hard work qualifies. Raw observations remain in history."
+        case "return_baseline_restored": "Clean return work restores normal sets in baseline at the returned load, with preset-floor goals and no ceiling confirmation."
         case "maintenance_success": "Stable work at the target effort is maintenance success. Keep this target."
         case "capacity_hold": "Keep the target. Good reps below the ceiling do not require a weekly increase."
         case "ceiling_confirmation": "Keep the target while another comparable workout confirms the ceiling."

@@ -7,7 +7,7 @@ final class HistorySettingsTests: XCTestCase {
         app.launch(); return app
     }
     @MainActor private func revealSavedNextTarget(in app: XCUIApplication) {
-        if !app.staticTexts["history.next-rep-ceiling"].isHittable { app.swipeUp() }
+        for _ in 0..<8 where !app.staticTexts["history.next-rep-ceiling"].isHittable { app.swipeUp() }
         XCTAssertTrue(app.staticTexts["history.next-rep-ceiling"].isHittable)
     }
     @MainActor func testHistoryKeepsActualRepsSeparateFromNextPrescription() {
@@ -82,7 +82,7 @@ final class HistorySettingsTests: XCTestCase {
     @MainActor func testDraftAndPendingEntrySurviveTabsAndSettingsLock() {
         let app = seeded()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
-        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
+        app.revealWorkoutControl(app.textFields["set.reps"])
         app.textFields["set.reps"].tap(); app.textFields["set.reps"].typeText("7")
         let keyboardEvidence = XCTAttachment(screenshot: app.screenshot()); keyboardEvidence.name = "Pending numeric entry keyboard M1 visible impact"; keyboardEvidence.lifetime = .keepAlways; add(keyboardEvidence)
         if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
@@ -117,9 +117,9 @@ final class HistorySettingsTests: XCTestCase {
         let app = seeded()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
         let input = app.textFields["set.reps"]
-        XCTAssertTrue(input.waitForExistence(timeout: 10)); XCTAssertEqual(input.label, "Reps performed")
-        app.buttons["load.choose.5"].tap()
-        input.tap(); input.typeText("7")
+        app.revealWorkoutControl(input); XCTAssertEqual(input.label, "Reps performed")
+        app.tapWorkoutControl("load.choose.5")
+        app.revealWorkoutControl(input); input.tap(); input.typeText("8")
         let valid = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: app.buttons["set.save"])
         XCTAssertEqual(XCTWaiter.wait(for: [valid], timeout: 15), .completed)
         input.typeText(XCUIKeyboardKey.delete.rawValue + "abc")
@@ -162,6 +162,72 @@ final class HistorySettingsTests: XCTestCase {
 // launches expose only the visible native label; this verifies user navigation
 // without changing the app hierarchy or claiming the identifier check passed.
 extension XCUIApplication {
+    @MainActor func revealWorkoutControl(_ element: XCUIElement, pinnedFooter: XCUIElement? = nil, scrollDistance: CGFloat = 320, file: StaticString = #filePath, line: UInt = #line) {
+        func footer() -> XCUIElement? {
+            if let pinnedFooter { return pinnedFooter }
+            let stop = buttons["problem.pain"]
+            return stop.exists && !buttons["workout.keep-original-date"].exists ? stop : nil
+        }
+        func reachable() -> Bool {
+            guard element.exists else { return false }
+            let bounds = element.frame
+            guard [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.width > 0, bounds.height > 0,
+                  bounds.intersects(frame) else { return false }
+            if (element.elementType == .textField || element.elementType == .button), !element.identifier.hasPrefix("problem.") {
+                // AX can expose a cached offscreen frame before a valid hit point.
+                // Check the complete control inside content before hittability.
+                let bottom = footer().map { $0.frame.minY - 32 } ?? frame.maxY
+                guard bounds.minY >= navigationBars.firstMatch.frame.maxY, bounds.maxY < bottom else { return false }
+            }
+            return element.isHittable
+        }
+        for _ in 0..<24 {
+            if reachable() { break }
+            let bottom = footer().map { $0.frame.minY - 48 } ?? frame.maxY - 150
+            let origin = coordinate(withNormalizedOffset: .zero)
+            let navigationBottom = navigationBars.firstMatch.frame.maxY
+            let bounds = element.exists ? element.frame : .zero
+            let hasFrame = [bounds.minY, bounds.height].allSatisfy(\.isFinite) && bounds.height > 0
+            let above = hasFrame && bounds.minY < navigationBottom
+            let keyboardOpen = keyboards.firstMatch.exists && pinnedFooter == nil && footer() != nil
+            var distance = scrollDistance
+            if keyboardOpen, hasFrame {
+                let usableDragHeight = bottom - navigationBottom - 32
+                guard usableDragHeight > 0 else { break }
+                let requiredShift = above ? navigationBottom - bounds.minY : max(0, bounds.maxY - (bottom + 16))
+                distance = min(scrollDistance, usableDragHeight / 2, max(24, requiredShift + 12))
+                print("Bounded keyboard reveal: frame=\(bounds) above=\(above) requiredShift=\(requiredShift) usableDragHeight=\(usableDragHeight) distance=\(distance)")
+            }
+            let top = max(navigationBottom + 32, bottom - distance)
+            let start = origin.withOffset(CGVector(dx: frame.midX, dy: above ? top : bottom))
+            let end = origin.withOffset(CGVector(dx: frame.midX, dy: above ? bottom : top))
+            if pinnedFooter != nil {
+                print("Bounded explicit-footer reveal: exists=\(element.exists) frame=\(element.exists ? element.frame : .zero) footer=\(pinnedFooter!.frame) start=\(start.screenPoint) end=\(end.screenPoint)")
+                // The short onboarding Form needs a held slow drag: release
+                // inertia can otherwise jump the target between both edges.
+                start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
+            } else if keyboardOpen {
+                // Focus shrinks the viewport: correct the observed frame deficit
+                // without flinging the field between navigation and safety stops.
+                start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
+            } else { start.press(forDuration: 0.01, thenDragTo: end) }
+        }
+        if !reachable() {
+            XCTContext.runActivity(named: "Unreached control") { activity in
+                let hierarchy = XCTAttachment(string: debugDescription); hierarchy.name = "Unreached control hierarchy"; hierarchy.lifetime = .keepAlways; activity.add(hierarchy)
+                let capture = XCTAttachment(screenshot: screenshot()); capture.name = "Unreached control viewport"; capture.lifetime = .keepAlways; activity.add(capture)
+            }
+        }
+        XCTAssertTrue(reachable(), "Reach the full control above the pinned safety area", file: file, line: line)
+    }
+    @MainActor func tapWorkoutControl(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+        let control = buttons[identifier]; revealWorkoutControl(control, file: file, line: line); control.tap()
+    }
+    @MainActor func enterPerformedReps(_ value: String, field: String = "set.reps", file: StaticString = #filePath, line: UInt = #line) {
+        let input = textFields[field]; revealWorkoutControl(input, file: file, line: line); input.tap(); input.typeText(value)
+        if buttons["keyboard.done"].exists { buttons["keyboard.done"].tap() }
+        XCTAssertEqual(input.value as? String, value, file: file, line: line)
+    }
     @MainActor func selectNativeTab(_ title: String, identifier: String, file: StaticString = #filePath, line: UInt = #line) {
         let matches = buttons.matching(NSPredicate(format: "label == %@", title))
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 15), file: file, line: line)
