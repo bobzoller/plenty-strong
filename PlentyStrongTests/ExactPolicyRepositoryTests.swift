@@ -177,6 +177,45 @@ extension ExactPolicyRepositoryTests {
 }
 
 extension ExactPolicyRepositoryTests {
+    @MainActor @Test func legacyEmptySetupChangesRetainPolicyUntilSubsequentDraftFreeStart() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        let draft = try await s.draft(empty: true)
+        try await s.repository.saveDraft(draft)
+        let repository = try await s.reopened()
+        let app = AppComposition(repository: repository, workout: nil, cloudCoordinator: nil)
+        app.now = { Date(timeIntervalSince1970: 1_791_137_000) }
+        try await app.reloadLocalProductChoices()
+        let model = try #require(app.workout)
+        #expect(model.snapshot.draft == draft)
+        let row = try #require(draft.displayed.exercises.first)
+        let base = try #require(row.baseMovementID)
+        let changes: [VariantChange] = [
+            .create(baseMovementID: base, variantID: "retained-legacy-setup", modifications: "Altered setup"),
+            .correctDescription(variantID: "retained-legacy-setup", modifications: "Corrected setup"),
+            .select(baseMovementID: base, variantID: row.movementID)
+        ]
+        for (index, change) in changes.enumerated() {
+            let previous = try #require(model.snapshot.draft)
+            try await model.changeSetup(change)
+            let replacement = try #require(model.snapshot.draft)
+            #expect(replacement.id != previous.id && replacement.sessionMode == draft.sessionMode)
+            #expect(model.snapshot.state.schemaVersion == 2)
+            #expect(replacement.displayed.exercises.allSatisfy { $0.sets.allSatisfy { $0.targetReps == nil } })
+            #expect(replacement.logs.allSatisfy { $0.effortScope == nil && $0.actualSets.isEmpty && $0.skippedSetIndices == nil && $0.mixedLoads == nil })
+            #expect(model.snapshot.history.count == index + 2)
+            #expect(model.snapshot.history.allSatisfy { if case .activatePolicy = $0.command { false } else { true } })
+        }
+        #expect(model.snapshot.state.config.variants?["retained-legacy-setup"]?.modifications == "Corrected setup")
+        #expect(model.snapshot.state.config.activeVariantIDs?[base] == row.movementID)
+        try await model.resolveDateChange(keepOriginal: false)
+        try await model.start(easierToday: false)
+        #expect(model.snapshot.state.schemaVersion == 3)
+        #expect(model.snapshot.draft?.displayed.exercises.allSatisfy { $0.sets.allSatisfy { $0.targetReps != nil } } == true)
+        #expect(model.snapshot.history.count == 5)
+        try await model.start(easierToday: false)
+        #expect(model.snapshot.history.filter { if case .activatePolicy = $0.command { true } else { false } }.count == 1)
+        await repository.close()
+    }
     @MainActor @Test func legacyEmptyModeSwitchRetainsPolicyUntilSubsequentDraftFreeStart() async throws {
         let s = try await RepositoryTestHarness.make(goal: .size)
         let draft = try await s.draft(empty: true)

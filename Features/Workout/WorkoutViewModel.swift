@@ -150,9 +150,9 @@ import TrainingCore
         try operations.requireOwnership(operation)
         try await startBody(easierToday: easierToday)
     }
-    private func startBody(easierToday: Bool) async throws {
+    private func startBody(easierToday: Bool, retainingLegacyDraftPolicy: Bool = false) async throws {
         try requireReady()
-        let startedWithLegacyDraft = snapshot.state.schemaVersion == 2 && snapshot.draft != nil
+        let startedWithLegacyDraft = retainingLegacyDraftPolicy || (snapshot.state.schemaVersion == 2 && snapshot.draft != nil)
         if let existing = snapshot.draft {
             if (existing.sessionMode == .easier) == easierToday { try await refreshWorkingAdmissionBody(); return }
             guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "draft") }
@@ -347,10 +347,12 @@ import TrainingCore
     private func changeSetupBody(_ change: VariantChange) async throws {
         try requireReady()
         guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "setup") }
+        // Setup invalidation and replacement remain within the retained draft's policy lifetime.
+        let startedWithLegacyDraft = snapshot.state.schemaVersion == 2 && snapshot.draft != nil
         let mode = snapshot.draft?.sessionMode
         let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
         snapshot = try await repository.applyVariantChange(programID: programID, expectedRevision: snapshot.state.revision, change: change, next: slot, invalidateEmptyDraft: true)
-        if let mode { try await startBody(easierToday: mode == .easier) }
+        if let mode { try await startBody(easierToday: mode == .easier, retainingLegacyDraftPolicy: startedWithLegacyDraft) }
     }
     // Settings never discard/rebind an active draft or a frozen Finish payload.
     var canEditProgramSettings: Bool { (submitted == nil || finished) && snapshot.draft == nil && snapshot.health == .ready }
