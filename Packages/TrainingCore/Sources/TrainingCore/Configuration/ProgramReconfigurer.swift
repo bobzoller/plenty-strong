@@ -16,6 +16,9 @@ public struct ConfigurationResult: Equatable, Sendable {
 /// exact parent revision and commit state, prescription and outbox atomically.
 public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
                                rules: Ruleset, nextWorkout: WorkoutSlot) throws -> ConfigurationResult {
+    if state.schemaVersion == 4 {
+        return try reconfigureStarterProgram(state: state, change: change, rules: rules, nextWorkout: nextWorkout)
+    }
     try validateConfigurationInput(state: state, rules: rules, slot: nextWorkout)
     let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
     var updated = state
@@ -24,6 +27,8 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
     let key: String
     var resumeAuthorized = false
     switch change {
+    case .reviewStrengthHandling:
+        throw EngineError(code: "unsupported_operation", field: "reviewStrengthHandling")
     case let .goal(goal):
         guard goal != state.config.goal else { return unchangedConfiguration(state) }
         updated.config.goal = goal

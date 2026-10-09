@@ -13,7 +13,7 @@ public struct InitializedProgram: Equatable, Sendable {
 public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot) throws -> InitializedProgram {
     try validate(config: config, rules: rules)
     let policy = try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules)
-    guard !policy.usesStarterDoses else { throw EngineError(code: "unsupported_operation", field: "starter_initialization") }
+    if policy.usesStarterDoses { return try initializeStarterProgram(config: config, rules: rules, firstWorkout: firstWorkout) }
     let app = policy.usesVariants
     let preset = try rules.preset(goal: config.goal, daysPerWeek: config.daysPerWeek)
     var exercises: [String: ExerciseState] = [:]
@@ -47,7 +47,7 @@ public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkou
 func plannedWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws -> WorkoutPrescription {
     try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
-    case .starterExactV1: throw EngineError(code: "unsupported_operation", field: "starter_policy")
+    case .starterExactV1: return try plannedStarterWorkout(state: state, rules: rules, slot: slot)
     case .fixedExactV1: return try plannedExactWorkout(state: state, rules: rules, slot: slot)
     case .numericV02, .fixedCeilingsV1: break
     }

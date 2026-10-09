@@ -70,8 +70,8 @@ public func validateExactRepContract(state: ProgramState, rules: Ruleset) throws
     if !policy.usesStarterDoses {
         try rejectLegacyStarterFields(state)
     } else {
-        // Schema-4 semantic admission is owned by its dedicated validator (Task 2).
-        throw EngineError(code: "unsupported_operation", field: "starter_validation")
+        try validateStarterProgram(state: state, rules: rules)
+        return
     }
     guard policy.usesExactTargets else { return }
     let parameters = try rules.resolvedParameters
@@ -135,7 +135,7 @@ private func validateExactPrescriptionShape(_ prescription: ExercisePrescription
     }
 }
 
-private func validateExactComparable(_ exposure: Exposure, variant: MovementVariant, movement: Movement, rules: Ruleset) throws {
+func validateExactComparable(_ exposure: Exposure, variant: MovementVariant, movement: Movement, rules: Ruleset) throws {
     guard let log = exposure.log, let context = exposure.exactRepContext, let targets = exposure.prescribedTargets,
           exposure.movementID == variant.id, exposure.baseMovementID == variant.baseMovementID,
           exposure.modificationsSnapshot != nil, exposure.modificationsSnapshot == log.modificationsSnapshot,

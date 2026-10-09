@@ -98,6 +98,9 @@ public func prepareInterruptedReturn(state: ProgramState, asOf: LocalDate, rules
 }
 
 func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDate, rules: Ruleset) throws -> Decision? {
+    if state.schemaVersion == 4 {
+        return try markStarterInterruptedReturn(state: &state, variantID: id, asOf: asOf, rules: rules)
+    }
     let before = state.exercises[id]!
     let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
     if policy.usesExactTargets {

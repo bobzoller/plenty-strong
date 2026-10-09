@@ -3,6 +3,12 @@ import Foundation
 /// Pure supplied-value resolution. Modification text never changes load semantics.
 public func resolveEffectiveMovement(config: ProgramConfig, variantID: String, rules: Ruleset) throws -> Movement {
     try validate(config: config, rules: rules)
+    return try resolveValidatedEffectiveMovement(config: config, variantID: variantID, rules: rules)
+}
+
+/// Internal operation-local path: the caller must have admitted this same config
+/// and rules in the current operation. There is no persisted/global trust cache.
+func resolveValidatedEffectiveMovement(config: ProgramConfig, variantID: String, rules: Ruleset) throws -> Movement {
     guard let variant = config.variants?[variantID],
           var movement = config.movements.first(where: { $0.id == variant.baseMovementID }) else {
         throw EngineError(code: "invalid_variant", field: "variantId")
@@ -26,9 +32,17 @@ public func resolveEffectiveMovement(config: ProgramConfig, variantID: String, r
 /// Return the registered normal dose, adjusted only for explicit handling choice.
 /// Promotion/state admission belongs to the schema-4 planner/validator boundary.
 public func resolveMovementDose(config: ProgramConfig, variantID: String, exercise: ExerciseState?, rules: Ruleset) throws -> MovementDose {
-    let movement = try resolveEffectiveMovement(config: config, variantID: variantID, rules: rules)
-    guard try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules) == .starterExactV1,
-          var dose = rules.starterDoses?[config.goal.rawValue]?[movement.id] else {
+    try validate(config: config, rules: rules)
+    guard try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules).usesStarterDoses else {
+        throw EngineError(code: "missing_movement_dose", field: "starterDoses")
+    }
+    return try resolveValidatedMovementDose(config: config, variantID: variantID, exercise: exercise, rules: rules)
+}
+
+/// Same operation-local admission requirement as the effective-movement helper.
+func resolveValidatedMovementDose(config: ProgramConfig, variantID: String, exercise: ExerciseState?, rules: Ruleset) throws -> MovementDose {
+    let movement = try resolveValidatedEffectiveMovement(config: config, variantID: variantID, rules: rules)
+    guard var dose = rules.starterDoses?[config.goal.rawValue]?[movement.id] else {
         throw EngineError(code: "missing_movement_dose", field: "starterDoses")
     }
     if dose.requiresHandlingReview {

@@ -4,6 +4,9 @@ import Foundation
 /// or a problem flag. Only an explicitly invalidated empty draft may be rebuilt.
 public func changeMovementVariant(state: ProgramState, change: VariantChange, rules: Ruleset,
                                   nextWorkout: WorkoutSlot) throws -> ConfigurationResult {
+    if state.schemaVersion == 4 {
+        return try changeStarterMovementVariant(state: state, change: change, rules: rules, nextWorkout: nextWorkout)
+    }
     try validateConfigurationInput(state: state, rules: rules, slot: nextWorkout)
     let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
     guard policy.usesVariants else { throw EngineError(code: "unsupported_variant_policy", field: "schemaVersion") }
@@ -12,6 +15,8 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
     let key: String
     var checkGap = false
     switch change {
+    case .createLoadingMode:
+        throw EngineError(code: "unsupported_operation", field: "createLoadingMode")
     case let .create(base, variant, description):
         guard let movement = state.config.movements.first(where: { $0.id == base }) else {
             throw EngineError(code: "unknown_movement", field: "baseMovementId")

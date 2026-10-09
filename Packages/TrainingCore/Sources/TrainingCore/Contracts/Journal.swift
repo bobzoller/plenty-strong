@@ -2,13 +2,15 @@ import Foundation
 
 public enum VariantChange: Codable, Equatable, Sendable {
     case create(baseMovementID: String, variantID: String, modifications: String)
+    case createLoadingMode(baseMovementID: String, variantID: String, modifications: String, mode: LoadingMode)
     case select(baseMovementID: String, variantID: String)
     case correctDescription(variantID: String, modifications: String)
-    enum CodingKeys: String, CodingKey { case kind, modifications; case baseMovementID = "baseMovementId"; case variantID = "variantId" }
+    enum CodingKeys: String, CodingKey { case kind, modifications, mode; case baseMovementID = "baseMovementId"; case variantID = "variantId" }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .kind) {
         case "create": self = .create(baseMovementID: try c.decode(String.self, forKey: .baseMovementID), variantID: try c.decode(String.self, forKey: .variantID), modifications: try c.decode(String.self, forKey: .modifications))
+        case "createLoadingMode": self = .createLoadingMode(baseMovementID: try c.decode(String.self, forKey: .baseMovementID), variantID: try c.decode(String.self, forKey: .variantID), modifications: try c.decode(String.self, forKey: .modifications), mode: try c.decode(LoadingMode.self, forKey: .mode))
         case "select": self = .select(baseMovementID: try c.decode(String.self, forKey: .baseMovementID), variantID: try c.decode(String.self, forKey: .variantID))
         case "correctDescription": self = .correctDescription(variantID: try c.decode(String.self, forKey: .variantID), modifications: try c.decode(String.self, forKey: .modifications))
         default: throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "Unknown VariantChange kind")
@@ -22,6 +24,12 @@ public enum VariantChange: Codable, Equatable, Sendable {
             try c.encode(baseMovementID, forKey: .baseMovementID)
             try c.encode(variantID, forKey: .variantID)
             try c.encode(modifications, forKey: .modifications)
+        case let .createLoadingMode(baseMovementID, variantID, modifications, mode):
+            try c.encode("createLoadingMode", forKey: .kind)
+            try c.encode(baseMovementID, forKey: .baseMovementID)
+            try c.encode(variantID, forKey: .variantID)
+            try c.encode(modifications, forKey: .modifications)
+            try c.encode(mode, forKey: .mode)
         case let .select(baseMovementID, variantID):
             try c.encode("select", forKey: .kind)
             try c.encode(baseMovementID, forKey: .baseMovementID)
@@ -35,14 +43,16 @@ public enum VariantChange: Codable, Equatable, Sendable {
 }
 
 public enum ConfigurationChange: Codable, Equatable, Sendable {
+    case reviewStrengthHandling(variantID: String, choice: StrengthHandlingChoice)
     case goal(Goal)
     case minimumRir(baseMovementID: String, value: Int)
     case resetSetup(variantID: String)
     case safeResume(baseMovementID: String, externalClearanceConfirmed: Bool)
-    enum CodingKeys: String, CodingKey { case kind, value, externalClearanceConfirmed; case baseMovementID = "baseMovementId"; case variantID = "variantId" }
+    enum CodingKeys: String, CodingKey { case kind, value, externalClearanceConfirmed, choice; case baseMovementID = "baseMovementId"; case variantID = "variantId" }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .kind) {
+        case "reviewStrengthHandling": self = .reviewStrengthHandling(variantID: try c.decode(String.self, forKey: .variantID), choice: try c.decode(StrengthHandlingChoice.self, forKey: .choice))
         case "goal": self = .goal(try c.decode(Goal.self, forKey: .value))
         case "minimumRir": self = .minimumRir(baseMovementID: try c.decode(String.self, forKey: .baseMovementID), value: try c.decode(Int.self, forKey: .value))
         case "resetSetup": self = .resetSetup(variantID: try c.decode(String.self, forKey: .variantID))
@@ -53,6 +63,10 @@ public enum ConfigurationChange: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case let .reviewStrengthHandling(variantID, choice):
+            try c.encode("reviewStrengthHandling", forKey: .kind)
+            try c.encode(variantID, forKey: .variantID)
+            try c.encode(choice, forKey: .choice)
         case let .goal(value):
             try c.encode("goal", forKey: .kind)
             try c.encode(value, forKey: .value)
