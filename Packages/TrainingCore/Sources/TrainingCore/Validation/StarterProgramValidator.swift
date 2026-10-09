@@ -56,7 +56,7 @@ func validateStarterState(state: ProgramState, rules: Ruleset) throws {
               movement.loadingMode == .externalLoad ? (exercise.load == nil || movement.availableLoads.contains(exercise.load!)) : exercise.load == nil,
               exercise.mode != .paused || safety[movement.id]!.paused,
               starter.windows.count <= 3, Set(starter.windows.values.map(\.slotID)).count == starter.windows.count,
-              !(exercise.mode == .paused || safety[movement.id]!.paused || exercise.interruptedReturn ||
+              !(exercise.mode == .paused || safety[movement.id]!.paused || exercise.interruptedReturn || exercise.nextSetOverride != nil ||
                 exact.setupReviewRequired || dose.requiresHandlingReview) || starter.windows.isEmpty else {
             throw EngineError(code: "invalid_exact_state", field: "exercises.\(id)")
         }
@@ -139,6 +139,7 @@ private func validateStarterWindow(_ window: StarterComparisonWindow, key: Strin
     var priorDate: LocalDate?
     var lastClassification: ExactExposureClassification?
     for exposure in window.exposures {
+        try WorkoutScheduler.validate(slot: WorkoutSlot(date: exposure.date, slotID: window.slotID), config: state.config)
         try validateExactComparable(exposure, variant: state.config.variants![id]!, movement: movement, rules: rules)
         guard exposure.exactRepContext == context,
               exposure.effortInstruction == exactEffortInstruction(minimumRir: context.minimumRir, parameters: parameters),

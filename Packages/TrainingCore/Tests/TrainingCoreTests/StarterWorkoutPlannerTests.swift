@@ -208,7 +208,7 @@ struct StarterWorkoutPlannerTests {
         for mutation in mutations { #expect(throws: EngineError.self) { try validateStarterProgram(state: mutation, rules: rules) } }
     }
 
-    @Test func windowsHaveStrictFrozenIdentityBoundsAndRawSideAdmission() throws {
+    func normalRowWithWindows() throws -> (ProgramState, Ruleset, String) {
         var (state, rules) = try initial()
         let base = "chest_supported_db_row_30_neutral", id = state.config.activeVariantIDs!["chest_supported_db_row_30_neutral"]!
         state.exercises[id]!.load = state.config.movements.first { $0.id == base }!.availableLoads[3]
@@ -233,6 +233,45 @@ struct StarterWorkoutPlannerTests {
         }
         state.activePrescription = try plannedWorkout(state: state, rules: rules, slot: slot)
         try validateStarterProgram(state: state, rules: rules)
+        return (state, rules, id)
+    }
+
+    @Test func returningSetOverrideCannotRetainNormalWindowCredit() throws {
+        var (state, rules, id) = try normalRowWithWindows()
+        state.exercises[id]!.nextSetOverride = 1
+        #expect(!state.exercises[id]!.interruptedReturn)
+        #expect(state.exercises[id]!.starterState!.windows.values.allSatisfy { $0.introStreak == 1 })
+        // Render the exact returning prescription from the coherent no-credit state.
+        // Copying it back proves rejection comes from retained evidence, not a stale ID.
+        var withoutCredit = state
+        withoutCredit.exercises[id]!.starterState!.windows = [:]
+        withoutCredit.activePrescription = try plannedWorkout(state: withoutCredit, rules: rules, slot: slot)
+        try validateStarterProgram(state: withoutCredit, rules: rules)
+        state.activePrescription = withoutCredit.activePrescription
+        let row = try #require(state.activePrescription.exercises.first { $0.movementID == id })
+        #expect(row.phase == .returning && row.sets.count == 1)
+        #expect(throws: EngineError.self) { try validateStarterProgram(state: state, rules: rules) }
+        #expect(throws: EngineError.self) { try prepareWorkout(state: state, rules: rules) }
+    }
+
+    @Test(arguments: ["SUN", "TUE", "THU"])
+    func eachWindowRejectsExposureOnAnotherScheduledWeekday(slotID: String) throws {
+        var (state, rules, id) = try normalRowWithWindows()
+        let key = try #require(state.exercises[id]!.starterState!.windows.first { $0.value.slotID == slotID }?.key)
+        let correct = state.exercises[id]!.starterState!.windows[key]!.exposures[0].date
+        try WorkoutScheduler.validate(slot: WorkoutSlot(date: correct, slotID: slotID), config: state.config)
+        try validateStarterProgram(state: state, rules: rules)
+        // Another scheduled day, still before completion/session bounds, preserves
+        // all other fields and the context key while making slot evidence invalid.
+        let wrong = try correct.adding(days: slotID == "SUN" ? 2 : -2)
+        state.exercises[id]!.starterState!.windows[key]!.exposures[0].date = wrong
+        #expect(throws: EngineError.self) { try validateStarterProgram(state: state, rules: rules) }
+        #expect(throws: EngineError.self) { try prepareWorkout(state: state, rules: rules) }
+    }
+
+    @Test func windowsHaveStrictFrozenIdentityBoundsAndRawSideAdmission() throws {
+        var (state, rules, id) = try normalRowWithWindows()
+        let base = "chest_supported_db_row_30_neutral"
         let key = state.exercises[id]!.starterState!.windows.keys.sorted().first!
         var mutations: [ProgramState] = []
         var bad = state; bad.exercises[id]!.starterState!.windows[key]!.introStreak = 2; mutations.append(bad)
