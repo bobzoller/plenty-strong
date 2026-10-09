@@ -45,7 +45,10 @@ public enum WorkoutScheduler {
               Set(config.weeklySlots.compactMap(\.weekday)).count == config.daysPerWeek else {
             throw EngineError(code: "invalid_schedule", field: "weeklySlots")
         }
-        if config.coveragePolicy == "fixed_profile" {
+        // Registered starter metadata stays frozen even if coveragePolicy is altered.
+        if config.profileID == "starter-upper-v1" || config.profileID == "starter-glute-v1" {
+            try StarterProgramCatalog.validateProjection(config)
+        } else if config.coveragePolicy == "fixed_profile" {
             if config.profileID == "fixed-home-gym-v0.2" {
                 guard try CanonicalJSON.sha256(fixedMetadataContent(config: config)) == RulesetCatalog.fixedMetadataProjectionHash else {
                     throw EngineError(code: "fixed_profile_mismatch", field: "weeklySlots")

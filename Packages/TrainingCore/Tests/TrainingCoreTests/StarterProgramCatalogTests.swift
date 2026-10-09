@@ -105,7 +105,11 @@ struct StarterProgramCatalogTests {
                 { (c: inout ProgramConfig) in c.weeklySlots[0].movementIDs.reverse() },
                 { (c: inout ProgramConfig) in c.profileHash = "bad" },
                 { (c: inout ProgramConfig) in c.sourceProfileHash = "bad" },
-                { (c: inout ProgramConfig) in c.profileID = "unknown" }
+                { (c: inout ProgramConfig) in c.profileID = "unknown" },
+                { (c: inout ProgramConfig) in c.coveragePolicy = nil },
+                { (c: inout ProgramConfig) in c.coveragePolicy = "general" },
+                { (c: inout ProgramConfig) in c.coveragePolicy = nil; c.weeklySlots[0].weekday = 1 },
+                { (c: inout ProgramConfig) in c.coveragePolicy = "general"; c.weeklySlots[0].weekday = 1 }
             ] {
                 var changed = config; mutate(&changed)
                 #expect(throws: EngineError.self) { try WorkoutScheduler.nextSlot(onOrAfter: LocalDate(iso8601: "2026-10-11"), config: changed) }
