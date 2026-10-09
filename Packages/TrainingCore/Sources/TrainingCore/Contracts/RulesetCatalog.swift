@@ -32,11 +32,23 @@ public enum RulesetCatalog {
         return rules
     }
 
+    public static func starter(_ choice: StarterProgramChoice) throws -> Ruleset {
+        let registration = StarterProgramCatalog.registration(choice)
+        let rules = try loadRules(named: registration.resource)
+        let profile = try StarterProgramCatalog.definition(choice)
+        guard rules.profileID == profile.profileID, rules.profileHash == profile.contentHash else {
+            throw EngineError(code: "profile_hash_mismatch", field: "rules.profileHash")
+        }
+        return rules
+    }
+
     public static func resolve(version: String, hash: String) throws -> Ruleset {
         switch (version, hash) {
         case ("general-fitness-v0.2", numericRulesetHash): try numericV02()
         case ("general-fitness-swift1", fixedRulesetHash): try fixedV1()
         case ("general-fitness-exact-v1", exactRulesetHash): try exactV1()
+        case ("general-fitness-upper-exact-v2", StarterProgramCatalog.upperRulesetHash): try starter(.upperBody)
+        case ("general-fitness-glute-exact-v1", StarterProgramCatalog.gluteRulesetHash): try starter(.wholeBodyGlutes)
         default: throw EngineError(code: "unknown_ruleset", field: "rules.version")
         }
     }
@@ -61,10 +73,17 @@ public enum RulesetCatalog {
 
     private static func loadRules(named name: String) throws -> Ruleset {
         let data = try resource(named: name)
-        if name == "ruleset-exact-v1" {
+        let expectedRawHash: String?
+        switch name {
+        case "ruleset-exact-v1": expectedRawHash = exactRulesetHash
+        case "ruleset-upper-exact-v2": expectedRawHash = StarterProgramCatalog.upperRulesetHash
+        case "ruleset-glute-exact-v1": expectedRawHash = StarterProgramCatalog.gluteRulesetHash
+        default: expectedRawHash = nil
+        }
+        if let expectedRawHash {
             guard case .object(var fields) = try JSONDecoder().decode(CanonicalValue.self, from: data),
-                  fields.removeValue(forKey: "hash") == .string(exactRulesetHash),
-                  try CanonicalJSON.sha256(.object(fields)) == exactRulesetHash else {
+                  fields.removeValue(forKey: "hash") == .string(expectedRawHash),
+                  try CanonicalJSON.sha256(.object(fields)) == expectedRawHash else {
                 throw EngineError(code: "invalid_ruleset", field: "rules.hash")
             }
         }
@@ -73,7 +92,7 @@ public enum RulesetCatalog {
         return rules
     }
 
-    private static func resource(named name: String) throws -> Data {
+    static func resource(named name: String) throws -> Data {
         guard let url = Bundle.module.url(forResource: name, withExtension: "json") else {
             throw EngineError(code: "missing_resource", field: name)
         }

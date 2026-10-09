@@ -1,0 +1,823 @@
+{
+  "presets": {
+    "fat_loss": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    },
+    "size": {
+      "normalSets": 3,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    },
+    "strength": {
+      "normalSets": 3,
+      "repFloor": 4,
+      "repCeiling": 6,
+      "restSeconds": 180,
+      "defaultDays": 3,
+      "fallbackFloor": 8,
+      "fallbackCeiling": 12
+    },
+    "maintenance": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120,
+      "defaultDays": 3
+    }
+  },
+  "profileId": "starter-glute-v1",
+  "profileHash": "ae1ae192c0e36884ca5e8f02be268784367230df0bb9bcf3efe0bb6638f3adb3",
+  "version": "general-fitness-glute-exact-v1",
+  "contractVersion": 4,
+  "sourceRulesetHash": "b5b1100ee68edbe76384c31a3c8e1af918b4f5e3737f701ed0a6745989c3c73f",
+  "sourceIds": [
+    "EX01",
+    "EX02",
+    "EX03",
+    "EX04",
+    "EX05",
+    "EX06",
+    "EX07",
+    "EX08",
+    "EX09"
+  ],
+  "ruleIds": [
+    "X01",
+    "X02",
+    "X03",
+    "X04",
+    "X05",
+    "X06",
+    "X07",
+    "X08",
+    "X09",
+    "X10",
+    "X11",
+    "X12",
+    "X13",
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06"
+  ],
+  "presetTable": "Active fixed-home-gym-v0.2 app adaptation of general-fitness-v0.2. All four goals use Sunday/Tuesday/Thursday; the fixed app does not offer two-day schedules. Fat loss: 2 sets, 8–12, 120 seconds. Size: 3 sets, 8–12, 120 seconds. Strength: 3 sets, 4–6 only for the four permitted movements, otherwise 8–12, 180 seconds. Maintenance: 2 sets, 8–12, 120 seconds. Normal instruction: Stop when you think you could do two more good reps. Stop earlier for pain or loss of control. These are operational app defaults, not four independently validated trial protocols. Archived numeric v0.2 retains its original table and two-day behavior in numeric-v02-ruleset.json.",
+  "rulebook": "Evidence-informed exact per-set conditional double progression. The combined policy has not been scientifically validated as a forecasting algorithm. No comparative validation establishes latest-session vectors, rolling medians or total-rep redistribution as the best forecasts. Double progression is the coaching framework; integer increments, confirmation counts, reset rules, load cap, return thresholds, ceiling maxima and fitting are product choices. Effort, pain and control always override the number. Aim for the listed reps. Stop at that number, or sooner when another good rep would leave fewer than about two reps in reserve. Stop earlier for pain or loss of control. The structured X01–X13 rules and EX01–EX09 source limitations govern contract 3; legacy policy bytes and meanings remain frozen.",
+  "parameters": {
+    "normalMinimumRir": 2,
+    "normalEffortInstruction": "Aim for the listed reps. Stop at that number, or sooner when another good rep would leave fewer than about two reps in reserve. Stop earlier for pain or loss of control.",
+    "stopInstruction": "Stop for pain or loss of control.",
+    "easierMinimumRir": 4,
+    "confirmationCount": 2,
+    "setbackCount": 2,
+    "maximumLoadIncreasePercent": 10,
+    "repCeilingExtension": 2,
+    "maximumRepCeiling": 20,
+    "maximumStrengthRepCeiling": 8,
+    "interruptionDays": 28,
+    "plateauExposures": 6,
+    "ceilingCopyTemplate": "Up to {ceiling} good reps",
+    "exactRep": {
+      "normalIncrementTotal": 1,
+      "easyIncrementPerSet": 2,
+      "minimumTargetReps": 1,
+      "returnMaximumLoadPercent": 90
+    }
+  },
+  "rules": [
+    {
+      "id": "X01",
+      "condition": "Pain, control loss or retained shared pause",
+      "action": "Preserve raw observations, pause every variant of the affected base movement, clear comparisons and emit no working sets. Explicit safe resolution is required.",
+      "basis": "Safety takes precedence over every numerical goal.",
+      "sourceIds": [],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-7; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Safety takes precedence over every numerical goal."
+    },
+    {
+      "id": "X02",
+      "condition": "Raw observations are incomplete, unequal, unknown, changed-load or mixed-load",
+      "action": "Preserve both sides and explicit performed/skipped indices. Missing is not zero. Mixed loads are noncomparable; never average them. Partial/unknown normal work clears confirmations and shortfall/strain sequences; skipped work can freeze counters. Supported confirmed changed loads start baseline at the preset floor, without an approved increase. Above-ceiling work holds goals and flags review unless safety/strain takes precedence. Too-easy plus a miss is conflicting and holds goals.",
+      "basis": "Scope is all working sets. Effort is an estimate, not a precise capacity measurement.",
+      "sourceIds": [
+        "EX04"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-7; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Scope is all working sets. Effort is an estimate, not a precise capacity measurement."
+    },
+    {
+      "id": "X03",
+      "condition": "No history, no confirmed starting load, increased load or baseline fitting",
+      "action": "Start exact targets at the preset floor (8 ordinary/fallback, 4 low-rep strength). Unknown external load uses baseline_setup with load pending. Clean non-hard normal fitting adopts the achieved fatigue vector without a bonus; 8/7/6 is permissible.",
+      "basis": "Baseline fitting and vector forecasting are product choices, not validated predictions.",
+      "sourceIds": [
+        "EX01",
+        "EX02"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-6; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Baseline fitting and vector forecasting are product choices, not validated predictions."
+    },
+    {
+      "id": "X04",
+      "condition": "All goals met on-target building work, or all working sets too easy",
+      "action": "On-target size/strength/fat-loss work adds one TOTAL rep to the achieved vector at the lowest eligible set, ties earliest; maintenance holds. Too-easy work adds two reps per set capped at the current ceiling. Minimum target is 1. Clean known non-hard overshoot within ceiling adopts actuals without a bonus or confirmation.",
+      "basis": "Integer increments and tie-breaking are bounded product attempts. Effort, pain and control override the number.",
+      "sourceIds": [
+        "EX02",
+        "EX03"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-3; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Integer increments and tie-breaking are bounded product attempts. Effort, pain and control override the number."
+    },
+    {
+      "id": "X05",
+      "condition": "Two comparable on-target ceiling confirmations; maintenance requires two too-easy confirmations",
+      "action": "Require every working set at the ceiling, complete controlled normal work and known non-hard effort; baseline, return, easier, partial, unknown or above-goal work cannot confirm. Choose the smallest permitted higher load only at a rise no greater than 10%, then reset comparisons and start floor baseline. If unavailable, extend ceiling by 2 within permission, maximum 20 ordinary/fallback or 8 low-rep strength; generate the new vector under the expanded ceiling. At limit emit equipment/manual setup notice.",
+      "basis": "Adaptation, not literal 2-for-2. Counts, cap, extensions and maxima are product choices; 10% is not a proven biological safety threshold.",
+      "sourceIds": [
+        "EX05",
+        "EX06",
+        "EX07"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-4; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Adaptation, not literal 2-for-2. Counts, cap, extensions and maxima are product choices; 10% is not a proven biological safety threshold."
+    },
+    {
+      "id": "X06",
+      "condition": "First or second consecutive comparable strain",
+      "action": "First too-hard work sets max(1, actual[i]-1), capped at ceiling. Only a first-set floor miss indicates non-hard load-suitability strain; later-set fatigue below the nominal floor alone is not strain. First non-hard first-set floor miss holds goals. Second comparable strain lowers to nearest available load and starts floor baseline. With no lower numeric load or bodyweight setback, preserve state and require setup_review with no working sets; no indefinite rep-reduction loop.",
+      "basis": "Reserve and safety win over overshoots. Strain counts and rep subtraction are product rules.",
+      "sourceIds": [
+        "EX01",
+        "EX03"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-4; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Reserve and safety win over overshoots. Strain counts and rep subtraction are product rules."
+    },
+    {
+      "id": "X07",
+      "condition": "Consecutive comparable complete effort-limited shortfalls at about-right effort",
+      "action": "Repeat prior goals once. The second effort-limited miss rebases to achieved goals with no increment. time_interruption and other_unknown do not establish a shortfall streak; pain/control remain separate flags.",
+      "basis": "Reasons distinguish appropriately stopped work from unfinished work. Two-miss rebase is a product choice.",
+      "sourceIds": [
+        "EX04"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-3; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Reasons distinguish appropriately stopped work from unfinished work. Two-miss rebase is a product choice."
+    },
+    {
+      "id": "X08",
+      "condition": "28 days since last suitable normal completion or successful normal calibration",
+      "action": "No evidence date means baseline. Retain normal goals; prescribe one fewer set (minimum 1), prefix goals capped at floor, at least 4 good reps left or stricter restriction, and highest available load at or below 90% of retained load. If unavailable retain minimum available current load. Bodyweight retains variant and nil load. Clean non-hard return restores normal floor baseline at returned load, without confirmation.",
+      "basis": "28 days and 90% are product thresholds, not established universal boundaries. Easier sessions do not refresh normal-capacity evidence.",
+      "sourceIds": [
+        "EX01",
+        "EX09"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-6; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "28 days and 90% are product thresholds, not established universal boundaries. Easier sessions do not refresh normal-capacity evidence."
+    },
+    {
+      "id": "X09",
+      "condition": "Optional easier workout",
+      "action": "Preserve normal targets separately. Use half normal sets rounded up, minimum 1, capped by smaller current dose; prefix targets capped at floor, same load and at least 4 good reps left subject to stricter restrictions. No progression, strain, plateau or interruption-clock credit. Restore saved normal prescription afterward.",
+      "basis": "Single-session reduced dose is an app adaptation, not a validated recovery forecast.",
+      "sourceIds": [
+        "EX01"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-7; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Single-session reduced dose is an app adaptation, not a validated recovery forecast."
+    },
+    {
+      "id": "X10",
+      "condition": "Determining comparable context",
+      "action": "Require identical variant/setup revision, actual load/unit/basis, normal set count, minimum reserve/effort scope, rest, movement position and rep-range policy. Store prescribed vector independently of actuals. Changing only exact targets preserves comparability.",
+      "basis": "Do not redistribute equal total reps or compare unlike loads. Latest comparable vectors have no demonstrated forecasting superiority over alternatives.",
+      "sourceIds": [
+        "EX04"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-3; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Do not redistribute equal total reps or compare unlike loads. Latest comparable vectors have no demonstrated forecasting superiority over alternatives."
+    },
+    {
+      "id": "X11",
+      "condition": "Six comparable clean on-target normal exposures in size or strength without total-rep trend improvement",
+      "action": "Emit a nonblocking plateau_check using latest-three versus first-three median total reps; retain prescription. No automatic extra sets, forced failure or target increase despite misses. Cut/maintenance stable performance remains success.",
+      "basis": "Six exposures and median heuristic are product choices, not diagnosis of absent growth. Evidence does not identify exact individual presets.",
+      "sourceIds": [
+        "EX07",
+        "EX08",
+        "EX09"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-4; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Six exposures and median heuristic are product choices, not diagnosis of absent growth. Evidence does not identify exact individual presets."
+    },
+    {
+      "id": "X12",
+      "condition": "Variant/setup, goal/range or supported set-count configuration changes",
+      "action": "Keep fixed Sunday/Tuesday/Thursday selection and existing goal presets. Modifications remain opaque independent variants, without accessory selectors, assistance arithmetic or inferred bodyweight resistance. Bodyweight load is nil. Reset comparisons; count-only resizing retains prefix and successively appends max(1,lastGoal-1), baseline fitting, without simultaneous load increase. Goal/range change seeds preset floor. Shared safety applies to all variants.",
+      "basis": "Same-variant comparison is imperfect because body mass and untracked assistance may change. Resizing fatigue adjustment is a heuristic.",
+      "sourceIds": [
+        "EX01",
+        "EX07"
+      ],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-6; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Same-variant comparison is imperfect because body mass and untracked assistance may change. Resizing fatigue adjustment is a heuristic."
+    },
+    {
+      "id": "X13",
+      "condition": "Explicit next-workout policy activation after legacy draft/frozen Finish is finalized",
+      "action": "Retain original records, loads, setup identity, restrictions, pauses, IDs, dates and original policy replay. Seed each variant at floor baseline with empty comparisons. Latest legacy normal completion/calibration date may decide conservative return only, never fabricate all-set effort or prior exact goals. Typed append-only atomic activation links legacy parent to schema 3. Mixed-policy divergent heads retain originals, block working admission and report mixed_policy_conflict.",
+      "basis": "Versioned persistence requirement; unknown schema/policy/hash pairs fail closed. No implicit legacy migration.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/section-8; 2026-10-07-exact-rep-prescriptions-integration-design.md",
+      "adaptationRationale": "Versioned persistence requirement; unknown schema/policy/hash pairs fail closed. No implicit legacy migration."
+    },
+    {
+      "id": "P01",
+      "condition": "Movement-specific dose",
+      "action": "Resolve frozen goal/base movement initial/established sets, ranges, rest and caps; upper retains every legacy preset.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    },
+    {
+      "id": "P02",
+      "condition": "Introductory promotion",
+      "action": "Every glute selection starts at two sets. Only RDL/press/row/squat size/strength may graduate after two qualifying context exposures; retain load, resize targets, baseline and clear windows.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    },
+    {
+      "id": "P03",
+      "condition": "Comparison context",
+      "action": "One current window per slot, at most three. Canonical context includes profile, slot, position, preceding IDs/counts and exact setup/load/dose/rest/reserve/range/rules identity, excluding numerical goals.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    },
+    {
+      "id": "P04",
+      "condition": "Explicit program switching",
+      "action": "Typed append-only replay-verified switch preserves original records, usable matching loads and retained family restrictions; no implicit activation or weakened safety.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    },
+    {
+      "id": "P05",
+      "condition": "Strength handling review",
+      "action": "Glute strength press/row/squat requires explicit load/setup handling review for 4–6; standard 8–12 alternative permitted. New load/setup invalidates review. RDL is 6–10; all four rest 180 seconds.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "app_adaptation",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    },
+    {
+      "id": "P06",
+      "condition": "Explicit loading alternative",
+      "action": "Only the glute bridge permits typed bodyweight variant: null resistance, zero implements, empty catalog, independent history and shared safety family. No inference from modification text.",
+      "basis": "Approved product integration; exact thresholds and algorithms are not research-validated.",
+      "sourceIds": [],
+      "evidenceClass": "software_requirement",
+      "relevantPassageReference": "2026-10-08-starter-program-choice-design.md; 2026-10-08-second-starter-program-trainer-consult.md/sections-2-through-8",
+      "adaptationRationale": "Coaching/product adaptation or versioned software requirement, as labeled; not a biological prediction."
+    }
+  ],
+  "sources": [
+    {
+      "id": "EX01",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/",
+      "locator": "Research synthesis and professional guidance; healthy-adult resistance training overview",
+      "population": "Healthy adults, predominantly inexperienced trainees",
+      "limitations": "Defined-disease exclusions limit clinical generalization. Regular training with sufficient effort supports strength and size; failure is not compulsory; roughly 2–3 RIR is practical guidance. No exact rep-vector forecasting algorithm.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Defined-disease exclusions limit clinical generalization. Regular training with sufficient effort supports strength and size; failure is not compulsory; roughly 2–3 RIR is practical guidance. No exact rep-vector forecasting algorithm."
+    },
+    {
+      "id": "EX02",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/36199287/",
+      "locator": "Methods and findings: repetition versus load progression",
+      "population": "43 trained adults, lower-body exercises, eight weeks",
+      "limitations": "Supervised failure training. Both strategies were viable; does not validate this stopping instruction or integer increments.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Supervised failure training. Both strategies were viable; does not validate this stopping instruction or integer increments."
+    },
+    {
+      "id": "EX03",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/38393985/",
+      "locator": "Methods and findings: failure versus 1–2 RIR",
+      "population": "18 trained adults, leg press and leg extension, eight weeks",
+      "limitations": "Similar measured quadriceps growth with greater acute fatigue from failure. Does not establish the optimum for every movement or novice.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Similar measured quadriceps growth with greater acute fatigue from failure. Does not establish the optimum for every movement or novice."
+    },
+    {
+      "id": "EX04",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/34542869/",
+      "locator": "Research synthesis: estimates of remaining repetitions",
+      "population": "Exercise and assessment methods vary; no narrower population specified in consultation",
+      "limitations": "Estimates contain error. Feedback is an estimate, not a precise capacity measurement.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Estimates contain error. Feedback is an estimate, not a precise capacity measurement."
+    },
+    {
+      "id": "EX05",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/19204579/",
+      "locator": "Published programming recommendation: progression and loading",
+      "population": "Population not specified in consultation; no additional inference",
+      "limitations": "Older guidance recommends approximately 2–10% load increase after exceeding desired reps by one or two. Does not validate capped-rep confirmations or the combined policy.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Older guidance recommends approximately 2–10% load increase after exceeding desired reps by one or two. Does not validate capped-rep confirmations or the combined policy."
+    },
+    {
+      "id": "EX06",
+      "url": "https://www.nasm.org/resource-center/blog/training/progressive-overload-explained-programming-progress-for-every-client",
+      "locator": "Professional guidance: two additional final-set reps on two consecutive workouts",
+      "population": "Population not specified in consultation; no additional inference",
+      "limitations": "Published recommendation, not validation of capped-rep confirmations or this combined policy.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Published recommendation, not validation of capped-rep confirmations or this combined policy."
+    },
+    {
+      "id": "EX07",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10579494/",
+      "locator": "Research synthesis: strength and hypertrophy prescriptions",
+      "population": "Population not specified in consultation; no additional inference",
+      "limitations": "Higher loads generally favor strength; multiple sets support hypertrophy. Does not identify an exact individual preset.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Higher loads generally favor strength; multiple sets support hypertrophy. Does not identify an exact individual preset."
+    },
+    {
+      "id": "EX08",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/34623696/",
+      "locator": "Research synthesis: energy deficit and adaptation",
+      "population": "Population not specified in consultation; no additional inference",
+      "limitations": "Energy deficits constrain lean-mass gains more consistently than strength gains. No universal cut-specific increment or automatic minimum-volume reduction.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Energy deficits constrain lean-mass gains more consistently than strength gains. No universal cut-specific increment or automatic minimum-volume reduction."
+    },
+    {
+      "id": "EX09",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/21131862/",
+      "locator": "Research findings: reduced training doses and maintenance",
+      "population": "Age and prior training matter; no narrower population specified in consultation",
+      "limitations": "Reduced doses can maintain adaptations; does not establish one maintenance dose for everyone.",
+      "relevantPassageReference": "2026-10-07-exact-rep-prescriptions-trainer-consult.md/sections-1-and-5",
+      "adaptationRationale": "Evidence informs broad principles; it does not validate the exact integer rules or their combined forecasting policy. Reduced doses can maintain adaptations; does not establish one maintenance dose for everyone."
+    }
+  ],
+  "starterDoses": {
+    "fat_loss": {
+      "db_romanian_deadlift": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "incline_db_press_30": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "chest_supported_db_row_30_neutral": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "db_floor_glute_bridge": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_static_split_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "suitcase_db_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "db_lateral_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_single_leg_calf_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "standing_db_curl": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "dead_bug_heel_tap": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 6,
+        "initialRepCeiling": 10,
+        "restSeconds": 60,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      }
+    },
+    "size": {
+      "db_romanian_deadlift": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": false
+      },
+      "incline_db_press_30": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": false
+      },
+      "chest_supported_db_row_30_neutral": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": false
+      },
+      "db_floor_glute_bridge": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_static_split_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "suitcase_db_squat": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": false
+      },
+      "db_lateral_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_single_leg_calf_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "standing_db_curl": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "dead_bug_heel_tap": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 6,
+        "initialRepCeiling": 10,
+        "restSeconds": 60,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      }
+    },
+    "strength": {
+      "db_romanian_deadlift": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 6,
+        "initialRepCeiling": 10,
+        "restSeconds": 180,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": false
+      },
+      "incline_db_press_30": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 4,
+        "initialRepCeiling": 6,
+        "restSeconds": 180,
+        "maximumRepCeiling": 8,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": true
+      },
+      "chest_supported_db_row_30_neutral": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 4,
+        "initialRepCeiling": 6,
+        "restSeconds": 180,
+        "maximumRepCeiling": 8,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": true
+      },
+      "db_floor_glute_bridge": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_static_split_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "suitcase_db_squat": {
+        "initialSets": 2,
+        "establishedSets": 3,
+        "repFloor": 4,
+        "initialRepCeiling": 6,
+        "restSeconds": 180,
+        "maximumRepCeiling": 8,
+        "allowsIntroPromotion": true,
+        "requiresHandlingReview": true
+      },
+      "db_lateral_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_single_leg_calf_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "standing_db_curl": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "dead_bug_heel_tap": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 6,
+        "initialRepCeiling": 10,
+        "restSeconds": 60,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      }
+    },
+    "maintenance": {
+      "db_romanian_deadlift": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "incline_db_press_30": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "chest_supported_db_row_30_neutral": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "db_floor_glute_bridge": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_static_split_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "suitcase_db_squat": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 120,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "db_lateral_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "supported_single_leg_calf_raise": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 10,
+        "initialRepCeiling": 15,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "standing_db_curl": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 8,
+        "initialRepCeiling": 12,
+        "restSeconds": 90,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      },
+      "dead_bug_heel_tap": {
+        "initialSets": 2,
+        "establishedSets": 2,
+        "repFloor": 6,
+        "initialRepCeiling": 10,
+        "restSeconds": 60,
+        "maximumRepCeiling": 20,
+        "allowsIntroPromotion": false,
+        "requiresHandlingReview": false
+      }
+    }
+  },
+  "safetyFamilies": {
+    "db_romanian_deadlift": "rdl",
+    "incline_db_press_30": "incline_press",
+    "chest_supported_db_row_30_neutral": "supported_row",
+    "db_floor_glute_bridge": "db_floor_glute_bridge",
+    "supported_static_split_squat": "split_squat",
+    "suitcase_db_squat": "squat",
+    "db_lateral_raise": "db_lateral_raise",
+    "supported_single_leg_calf_raise": "supported_single_leg_calf_raise",
+    "standing_db_curl": "dumbbell_curl",
+    "dead_bug_heel_tap": "dead_bug_heel_tap"
+  },
+  "hash": "2223f42ac0fdb62fd1751344f055e9b9e7f39ffa0f25fee7a64647781a452c76"
+}

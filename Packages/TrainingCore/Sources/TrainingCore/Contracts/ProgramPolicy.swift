@@ -6,6 +6,7 @@ public enum ProgramPolicy: Equatable, Sendable {
     case numericV02
     case fixedCeilingsV1
     case fixedExactV1
+    case starterExactV1
 
     public static func resolve(schemaVersion: Int, rules: Ruleset) throws -> ProgramPolicy {
         try rules.validateIntegrity()
@@ -13,12 +14,23 @@ public enum ProgramPolicy: Equatable, Sendable {
         case (1, "general-fitness-v0.2", RulesetCatalog.numericRulesetHash): return .numericV02
         case (2, "general-fitness-swift1", RulesetCatalog.fixedRulesetHash): return .fixedCeilingsV1
         case (3, "general-fitness-exact-v1", RulesetCatalog.exactRulesetHash): return .fixedExactV1
+        case (4, "general-fitness-upper-exact-v2", StarterProgramCatalog.upperRulesetHash),
+             (4, "general-fitness-glute-exact-v1", StarterProgramCatalog.gluteRulesetHash): return .starterExactV1
         default: throw EngineError(code: "unsupported_policy", field: "schemaVersion")
         }
     }
 
     public var usesVariants: Bool { self != .numericV02 }
-    public var usesExactTargets: Bool { self == .fixedExactV1 }
+    public var usesExactTargets: Bool { self == .fixedExactV1 || self == .starterExactV1 }
+    public var usesStarterDoses: Bool { self == .starterExactV1 }
+    public var schemaVersion: Int {
+        switch self {
+        case .numericV02: 1
+        case .fixedCeilingsV1: 2
+        case .fixedExactV1: 3
+        case .starterExactV1: 4
+        }
+    }
 }
 
 /// Structural admission of raw observations, not progression qualification. In
@@ -54,6 +66,12 @@ public func validateExactRepContract(state: ProgramState, rules: Ruleset) throws
     let policy = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
     guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else {
         throw EngineError(code: "ruleset_mismatch", field: "rules")
+    }
+    if !policy.usesStarterDoses {
+        try rejectLegacyStarterFields(state)
+    } else {
+        // Schema-4 semantic admission is owned by its dedicated validator (Task 2).
+        throw EngineError(code: "unsupported_operation", field: "starter_validation")
     }
     guard policy.usesExactTargets else { return }
     let parameters = try rules.resolvedParameters
@@ -152,4 +170,13 @@ private func validateExactComparable(_ exposure: Exposure, variant: MovementVari
         }, restSeconds: context.restSeconds, stopInstruction: "", baseMovementID: variant.baseMovementID,
         modificationsSnapshot: exposure.modificationsSnapshot)
     try validateIndexedExactLog(log, prescription: prescription)
+}
+
+/// New optional wire values cannot acquire meaning in an archived legacy policy.
+func rejectLegacyStarterFields(_ state: ProgramState) throws {
+    guard (1...3).contains(state.schemaVersion) else { return }
+    guard state.retainedSafety == nil, state.exercises.values.allSatisfy({ $0.starterState == nil }),
+          state.config.variants?.values.allSatisfy({ $0.loadingModeOverride == nil }) != false else {
+        throw EngineError(code: "invalid_state", field: "starterState")
+    }
 }

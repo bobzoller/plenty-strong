@@ -13,6 +13,7 @@ public struct InitializedProgram: Equatable, Sendable {
 public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot) throws -> InitializedProgram {
     try validate(config: config, rules: rules)
     let policy = try ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules)
+    guard !policy.usesStarterDoses else { throw EngineError(code: "unsupported_operation", field: "starter_initialization") }
     let app = policy.usesVariants
     let preset = try rules.preset(goal: config.goal, daysPerWeek: config.daysPerWeek)
     var exercises: [String: ExerciseState] = [:]
@@ -33,7 +34,7 @@ public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkou
         }
         if app { safety[movement.id] = MovementSafetyState(paused: false, minimumRir: movement.minimumRir, sourceEventIDs: []) }
     }
-    var state = ProgramState(schemaVersion: policy.usesExactTargets ? 3 : app ? 2 : 1, rulesetVersion: rules.version, rulesetHash: rules.hash,
+    var state = ProgramState(schemaVersion: policy.schemaVersion, rulesetVersion: rules.version, rulesetHash: rules.hash,
         config: config, revision: 0, exercises: exercises, lastSessionDate: nil,
         activePrescription: WorkoutPrescription(id: "", date: firstWorkout.date, slotID: firstWorkout.slotID, exercises: []),
         processedEvents: [:], baseSafety: app ? safety : nil)
@@ -44,7 +45,9 @@ public func initializeProgram(config: ProgramConfig, rules: Ruleset, firstWorkou
 
 /// Shared construction boundary for initialization and later pure transitions.
 func plannedWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws -> WorkoutPrescription {
+    try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
+    case .starterExactV1: throw EngineError(code: "unsupported_operation", field: "starter_policy")
     case .fixedExactV1: return try plannedExactWorkout(state: state, rules: rules, slot: slot)
     case .numericV02, .fixedCeilingsV1: break
     }

@@ -203,8 +203,10 @@ public struct Ruleset: Codable, Equatable, Sendable {
     public var profileID: String?
     public var profileHash: String?
     public var contractVersion: Int?
+    public var starterDoses: [String: [String: MovementDose]]?
+    public var safetyFamilies: [String: String]?
 
-    public init(version: String, sourceIDs: [String], ruleIDs: [String], presetTable: String, rulebook: String, hash: String, presets: [String: GoalPreset]? = nil, parameters: RuleParameters? = nil, rules: [RuleRecord]? = nil, sources: [EvidenceRecord]? = nil, sourceRulesetHash: String? = nil, profileID: String? = nil, profileHash: String? = nil, contractVersion: Int? = nil) {
+    public init(version: String, sourceIDs: [String], ruleIDs: [String], presetTable: String, rulebook: String, hash: String, presets: [String: GoalPreset]? = nil, parameters: RuleParameters? = nil, rules: [RuleRecord]? = nil, sources: [EvidenceRecord]? = nil, sourceRulesetHash: String? = nil, profileID: String? = nil, profileHash: String? = nil, contractVersion: Int? = nil, starterDoses: [String: [String: MovementDose]]? = nil, safetyFamilies: [String: String]? = nil) {
         self.version = version
         self.sourceIDs = sourceIDs
         self.ruleIDs = ruleIDs
@@ -219,6 +221,8 @@ public struct Ruleset: Codable, Equatable, Sendable {
         self.profileID = profileID
         self.profileHash = profileHash
         self.contractVersion = contractVersion
+        self.starterDoses = starterDoses
+        self.safetyFamilies = safetyFamilies
     }
 
     enum CodingKeys: String, CodingKey {
@@ -236,6 +240,8 @@ public struct Ruleset: Codable, Equatable, Sendable {
         case profileID = "profileId"
         case profileHash
         case contractVersion
+        case starterDoses
+        case safetyFamilies
     }
 
     /// Archived numeric v0.2 has textual tables. Resolve its exact approved constants
@@ -262,7 +268,7 @@ public struct Ruleset: Codable, Equatable, Sendable {
 
     public var resolvedParameters: RuleParameters {
         get throws {
-            guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1"].contains(version) else {
+            guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(version) else {
                 throw EngineError(code: "unknown_ruleset", field: "rules.version")
             }
             try validateIntegrity()
@@ -286,6 +292,13 @@ public struct Ruleset: Codable, Equatable, Sendable {
         canonical = .object(fields)
         guard try CanonicalJSON.sha256(canonical) == hash else {
             throw EngineError(code: "invalid_ruleset", field: "rules.hash")
+        }
+        if contractVersion == 4 || version == "general-fitness-upper-exact-v2" || version == "general-fitness-glute-exact-v1" {
+            try StarterProgramCatalog.validateRulesRegistration(self)
+            return
+        }
+        guard starterDoses == nil, safetyFamilies == nil else {
+            throw EngineError(code: "invalid_ruleset", field: "rules.starterDoses")
         }
         if version == "general-fitness-exact-v1" {
             guard hash == RulesetCatalog.exactRulesetHash,

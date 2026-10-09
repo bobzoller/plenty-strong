@@ -4,7 +4,9 @@ import Foundation
 /// revision checks and immutable original commands, including ineligible rows.
 public func advanceProgram(_ input: AdvanceInput) -> AdvanceResult {
     do {
+        try rejectLegacyStarterFields(input.state)
         switch try ProgramPolicy.resolve(schemaVersion: input.state.schemaVersion, rules: input.rules) {
+        case .starterExactV1: throw EngineError(code: "unsupported_operation", field: "starter_policy")
         case .fixedExactV1: return advanceExactProgram(input)
         case .numericV02, .fixedCeilingsV1: break
         }

@@ -46,8 +46,12 @@ public enum WorkoutScheduler {
             throw EngineError(code: "invalid_schedule", field: "weeklySlots")
         }
         if config.coveragePolicy == "fixed_profile" {
-            guard try CanonicalJSON.sha256(fixedMetadataContent(config: config)) == RulesetCatalog.fixedMetadataProjectionHash else {
-                throw EngineError(code: "fixed_profile_mismatch", field: "weeklySlots")
+            if config.profileID == "fixed-home-gym-v0.2" {
+                guard try CanonicalJSON.sha256(fixedMetadataContent(config: config)) == RulesetCatalog.fixedMetadataProjectionHash else {
+                    throw EngineError(code: "fixed_profile_mismatch", field: "weeklySlots")
+                }
+            } else {
+                try StarterProgramCatalog.validateProjection(config)
             }
         }
         for offset in 0...6 {

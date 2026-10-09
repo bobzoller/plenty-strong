@@ -154,17 +154,20 @@ public struct MovementVariant: Codable, Equatable, Sendable {
     public var id: String
     public var baseMovementID: String
     public var modifications: String
+    public var loadingModeOverride: LoadingMode?
 
-    public init(id: String, baseMovementID: String, modifications: String) {
+    public init(id: String, baseMovementID: String, modifications: String, loadingModeOverride: LoadingMode? = nil) {
         self.id = id
         self.baseMovementID = baseMovementID
         self.modifications = modifications
+        self.loadingModeOverride = loadingModeOverride
     }
 
     enum CodingKeys: String, CodingKey {
         case id
         case baseMovementID = "baseMovementId"
         case modifications
+        case loadingModeOverride
     }
 
 }
@@ -266,8 +269,9 @@ public struct ExerciseState: Codable, Equatable, Sendable {
     public var setupRevision: Int?
 
     public var exactRepState: ExactRepState?
+    public var starterState: StarterExerciseState?
 
-    public init(load: Load?, mode: ExerciseMode, normalSets: Int, repFloor: Int, repCeiling: Int, ceilingStreak: Int, strainStreak: Int, lastCompletedDate: LocalDate?, nextSetOverride: Int?, interruptedReturn: Bool, recentComparable: [Exposure], setupRevision: Int? = nil, exactRepState: ExactRepState? = nil) {
+    public init(load: Load?, mode: ExerciseMode, normalSets: Int, repFloor: Int, repCeiling: Int, ceilingStreak: Int, strainStreak: Int, lastCompletedDate: LocalDate?, nextSetOverride: Int?, interruptedReturn: Bool, recentComparable: [Exposure], setupRevision: Int? = nil, exactRepState: ExactRepState? = nil, starterState: StarterExerciseState? = nil) {
         self.load = load
         self.mode = mode
         self.normalSets = normalSets
@@ -281,6 +285,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         self.recentComparable = recentComparable
         self.setupRevision = setupRevision
         self.exactRepState = exactRepState
+        self.starterState = starterState
     }
 
     enum CodingKeys: String, CodingKey {
@@ -297,6 +302,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         case recentComparable
         case setupRevision
         case exactRepState
+        case starterState
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -313,6 +319,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         recentComparable = try c.decode([Exposure].self, forKey: .recentComparable)
         setupRevision = try c.decodeIfPresent(Int.self, forKey: .setupRevision)
         exactRepState = try c.decodeIfPresent(ExactRepState.self, forKey: .exactRepState)
+        starterState = try c.decodeIfPresent(StarterExerciseState.self, forKey: .starterState)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -329,6 +336,7 @@ public struct ExerciseState: Codable, Equatable, Sendable {
         try c.encode(recentComparable, forKey: .recentComparable)
         try c.encodeIfPresent(setupRevision, forKey: .setupRevision)
         try c.encodeIfPresent(exactRepState, forKey: .exactRepState)
+        try c.encodeIfPresent(starterState, forKey: .starterState)
     }
 }
 
@@ -343,8 +351,9 @@ public struct ProgramState: Codable, Equatable, Sendable {
     public var activePrescription: WorkoutPrescription
     public var processedEvents: [String: String]
     public var baseSafety: [String: MovementSafetyState]?
+    public var retainedSafety: [String: MovementSafetyState]?
 
-    public init(schemaVersion: Int, rulesetVersion: String, rulesetHash: String, config: ProgramConfig, revision: Int, exercises: [String: ExerciseState], lastSessionDate: LocalDate?, activePrescription: WorkoutPrescription, processedEvents: [String: String], baseSafety: [String: MovementSafetyState]? = nil) {
+    public init(schemaVersion: Int, rulesetVersion: String, rulesetHash: String, config: ProgramConfig, revision: Int, exercises: [String: ExerciseState], lastSessionDate: LocalDate?, activePrescription: WorkoutPrescription, processedEvents: [String: String], baseSafety: [String: MovementSafetyState]? = nil, retainedSafety: [String: MovementSafetyState]? = nil) {
         self.schemaVersion = schemaVersion
         self.rulesetVersion = rulesetVersion
         self.rulesetHash = rulesetHash
@@ -355,6 +364,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         self.activePrescription = activePrescription
         self.processedEvents = processedEvents
         self.baseSafety = baseSafety
+        self.retainedSafety = retainedSafety
     }
 
     enum CodingKeys: String, CodingKey {
@@ -368,6 +378,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         case activePrescription
         case processedEvents
         case baseSafety
+        case retainedSafety
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -381,6 +392,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         activePrescription = try c.decode(WorkoutPrescription.self, forKey: .activePrescription)
         processedEvents = try c.decode([String: String].self, forKey: .processedEvents)
         baseSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .baseSafety)
+        retainedSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .retainedSafety)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -394,6 +406,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         try c.encode(activePrescription, forKey: .activePrescription)
         try c.encode(processedEvents, forKey: .processedEvents)
         try c.encodeIfPresent(baseSafety, forKey: .baseSafety)
+        try c.encodeIfPresent(retainedSafety, forKey: .retainedSafety)
     }
 }
 

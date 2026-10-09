@@ -74,9 +74,19 @@ public func validate(config: ProgramConfig, rules: Ruleset) throws {
         // Catalog/selection reads and validates the full archive once at its explicit
         // boundary. Preparation, transitions and replay validate supplied frozen
         // metadata by its typed projection, with no Bundle or Data(contentsOf:) call.
-        guard rules.profileHash == config.profileHash,
-              try CanonicalJSON.sha256(fixedMetadataContent(config: config)) == RulesetCatalog.fixedMetadataProjectionHash else {
-            try reject("fixed_profile_mismatch", "profile")
+        if policy.usesStarterDoses {
+            guard rules.profileID == config.profileID, rules.profileHash == config.profileHash else {
+                try reject("fixed_profile_mismatch", "profile")
+            }
+            try StarterProgramCatalog.validateProjection(config)
+        } else {
+            guard rules.profileHash == config.profileHash,
+                  try CanonicalJSON.sha256(fixedMetadataContent(config: config)) == RulesetCatalog.fixedMetadataProjectionHash else {
+                try reject("fixed_profile_mismatch", "profile")
+            }
+            guard config.variants?.values.allSatisfy({ $0.loadingModeOverride == nil }) != false else {
+                try reject("invalid_loading_override", "loadingModeOverride")
+            }
         }
         try validateVariants(config: config)
     } else {
@@ -96,10 +106,14 @@ private func validateVariants(config: ProgramConfig) throws {
               variant.modifications.count <= 200,
               !variant.modifications.unicodeScalars.contains(where: { $0.properties.generalCategory == .control && $0 != "\n" && $0 != "\t" }) else { try reject("variants.\(id)") }
         let defaultID = try defaultVariantID(programID: config.programID, baseMovementID: variant.baseMovementID)
+        if let override = variant.loadingModeOverride {
+            guard config.profileID == "starter-glute-v1", variant.baseMovementID == "db_floor_glute_bridge",
+                  override == .bodyweight, id != defaultID else { try reject("variants.\(id).loadingModeOverride") }
+        }
         if id == defaultID {
             guard variant.modifications.isEmpty else { try reject("variants.\(id).modifications") }
         } else {
-            guard !variant.modifications.isEmpty else { try reject("variants.\(id).modifications") }
+            guard !variant.modifications.isEmpty || variant.loadingModeOverride != nil else { try reject("variants.\(id).modifications") }
         }
     }
     for base in bases {

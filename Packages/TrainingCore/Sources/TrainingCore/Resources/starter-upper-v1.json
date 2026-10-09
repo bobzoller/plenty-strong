@@ -1,0 +1,1139 @@
+{
+  "movements": [
+    {
+      "id": "incline_db_press_24",
+      "name": "Incline DB Press",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "chest"
+      ],
+      "secondaryMuscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "requiredEquipment": [
+        "adjustable_dumbbells",
+        "adjustable_bench"
+      ],
+      "lowRepLoadingAllowed": true,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "banded_pullups",
+      "name": "Pull-ups",
+      "loadingMode": "user_managed_assistance",
+      "implementCount": 0,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "back"
+      ],
+      "secondaryMuscles": [
+        "elbow_flexors"
+      ],
+      "requiredEquipment": [
+        "pull_up_bar"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": false,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [],
+      "initialLoad": null
+    },
+    {
+      "id": "chest_supported_db_row_38_neutral",
+      "name": "Chest-Supported DB Row",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "back"
+      ],
+      "secondaryMuscles": [
+        "elbow_flexors",
+        "shoulders"
+      ],
+      "requiredEquipment": [
+        "adjustable_dumbbells",
+        "adjustable_bench"
+      ],
+      "lowRepLoadingAllowed": true,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "db_lateral_raise",
+      "name": "DB Lateral Raise",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "shoulders"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "lying_db_curls",
+      "name": "Lying DB Curls",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "per_side",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "elbow_flexors"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells",
+        "adjustable_bench"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "suitcase_db_squat",
+      "name": "Suitcase DB Squat",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "quads",
+        "glutes"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells"
+      ],
+      "lowRepLoadingAllowed": true,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "db_romanian_deadlift",
+      "name": "DB Romanian Deadlift",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "hamstrings",
+        "glutes"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells"
+      ],
+      "lowRepLoadingAllowed": true,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "bulgarian_split_squat",
+      "name": "Bulgarian Split Squat",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "per_side",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "quads",
+        "glutes"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells",
+        "adjustable_bench"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "bent_knee_hanging_leg_raise_ab_straps",
+      "name": "Bent-Knee Hanging Leg Raise",
+      "loadingMode": "bodyweight",
+      "implementCount": 0,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "trunk"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "pull_up_bar"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": false,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [],
+      "initialLoad": null
+    },
+    {
+      "id": "cross_body_hammer_curl",
+      "name": "Cross-Body Hammer Curl",
+      "loadingMode": "external_load",
+      "implementCount": 2,
+      "repCounting": "per_side",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "elbow_flexors"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "per_implement"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "per_implement"
+        }
+      ],
+      "initialLoad": null
+    },
+    {
+      "id": "banded_chinups",
+      "name": "Chin-ups",
+      "loadingMode": "user_managed_assistance",
+      "implementCount": 0,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "back"
+      ],
+      "secondaryMuscles": [
+        "elbow_flexors"
+      ],
+      "requiredEquipment": [
+        "pull_up_bar"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": false,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [],
+      "initialLoad": null
+    },
+    {
+      "id": "db_triceps_extension",
+      "name": "DB Triceps Extension",
+      "loadingMode": "external_load",
+      "implementCount": 1,
+      "repCounting": "total",
+      "setupRevision": 1,
+      "primaryMuscles": [
+        "triceps"
+      ],
+      "secondaryMuscles": [],
+      "requiredEquipment": [
+        "adjustable_dumbbells"
+      ],
+      "lowRepLoadingAllowed": false,
+      "automaticLoadProgressionAllowed": true,
+      "automaticRepRangeExtensionAllowed": true,
+      "minimumRir": 2,
+      "availableLoads": [
+        {
+          "amount": "5",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "10",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "15",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "20",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "25",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "30",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "35",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "40",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "45",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "50",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "55",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "60",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "65",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "70",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "75",
+          "unit": "lb",
+          "basis": "total"
+        },
+        {
+          "amount": "80",
+          "unit": "lb",
+          "basis": "total"
+        }
+      ],
+      "initialLoad": null
+    }
+  ],
+  "weeklySlots": [
+    {
+      "id": "SUN",
+      "weekday": 0,
+      "movementIds": [
+        "incline_db_press_24",
+        "banded_pullups",
+        "chest_supported_db_row_38_neutral",
+        "db_lateral_raise",
+        "lying_db_curls"
+      ]
+    },
+    {
+      "id": "TUE",
+      "weekday": 2,
+      "movementIds": [
+        "suitcase_db_squat",
+        "db_romanian_deadlift",
+        "bulgarian_split_squat",
+        "bent_knee_hanging_leg_raise_ab_straps",
+        "cross_body_hammer_curl"
+      ]
+    },
+    {
+      "id": "THU",
+      "weekday": 4,
+      "movementIds": [
+        "incline_db_press_24",
+        "banded_chinups",
+        "chest_supported_db_row_38_neutral",
+        "db_lateral_raise",
+        "db_triceps_extension"
+      ]
+    }
+  ],
+  "requiredMuscleGroups": [
+    "chest",
+    "back",
+    "shoulders",
+    "elbow_flexors",
+    "triceps",
+    "quads",
+    "hamstrings",
+    "glutes",
+    "trunk"
+  ],
+  "initialLoads": {
+    "incline_db_press_24": null,
+    "banded_pullups": null,
+    "chest_supported_db_row_38_neutral": null,
+    "db_lateral_raise": null,
+    "lying_db_curls": null,
+    "suitcase_db_squat": null,
+    "db_romanian_deadlift": null,
+    "bulgarian_split_squat": null,
+    "bent_knee_hanging_leg_raise_ab_straps": null,
+    "cross_body_hammer_curl": null,
+    "banded_chinups": null,
+    "db_triceps_extension": null
+  },
+  "equipment": {
+    "adjustable_dumbbells": {
+      "implementCount": 2,
+      "unit": "lb",
+      "loadBasis": "per_dumbbell",
+      "minimum": 5,
+      "maximum": 80,
+      "increment": 5,
+      "availableAmounts": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80
+      ]
+    },
+    "pull_up_bar": {
+      "available": true
+    },
+    "adjustable_bench": {
+      "available": true
+    }
+  },
+  "goalParametersFromBaseRuleset": {
+    "fat_loss": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120
+    },
+    "size": {
+      "normalSets": 3,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120
+    },
+    "strength": {
+      "normalSets": 3,
+      "lowRepFloor": 4,
+      "lowRepCeiling": 6,
+      "fallbackFloor": 8,
+      "fallbackCeiling": 12,
+      "restSeconds": 180
+    },
+    "maintenance": {
+      "normalSets": 2,
+      "repFloor": 8,
+      "repCeiling": 12,
+      "restSeconds": 120
+    }
+  },
+  "choice": "upper_body",
+  "schemaVersion": 4,
+  "profileId": "starter-upper-v1",
+  "sourceProfileId": "fixed-home-gym-v0.2",
+  "sourceProfileHash": "e63a0543d54108af99637ed52dacebc1276e766b4314bc095891248efd7ce8ce",
+  "variantPolicyVersion": "movement-variant-v1",
+  "daysPerWeek": 3,
+  "coveragePolicy": "fixed_profile",
+  "requiredEquipment": [
+    "adjustable_dumbbells",
+    "adjustable_bench",
+    "pull_up_bar"
+  ],
+  "specification": "2026-10-08-starter-program-choice-design.md",
+  "contentHash": "b07b7a87ec555d280888b10c5a1b5f550bcb7b4b798861b0613a9e9a29cdb608"
+}

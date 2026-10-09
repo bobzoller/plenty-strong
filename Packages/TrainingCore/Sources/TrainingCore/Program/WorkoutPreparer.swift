@@ -1,7 +1,9 @@
 import Foundation
 
 public func prepareWorkout(state: ProgramState, rules: Ruleset, easierToday: Bool = false) throws -> WorkoutPrescription {
+    try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
+    case .starterExactV1: throw EngineError(code: "unsupported_operation", field: "starter_policy")
     case .fixedExactV1: return try prepareExactWorkout(state: state, rules: rules, easierToday: easierToday)
     case .numericV02, .fixedCeilingsV1: break
     }
