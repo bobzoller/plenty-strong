@@ -1,5 +1,15 @@
 # TestFlight candidate notes
 
+## Current local selectable-program candidate · 0.1.0(7)
+
+Plenty Strong offers Upper-body emphasis and Whole-body · Glute emphasis starter routines. New users choose a routine; existing users retain their saved routine and can explicitly switch when no draft is open. Confirm that switching preserves original history, exact saved goals, variant setups and shared safety, while the destination starts its own progression. The glute routine uses its accepted introductory dose and SUN/TUE/THU policy; Upper-body emphasis retains its archived policy. Human Trainer/comprehension/VoiceOver review remains open.
+
+Independent synthetic full-result fixtures passed7/7. One frozen full current `make verify-current` passed actual0:Core231 methods, XCTest87, Swift154 including1 explicit live-development skip, UI49, all6 macOS SIGKILL/replay proofs and unsigned Release build. XCResult reports289 logical passes/1 skip/0 failures (332 expanded passes). No live cloud test was executed. Ordinary diagnostics timed out600 seconds, and20 invalid-frame warnings remain unresolved. Prior Task5 viewport/source/overlap qualifications and earlier failed commands remain separately retained.
+
+Actual minimum cloud-NO `make verify` failed2 at the missing iPhone16/iOS18 runtime precheck; no minimum tests ran. The distinct unsigned archive passed native0 and audited actual0.1.0(7)/min18.0, matching binary/dSYM UUID `BA5C291E-5F43-3F57-8660-A0BF6AF6A218`, unchanged old/new JSON resources and no packaged test fixture. Binary SHA256 `1e198609f16c0098ce3c5b0feacc2b126c142a03f6a5da94c4476a533f96165c`; archive packet SHA256 `5540d2ff2deaf109f4b1e12751da7e7e6e25ad8e25d63ec24a8014a63dfd9e9e`. Source binding, full audit and preserved failure chronology are in `v1-checklist.md` and `.superpowers/sdd/2026-10-08-starter-program-choice/task-6-report.md`.
+
+This is an unsigned local candidate. Minimum-runtime, physical phone/Files, human, live iCloud/conflict, real purchase, signing/install and distribution gates remain open; prior signed phone6 was untouched. No build7 phone replacement, merge, push, upload, tester invitation or publication occurred. Upper-policy rewrite and future capability matrix are deferred. Historical notes below retain their original source/artifact/gate identities.
+
 ## Current local review fix · 0.1.0(5)
 
 Retained normal per-side history goals now preserve their saved counting qualifier. Fresh five-class UI coverage passed 28/0/0/native 0; previous-source Workout/Movement Setup/Shell 13 cases and unchanged lower dependencies remain separately attributed, not a new full 41-case or Make pass. Fresh current preflight, unsigned Release build and distinct build 5 archive/audit passed; actual minimum `make verify` failed 2 because iOS 18 is absent. Seven frame warnings remain unresolved and default diagnostics collection timed out 600 seconds despite test success.
