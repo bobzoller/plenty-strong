@@ -89,6 +89,7 @@ public enum ConfigurationChange: Codable, Equatable, Sendable {
 /// Repository guards, started-draft invalidation and atomic persistence belong to
 /// the adapter; replay must never substitute current dates, variants or labels.
 public enum JournalCommand: Codable, Equatable, Sendable {
+    case changeStarterProgram(choice: StarterProgramChoice, goal: Goal, next: WorkoutSlot)
     case activatePolicy(sourceRulesetHash: String, destinationRulesetHash: String, normalEvidenceEventIDs: [String], next: WorkoutSlot)
     case initialize(config: ProgramConfig, firstWorkout: WorkoutSlot)
     case workout(completedWorkout: CompletedWorkout, next: WorkoutSlot)
@@ -97,10 +98,11 @@ public enum JournalCommand: Codable, Equatable, Sendable {
     case reschedule(slot: WorkoutSlot)
     case interruption(asOf: LocalDate)
     case resolveConflict(selection: BranchSelection, preservedHeadHashes: [String], originalArchiveHashes: [String], next: WorkoutSlot)
-    enum CodingKeys: String, CodingKey { case kind, config, firstWorkout, completedWorkout, next, change, slot, asOf, selection, preservedHeadHashes, originalArchiveHashes, sourceRulesetHash, destinationRulesetHash, normalEvidenceEventIDs }
+    enum CodingKeys: String, CodingKey { case kind, config, firstWorkout, completedWorkout, next, change, slot, asOf, selection, preservedHeadHashes, originalArchiveHashes, sourceRulesetHash, destinationRulesetHash, normalEvidenceEventIDs, choice, goal }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .kind) {
+        case "changeStarterProgram": self = .changeStarterProgram(choice: try c.decode(StarterProgramChoice.self, forKey: .choice), goal: try c.decode(Goal.self, forKey: .goal), next: try c.decode(WorkoutSlot.self, forKey: .next))
         case "activatePolicy": self = .activatePolicy(sourceRulesetHash: try c.decode(String.self, forKey: .sourceRulesetHash), destinationRulesetHash: try c.decode(String.self, forKey: .destinationRulesetHash), normalEvidenceEventIDs: try c.decode([String].self, forKey: .normalEvidenceEventIDs), next: try c.decode(WorkoutSlot.self, forKey: .next))
         case "initialize": self = .initialize(config: try c.decode(ProgramConfig.self, forKey: .config), firstWorkout: try c.decode(WorkoutSlot.self, forKey: .firstWorkout))
         case "workout": self = .workout(completedWorkout: try c.decode(CompletedWorkout.self, forKey: .completedWorkout), next: try c.decode(WorkoutSlot.self, forKey: .next))
@@ -115,6 +117,11 @@ public enum JournalCommand: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case let .changeStarterProgram(choice, goal, next):
+            try c.encode("changeStarterProgram", forKey: .kind)
+            try c.encode(choice, forKey: .choice)
+            try c.encode(goal, forKey: .goal)
+            try c.encode(next, forKey: .next)
         case let .activatePolicy(source, destination, evidence, next):
             try c.encode("activatePolicy", forKey: .kind)
             try c.encode(source, forKey: .sourceRulesetHash)

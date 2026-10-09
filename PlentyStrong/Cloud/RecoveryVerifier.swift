@@ -72,25 +72,26 @@ struct RecoveryVerifier {
                     guard record.recordID == (try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: id)) else { throw BackupService.invalid("archive_identity") }
                     if fields?["archiveKind"] != nil { _ = try CausalOriginalArchive.validate(record) }
                     let archived = ArchivedObject(id: id, bytes: record.bytes, checksum: BackupService.hash(record.bytes))
-                    if ruleArchive { _ = try BackupService.rules([archived], hash: id); rules[id] = archived } else { profiles[id] = archived }
+                    if ruleArchive { _ = try BackupService.rules([archived], hash: id); rules[id] = archived }
+                    else { try BackupService.validateStarterProfileRegistration(archived); profiles[id] = archived }
                 } else {
                     guard record.recordType == CloudRecordKind.journal.recordType,
                           let identity = fields?["eventId"] as? String,
                           record.recordID == (try CloudRecordCodec.recordName(kind: .journal, datasetID: dataset, identity: identity)),
                           fields?["datasetId"] as? String == dataset.uuidString.lowercased() else { throw BackupService.invalid("journal_identity") }
-                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2, 3].contains(schema) else {
+                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2, 3, 4].contains(schema) else {
                         throw EngineError(code: "unsupported_version", field: "schemaVersion")
                     }
                     // Unknown discriminators are version boundaries. Missing or
                     // type-invalid fields of a known format are corrupt originals.
                     let command = fields?["command"] as? [String: Any]
                     if let kind = command?["kind"] as? String {
-                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy"].contains(kind) else {
+                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy", "changeStarterProgram"].contains(kind) else {
                             throw EngineError(code: "unsupported_version", field: "command.kind")
                         }
                         if let change = command?["change"] as? [String: Any], let changeKind = change["kind"] as? String {
-                            let supported = kind == "reconfigure" ? ["goal", "minimumRir", "resetSetup", "safeResume"] :
-                                kind == "variantChange" ? ["create", "select", "correctDescription"] : nil
+                            let supported = kind == "reconfigure" ? ["goal", "minimumRir", "resetSetup", "safeResume", "reviewStrengthHandling"] :
+                                kind == "variantChange" ? ["create", "select", "correctDescription", "createLoadingMode"] : nil
                             if let supported, !supported.contains(changeKind) { throw EngineError(code: "unsupported_version", field: "change.kind") }
                         }
                     }
@@ -101,6 +102,7 @@ struct RecoveryVerifier {
                           UUID(uuidString: envelope.programID)?.uuidString.lowercased() == envelope.programID,
                           envelope.programID == envelope.returnedState.config.programID,
                           envelope.returnedState.schemaVersion == schema else { throw BackupService.invalid("envelope_hashes") }
+                    guard BackupService.supportsRegisteredPolicy(envelope) else { throw EngineError(code: "unsupported_version", field: "policy") }
                     candidates[envelope.envelopeHash] = (envelope, record)
                 }
             } catch {
@@ -138,7 +140,7 @@ struct RecoveryVerifier {
                     let rule = try BackupService.rules([archive], hash: envelope.rulesetHash)
                     let config = envelope.returnedState.config
                     guard envelope.rulesetVersion == rule.version else { throw BackupService.invalid("rules_version") }
-                    if [2,3].contains(envelope.schemaVersion) {
+                    if [2,3,4].contains(envelope.schemaVersion) {
                         guard envelope.profileID == config.profileID, envelope.profileHash == config.profileHash,
                               envelope.sourceProfileID == config.sourceProfileID, envelope.sourceProfileHash == config.sourceProfileHash,
                               rule.profileID == envelope.profileID, rule.profileHash == envelope.profileHash else { throw BackupService.invalid("archive_references") }
@@ -183,7 +185,10 @@ struct RecoveryVerifier {
                                 guard source == parent.rulesetHash, destination == envelope.rulesetHash else { throw BackupService.invalid("activation_rules") }
                                 prefix = try Self.ancestors(parentHash, envelopes: verified).compactMap { verified[$0] }
                             }
-                            replayed = try BackupService.transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: prefix)
+                            if case .changeStarterProgram = envelope.command {
+                                prefix = try Self.ancestors(parentHash, envelopes: verified).compactMap { verified[$0] }
+                            }
+                            replayed = try BackupService.transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: prefix, archivedRules: Array(rules.values), archivedProfiles: Array(profiles.values))
                         }
                         guard replayed.state.revision == parent.returnedState.revision + 1 else { throw BackupService.invalid("revision") }
                     }

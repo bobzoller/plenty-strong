@@ -119,7 +119,9 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
             let base = branch.state.config.variants?[id]?.baseMovementID ?? id
             try union(base, MovementSafetyState(paused: true, minimumRir: safety[base]!.minimumRir, sourceEventIDs: []))
         }
-        for command in branch.commands {
+        // Starter snapshots carry replayed family restrictions and clearances.
+        // The legacy command union remains unchanged for earlier policies.
+        for command in branch.commands where !policy.usesStarterDoses {
             if case let .workout(event, _) = command {
                 for log in event.exercises where log.problem != .none {
                     let base = log.baseMovementID ?? branch.state.config.variants?[log.movementID]?.baseMovementID ?? log.movementID
@@ -156,15 +158,36 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
             updated.config.movements[index].minimumRir = safety[updated.config.movements[index].id]!.minimumRir
         }
     }
-    let preset = try input.rules.preset(goal: updated.config.goal, daysPerWeek: updated.config.daysPerWeek)
+    if policy.usesStarterDoses {
+        var ledger = updated.retainedSafety!
+        for branch in input.branches {
+            for (family, restriction) in branch.state.retainedSafety! {
+                ledger[family] = unionStarterSafety(ledger[family], restriction)
+            }
+        }
+        for (base, restriction) in safety {
+            let family = input.rules.safetyFamilies![base]!
+            ledger[family] = unionStarterSafety(ledger[family], restriction)
+        }
+        updated.retainedSafety = ledger
+        for movement in updated.config.movements {
+            safety[movement.id] = ledger[input.rules.safetyFamilies![movement.id]!]!
+        }
+        updated.baseSafety = safety
+    }
+    let preset = policy.usesStarterDoses ? nil : try input.rules.preset(goal: updated.config.goal, daysPerWeek: updated.config.daysPerWeek)
     var decisions: [Decision] = []
     for id in updated.exercises.keys.sorted() {
         let before = updated.exercises[id]!
         let base = updated.config.variants?[id]?.baseMovementID ?? id
         guard let movement = updated.config.movements.first(where: { $0.id == base }) else { try reject("variant_base") }
         let paused = safety[base]!.paused
-        rebaseline(&updated.exercises[id]!, movement: movement, config: updated.config, preset: preset, paused: paused)
-        if policy.usesExactTargets { seedExactBaseline(&updated.exercises[id]!) }
+        if policy.usesStarterDoses {
+            try rebaselineStarterExercise(state: &updated, id: id, rules: input.rules, restartDose: true, clearHandling: true)
+        } else {
+            rebaseline(&updated.exercises[id]!, movement: movement, config: updated.config, preset: preset!, paused: paused)
+            if policy.usesExactTargets { seedExactBaseline(&updated.exercises[id]!) }
+        }
         decisions.append(try configurationDecision(id: id, action: paused ? .pause : .baseline, ruleIDs: policy.usesExactTargets ? ["X13"] : ["CLOUD01"],
             key: paused ? "cloud_resolution_pause" : "cloud_resolution_baseline", before: before, after: updated.exercises[id]!, ruleset: policy.usesExactTargets ? input.rules : nil))
     }

@@ -82,7 +82,7 @@ enum CloudRecordCodec {
                   observation.zoneName == zoneID(dataset).zoneName,
                   (try? recordName(kind: .journal, datasetID: dataset, identity: eventID)) == observation.recordID else { continue }
             let envelope = try? JSONDecoder().decode(JournalEnvelope.self, from: observation.payload)
-            let supported = [1, 2].contains(fields["schemaVersion"] as? Int ?? -1) && envelope != nil
+            let supported = envelope.map { BackupService.supportsRegisteredPolicy($0) } ?? false
             let parentAbsent = fields["parentEnvelopeHash"] == nil || fields["parentEnvelopeHash"] is NSNull
             if parentAbsent { roots.append(Root(dataset: dataset, program: program, supported: supported)) }
             if let envelope, supported, isWorkout(envelope.command),

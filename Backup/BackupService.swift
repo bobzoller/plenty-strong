@@ -33,12 +33,60 @@ enum BackupService {
     static func rules(_ archives: [ArchivedObject], hash: String) throws -> Ruleset {
         guard let archive = archives.first(where: { $0.id == hash }) else { throw invalid("missing_rules") }
         let rule = try JSONDecoder().decode(Ruleset.self, from: archive.bytes)
-        guard ["general-fitness-swift1", "general-fitness-v0.2", "general-fitness-exact-v1"].contains(rule.version) else { throw EngineError(code: "unsupported_version", field: "rules") }
+        guard ["general-fitness-swift1", "general-fitness-v0.2", "general-fitness-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(rule.version) else { throw EngineError(code: "unsupported_version", field: "rules") }
+        if (rule.contractVersion ?? 1) >= 4 || ["general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(rule.version) {
+            guard rule.hash == hash, (try? RulesetCatalog.resolve(version: rule.version, hash: hash)) != nil else {
+                throw EngineError(code: "unsupported_version", field: "rules")
+            }
+        }
         try rule.validateIntegrity()
         guard rule.hash == hash else { throw invalid("rules_hash") }
         _ = try RulesetCatalog.resolve(version: rule.version, hash: rule.hash)
         guard try archiveHash(archive.bytes, key: "hash") == hash else { throw invalid("rules_hash") }
         return rule
+    }
+    static func validateStarterProfileRegistration(_ archive: ArchivedObject) throws {
+        let fields = try JSONSerialization.jsonObject(with: archive.bytes) as? [String: Any]
+        let profileID = fields?["profileId"] as? String
+        if (fields?["schemaVersion"] as? Int ?? 1) >= 4 || profileID?.hasPrefix("starter-") == true {
+            guard fields?["schemaVersion"] as? Int == 4,
+                  (profileID == "starter-upper-v1" && archive.id == StarterProgramCatalog.upperProfileHash) ||
+                    (profileID == "starter-glute-v1" && archive.id == StarterProgramCatalog.gluteProfileHash) else {
+                throw EngineError(code: "unsupported_version", field: "profile")
+            }
+        }
+    }
+    static func supportsRegisteredPolicy(_ envelope: JournalEnvelope) -> Bool {
+        guard let rules = try? RulesetCatalog.resolve(version: envelope.rulesetVersion, hash: envelope.rulesetHash),
+              (try? ProgramPolicy.resolve(schemaVersion: envelope.schemaVersion, rules: rules)) != nil,
+              envelope.returnedState.rulesetHash == envelope.rulesetHash,
+              envelope.returnedState.schemaVersion == envelope.schemaVersion,
+              rules.profileID == nil || (rules.profileID == envelope.profileID && rules.profileHash == envelope.profileHash),
+              (try? TrainingCore.validate(config: envelope.returnedState.config, rules: rules)) != nil else { return false }
+        if envelope.schemaVersion != 1 {
+            let config = envelope.returnedState.config
+            guard envelope.profileID == config.profileID, envelope.profileHash == config.profileHash,
+                  envelope.sourceProfileID == config.sourceProfileID, envelope.sourceProfileHash == config.sourceProfileHash else { return false }
+        }
+        switch envelope.command {
+        case .changeStarterProgram: return envelope.schemaVersion == 4
+        case .activatePolicy: return envelope.schemaVersion == 3
+        case .reconfigure(change: .reviewStrengthHandling, next: _),
+             .variantChange(change: .createLoadingMode, next: _): return envelope.schemaVersion == 4
+        default: return true
+        }
+    }
+    static func starterDefinition(_ archives: [ArchivedObject], hash: String) throws -> StarterProgramDefinition {
+        guard let archive = archives.first(where: { $0.id == hash }),
+              try archiveHash(archive.bytes, key: "contentHash") == hash else { throw invalid("missing_starter_profile") }
+        let definition = try JSONDecoder().decode(StarterProgramDefinition.self, from: archive.bytes)
+        guard definition.contentHash == hash,
+              [StarterProgramCatalog.upperProfileHash, StarterProgramCatalog.gluteProfileHash].contains(hash) else {
+            throw invalid("starter_profile_pin")
+        }
+        // The pure switch admits the complete typed projection with its actual
+        // program/choice/goal; no synthetic config or latest-profile lookup.
+        return definition
     }
     struct Replay {
         var histories: [String: [JournalEnvelope]]
@@ -55,6 +103,7 @@ enum BackupService {
         }
         for archive in document.profiles {
             guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") }
+            try validateStarterProfileRegistration(archive)
         }
         let envelopes = try document.journal.map { item -> JournalEnvelope in
             let envelope = try JSONDecoder().decode(JournalEnvelope.self, from: item.bytes)
@@ -64,7 +113,7 @@ enum BackupService {
         var histories: [String: [JournalEnvelope]] = [:]
         var heads: [String: JournalEnvelope] = [:]
         for envelope in envelopes {
-            guard [2, 3].contains(envelope.schemaVersion), envelope.returnedState.schemaVersion == envelope.schemaVersion else {
+            guard [2, 3, 4].contains(envelope.schemaVersion), envelope.returnedState.schemaVersion == envelope.schemaVersion else {
                 throw EngineError(code: "unsupported_version", field: "schemaVersion")
             }
             guard envelope.datasetID == document.datasetID,
@@ -94,7 +143,7 @@ enum BackupService {
                     guard source == parent.rulesetHash, destination == envelope.rulesetHash else { throw invalid("activation_rules") }
                     _ = try rules(document.rules, hash: source)
                 }
-                replayed = try transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: histories[envelope.programID] ?? [])
+                replayed = try transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: histories[envelope.programID] ?? [], archivedRules: document.rules, archivedProfiles: document.profiles)
                 guard replayed.state.revision == parent.returnedState.revision + 1 else { throw invalid("revision") }
             }
             guard try bytes(replayed.state) == bytes(envelope.returnedState),
@@ -120,7 +169,17 @@ enum BackupService {
         if case let .workout(event, _) = command { return try hash(event) }
         return try hash(command)
     }
-    static func transition(state: ProgramState, command: JournalCommand, rules: Ruleset, legacyHistory: [JournalEnvelope] = []) throws -> ConfigurationResult {
+    static func transition(state: ProgramState, command: JournalCommand, rules: Ruleset, legacyHistory: [JournalEnvelope] = [], archivedRules: [ArchivedObject] = [], archivedProfiles: [ArchivedObject] = []) throws -> ConfigurationResult {
+        if case let .changeStarterProgram(choice, goal, next) = command {
+            guard let profileHash = rules.profileHash,
+                  (try? ProgramPolicy.resolve(schemaVersion: 4, rules: rules))?.usesStarterDoses == true else {
+                throw EngineError(code: "unsupported_version", field: "destinationRules")
+            }
+            let definition = try starterDefinition(archivedProfiles, hash: profileHash)
+            let source = try self.rules(archivedRules, hash: state.rulesetHash)
+            return try changeStarterProgram(state: state, sourceRules: source, destinationRules: rules,
+                destinationDefinition: definition, choice: choice, goal: goal, verifiedHistory: legacyHistory, nextWorkout: next)
+        }
         if case let .activatePolicy(source, destination, evidence, next) = command {
             guard state.schemaVersion == 2, source == state.rulesetHash, destination == rules.hash,
                   evidence == (try policyActivationEvidenceEventIDs(state: state, history: legacyHistory)) else { throw invalid("activation_evidence") }
@@ -130,7 +189,7 @@ enum BackupService {
         _ = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
         guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else { throw invalid("command_rules") }
         switch command {
-        case .activatePolicy: throw invalid("activation")
+        case .activatePolicy, .changeStarterProgram: throw invalid("activation")
         case .initialize: throw invalid("nonroot_initialize")
         case let .workout(event, next):
             guard rawVariantSnapshotsMatch(state: state, event: event) else { throw invalid("raw_observation_snapshot") }
@@ -148,7 +207,7 @@ enum BackupService {
     }
     static func validateDraft(_ draft: WorkoutDraft, state: ProgramState, rules: Ruleset) throws {
         let displayed = try prepareWorkout(state: state, rules: rules, easierToday: draft.sessionMode == .easier)
-        if state.schemaVersion == 3 {
+        if [3, 4].contains(state.schemaVersion) {
             for log in draft.logs {
                 guard let row = displayed.exercises.first(where: { $0.movementID == log.movementID }) else { throw invalid("draft_log") }
                 try validateIndexedExactLog(log, prescription: row)

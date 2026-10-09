@@ -188,9 +188,9 @@ import TrainingCore
         let logs = displayed.exercises.map {
             ExerciseLog(movementID: $0.movementID, prescriptionID: displayed.id, status: .partial, actualLoad: nil,
                 actualSets: [], finalEffort: .unknown, problem: .none, baseMovementID: $0.baseMovementID, modificationsSnapshot: $0.modificationsSnapshot,
-                effortScope: snapshot.state.schemaVersion == 3 ? .allWorkingSets : nil,
-                skippedSetIndices: snapshot.state.schemaVersion == 3 ? [] : nil,
-                mixedLoads: snapshot.state.schemaVersion == 3 ? false : nil)
+                effortScope: [3, 4].contains(snapshot.state.schemaVersion) ? .allWorkingSets : nil,
+                skippedSetIndices: [3, 4].contains(snapshot.state.schemaVersion) ? [] : nil,
+                mixedLoads: [3, 4].contains(snapshot.state.schemaVersion) ? false : nil)
         }
         try await save(WorkoutDraft(id: UUID(), programID: snapshot.state.config.programID, expectedRevision: snapshot.state.revision,
             planned: snapshot.state.activePrescription, displayed: displayed, date: displayed.date, timeZoneID: timeZoneID,
@@ -237,7 +237,7 @@ import TrainingCore
         return nextSetIndex(log: draft.logs[i], row: draft.displayed.exercises[i])
     }
     private func nextSetIndex(log: ExerciseLog, row: ExercisePrescription) -> Int? {
-        if snapshot.state.schemaVersion != 3 { return log.actualSets.count < row.sets.count ? log.actualSets.count : nil }
+        if ![3, 4].contains(snapshot.state.schemaVersion) { return log.actualSets.count < row.sets.count ? log.actualSets.count : nil }
         let occupied = Set(log.actualSets.compactMap(\.setIndex)).union(log.skippedSetIndices ?? [])
         return row.sets.indices.first { !occupied.contains($0) }
     }
@@ -247,7 +247,7 @@ import TrainingCore
     private func skipSetBody(movementID: String, index setIndex: Int) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
-        guard snapshot.state.schemaVersion == 3, row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
+        guard [3, 4].contains(snapshot.state.schemaVersion), row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
         if draft.logs[i].skippedSetIndices?.contains(setIndex) == true { return }
         guard !handled(movementID), draft.logs[i].problem == .none, row.kind != .paused else { throw EngineError(code: "movement_stopped", field: "set") }
         guard nextSetIndex(log: draft.logs[i], row: row) == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
@@ -260,7 +260,7 @@ import TrainingCore
     }
     private func recordMixedLoadsBody(movementID: String) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
-        guard snapshot.state.schemaVersion == 3 else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
+        guard [3, 4].contains(snapshot.state.schemaVersion) else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
         if draft.logs[i].mixedLoads == true { return }
         guard !handled(movementID), draft.logs[i].problem == .none, draft.displayed.exercises[i].kind != .paused else { throw EngineError(code: "movement_stopped", field: "load") }
         draft.logs[i].mixedLoads = true
@@ -269,7 +269,7 @@ import TrainingCore
         try await save(draft)
     }
     private func requireMissReason(_ actual: ActualSet, row: ExercisePrescription, index: Int) throws {
-        guard snapshot.state.schemaVersion == 3 else { return }
+        guard [3, 4].contains(snapshot.state.schemaVersion) else { return }
         if let target = row.sets[index].targetReps, actual.reps < target, actual.missedGoalReason == nil {
             throw EngineError(code: "missed_goal_reason_required", field: "missedGoalReason")
         }
@@ -280,18 +280,18 @@ import TrainingCore
     private func recordSetBody(movementID: String, index setIndex: Int, actual: ActualSet) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         var indexedActual = actual
-        if snapshot.state.schemaVersion == 3 {
+        if [3, 4].contains(snapshot.state.schemaVersion) {
             guard actual.setIndex == nil || actual.setIndex == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
             indexedActual.setIndex = setIndex
         }
         let row = draft.displayed.exercises[i]; let movement = movement(for: row)
         guard row.kind != .paused, draft.logs[i].problem == .none, !handled(movementID) else { throw EngineError(code: "movement_stopped", field: "set") }
-        if snapshot.state.schemaVersion == 3 {
+        if [3, 4].contains(snapshot.state.schemaVersion) {
             if draft.logs[i].actualSets.first(where: { $0.setIndex == setIndex }) == indexedActual { return }
         } else if setIndex >= 0, setIndex < draft.logs[i].actualSets.count, draft.logs[i].actualSets[setIndex] == indexedActual { return }
         guard row.sets.indices.contains(setIndex), nextSetIndex(log: draft.logs[i], row: row) == setIndex,
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
-              snapshot.state.schemaVersion == 3 || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
+              [3, 4].contains(snapshot.state.schemaVersion) || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
         if movement.repCounting == .total, actual.leftReps != nil || actual.rightReps != nil { throw EngineError(code: "unexpected_side_reps", field: "set") }
         guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
         try requireMissReason(indexedActual, row: row, index: setIndex)
@@ -309,7 +309,7 @@ import TrainingCore
     private func recordEffortBody(movementID: String, effort: Effort) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         draft.logs[i].finalEffort = effort
-        if snapshot.state.schemaVersion == 3 { draft.logs[i].effortScope = .allWorkingSets }
+        if [3, 4].contains(snapshot.state.schemaVersion) { draft.logs[i].effortScope = .allWorkingSets }
         try await save(draft)
     }
     func recordProblem(movementID: String, problem: Problem, pendingActual: ActualSet? = nil) async throws {
@@ -334,7 +334,7 @@ import TrainingCore
         }
         // Unknown load/missing side remain unknown. Raw set and outcome commit together.
         var retained = actual
-        if snapshot.state.schemaVersion == 3 {
+        if [3, 4].contains(snapshot.state.schemaVersion) {
             guard actual.setIndex == nil || actual.setIndex == slot else { throw EngineError(code: "invalid_set", field: "setIndex") }
             retained.setIndex = slot
         }
@@ -371,7 +371,7 @@ import TrainingCore
     }
     private func validCompletion(_ log: ExerciseLog, row: ExercisePrescription) -> Bool {
         let metadata = movement(for: row)
-        let indexedComplete = snapshot.state.schemaVersion != 3 ||
+        let indexedComplete = ![3, 4].contains(snapshot.state.schemaVersion) ||
             (log.skippedSetIndices == [] && log.mixedLoads == false &&
              Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
         return indexedComplete && row.kind != .paused && !row.sets.isEmpty && log.problem == .none &&
@@ -436,6 +436,22 @@ import TrainingCore
         guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "settings") }
         let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
         snapshot = try await repository.applyConfiguration(programID: programID, expectedRevision: snapshot.state.revision, change: change, next: slot)
+    }
+    func changeStarterProgram(choice: StarterProgramChoice, goal: Goal) async throws {
+        try await operations.perform { _ in
+            try requireReady()
+            guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "settings") }
+            let config = try selectStarterProgram(choice: choice, goal: goal, programID: programID)
+            let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
+            var earliest = max(today, snapshot.state.activePrescription.date)
+            if let last = snapshot.state.lastSessionDate { earliest = max(earliest, try last.adding(days: 1)) }
+            let next = try WorkoutScheduler.nextSlot(onOrAfter: earliest, config: config)
+            guard let head = snapshot.history.first(where: { $0.returnedState.revision == snapshot.state.revision }) else {
+                throw EngineError(code: "stale_head", field: "history")
+            }
+            snapshot = try await repository.changeStarterProgram(programID: programID, expectedRevision: snapshot.state.revision,
+                expectedHeadHash: head.envelopeHash, choice: choice, goal: goal, next: next)
+        }
     }
     func restoreBackup(_ document: BackupDocument) async throws -> ImportReceipt {
         return try await operations.perform { _ in try await restoreBackupBody(document) }

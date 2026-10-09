@@ -659,12 +659,45 @@ extension AppComposition {
     }
     // Called inside the shared training gate and reads current authoritative heads.
     // Historical restrictions that were actually cleared do not block creation.
-    private func requireSafeNewProgram(_ config: ProgramConfig, repository: TrainingRepository) async throws {
+    func requireSafeNewProgram(_ config: ProgramConfig, repository: TrainingRepository) async throws {
         guard workout?.hasAmbiguousFinish != true else { throw BackupUIError.retainedRestrictions }
         let document = try await repository.exportBackup()
         guard document.drafts.isEmpty else { throw BackupUIError.retainedRestrictions }
         let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
         let programs = Set(document.heads.keys).union(proof.envelopes.values.filter { $0.parentEnvelopeHash == nil }.map(\.programID))
+        if config.profileID == "starter-upper-v1" || config.profileID == "starter-glute-v1" {
+            let choice = try StarterProgramCatalog.choice(for: config)
+            try validate(config: config, rules: RulesetCatalog.starter(choice))
+            guard proof.waiting.isEmpty, proof.quarantined.isEmpty else { throw BackupUIError.retainedRestrictions }
+            var defaults: [String: Int] = [:]
+            for emphasis in StarterProgramChoice.allCases {
+                let definition = try StarterProgramCatalog.definition(emphasis)
+                for movement in definition.movements {
+                    let family = starterSafetyFamily(for: movement.id)
+                    defaults[family] = max(defaults[family] ?? 0, movement.minimumRir)
+                }
+            }
+            for program in programs {
+                guard let uuid = UUID(uuidString: program), document.heads[program] != nil else { throw BackupUIError.retainedRestrictions }
+                let current = try await repository.snapshot(programID: uuid)
+                guard current.health == .ready, current.draft == nil, AppTrainingCompatibility.supports(current),
+                      !current.state.exercises.values.contains(where: { $0.mode == .paused }) else { throw BackupUIError.retainedRestrictions }
+                var retained = current.state.retainedSafety ?? [:]
+                for movement in current.state.config.movements {
+                    let family = starterSafetyFamily(for: movement.id)
+                    let restriction = current.state.baseSafety?[movement.id] ?? MovementSafetyState(paused: false,
+                        minimumRir: movement.minimumRir, sourceEventIDs: [])
+                    if let previous = retained[family] {
+                        retained[family] = MovementSafetyState(paused: previous.paused || restriction.paused,
+                            minimumRir: max(previous.minimumRir, restriction.minimumRir), sourceEventIDs: [])
+                    } else { retained[family] = restriction }
+                }
+                guard retained.allSatisfy({ family, restriction in
+                    defaults[family] != nil && !restriction.paused && restriction.minimumRir <= defaults[family]!
+                }) else { throw BackupUIError.retainedRestrictions }
+            }
+            return
+        }
         let defaults = Dictionary(uniqueKeysWithValues: config.movements.map { ($0.id, $0.minimumRir) })
         for program in programs {
             guard let uuid = UUID(uuidString: program), document.heads[program] != nil else { throw BackupUIError.retainedRestrictions }
@@ -735,7 +768,7 @@ extension AppComposition {
 /// changed, migrated, or assigned invented profile/variant identifiers here.
 enum AppTrainingCompatibility {
     static func supports(_ snapshot: StoreSnapshot) -> Bool {
-        guard [2,3].contains(snapshot.state.schemaVersion), let rules = try? RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash),
+        guard [2,3,4].contains(snapshot.state.schemaVersion), let rules = try? RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash),
               (try? ProgramPolicy.resolve(schemaVersion: snapshot.state.schemaVersion, rules: rules)) != nil,
               snapshot.state.rulesetHash == rules.hash,
               (try? validate(config: snapshot.state.config, rules: rules)) != nil else { return false }

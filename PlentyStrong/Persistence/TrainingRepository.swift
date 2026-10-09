@@ -91,27 +91,43 @@ import TrainingCore
         switch ruleset.version {
         case "general-fitness-swift1": name = "ruleset-swift1"
         case "general-fitness-exact-v1": name = "ruleset-exact-v1"
+        case "general-fitness-upper-exact-v2": name = "ruleset-upper-exact-v2"
+        case "general-fitness-glute-exact-v1": name = "ruleset-glute-exact-v1"
         default: throw EngineError(code: "unsupported_version", field: "rules")
         }
         let rules = try archiveData(name, relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/\(name).json")
-        let profile = try archiveData("fixed-exercise-profile", relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/fixed-exercise-profile.json")
-        let source = try archiveData("2026-10-05-fixed-exercise-profile", relative: "docs/specs/2026-10-05-fixed-exercise-profile.json")
+        let profileName = ruleset.contractVersion == 4 ? ruleset.profileID! : "fixed-exercise-profile"
+        let sourceName = ruleset.profileID == "starter-glute-v1" ? "2026-10-08-glute-starter-profile" :
+            ruleset.profileID == "starter-upper-v1" ? "fixed-exercise-profile" : "2026-10-05-fixed-exercise-profile"
+        let profile = try archiveData(profileName, relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/\(profileName).json")
+        let source = try archiveData(sourceName, relative: sourceName == "fixed-exercise-profile" ?
+            "Packages/TrainingCore/Sources/TrainingCore/Resources/fixed-exercise-profile.json" : "docs/specs/\(sourceName).json")
         func object(_ bytes: Data, key: String) throws -> ArchivedObject {
             ArchivedObject(id: try BackupService.archiveHash(bytes, key: key), bytes: bytes, checksum: BackupService.hash(bytes))
         }
         return (try object(rules, key: "hash"), try [object(profile, key: "contentHash"), object(source, key: "contentHash")])
     }
+    // Reuse admitted immutable content across bundled and canonical recovery
+    // representations; preserve the saved original bytes and compare Data.
     private func putArchives(rules: [ArchivedObject], profiles: [ArchivedObject]) throws {
         let existingRules = try modelContext.fetch(FetchDescriptor<RuleArchiveRecord>())
         for archive in rules {
             if let saved = existingRules.first(where: { $0.contentHash == archive.id }) {
-                guard saved.bytes == archive.bytes else { throw BackupService.invalid("rule_archive_conflict") }
+                guard try BackupService.archiveHash(saved.bytes, key: "hash") == archive.id,
+                      try BackupService.archiveHash(archive.bytes, key: "hash") == archive.id,
+                      try CloudRecordCodec.canonicalBytes(saved.bytes) == CloudRecordCodec.canonicalBytes(archive.bytes) else {
+                    throw BackupService.invalid("rule_archive_conflict")
+                }
             } else { modelContext.insert(RuleArchiveRecord(hash: archive.id, bytes: archive.bytes)) }
         }
         let existingProfiles = try modelContext.fetch(FetchDescriptor<ProfileArchiveRecord>())
         for archive in profiles {
             if let saved = existingProfiles.first(where: { $0.contentHash == archive.id }) {
-                guard saved.bytes == archive.bytes else { throw BackupService.invalid("profile_archive_conflict") }
+                guard try BackupService.archiveHash(saved.bytes, key: "contentHash") == archive.id,
+                      try BackupService.archiveHash(archive.bytes, key: "contentHash") == archive.id,
+                      try CloudRecordCodec.canonicalBytes(saved.bytes) == CloudRecordCodec.canonicalBytes(archive.bytes) else {
+                    throw BackupService.invalid("profile_archive_conflict")
+                }
             } else { modelContext.insert(ProfileArchiveRecord(hash: archive.id, bytes: archive.bytes)) }
         }
     }
@@ -162,7 +178,7 @@ import TrainingCore
     }
     func initialize(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot, datasetID requestedDatasetID: UUID? = nil) throws -> StoreSnapshot {
         let programUUID: UUID = try transaction {
-            guard ["general-fitness-swift1", "general-fitness-exact-v1"].contains(rules.version), config.profileHash != nil, let programUUID = UUID(uuidString: config.programID) else { throw EngineError(code: "unsupported_version", field: "initialize") }
+            guard (try? ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules))?.usesVariants == true, config.profileHash != nil, let programUUID = UUID(uuidString: config.programID) else { throw EngineError(code: "unsupported_version", field: "initialize") }
             guard config.programID == programUUID.uuidString.lowercased() else { throw BackupService.invalid("program_uuid_spelling") }
             let archives = try bundledArchives(ruleset: rules)
             guard archives.0.id == rules.hash else { throw BackupService.invalid("initial_rules") }
@@ -277,6 +293,33 @@ import TrainingCore
         }
         return try snapshot(programID: programID)
     }
+    func changeStarterProgram(programID: UUID, expectedRevision: Int, expectedHeadHash: String,
+                              choice: StarterProgramChoice, goal: Goal, next: WorkoutSlot) throws -> StoreSnapshot {
+        try transaction {
+            let current = try snapshot(programID: programID)
+            guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
+            let parent = try projectedEnvelope(current.state.config.programID)
+            guard current.state.revision == expectedRevision else { throw EngineError(code: "stale_revision", field: "expectedRevision") }
+            guard parent.envelopeHash == expectedHeadHash else { throw EngineError(code: "stale_head", field: "expectedHeadHash") }
+            guard current.draft == nil else { throw EngineError(code: "program_switch_draft_locked", field: "draft") }
+            guard next.date >= current.state.activePrescription.date else { throw EngineError(code: "backdated_date", field: "next") }
+            let document = try rawBackup()
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+            let prefix = try RecoveryVerifier.ancestors(parent.envelopeHash, envelopes: proof.envelopes).compactMap { proof.envelopes[$0] }
+            let destination = try RulesetCatalog.starter(choice)
+            let archives = try bundledArchives(ruleset: destination)
+            guard archives.0.id == destination.hash else { throw BackupService.invalid("switch_archive") }
+            let command = JournalCommand.changeStarterProgram(choice: choice, goal: goal, next: next)
+            let result = try BackupService.transition(state: current.state, command: command, rules: destination,
+                legacyHistory: prefix, archivedRules: document.rules + [archives.0], archivedProfiles: document.profiles + archives.1)
+            try putArchives(rules: [archives.0], profiles: archives.1)
+            let accepted = try envelope(programID: current.state.config.programID, eventID: UUID().uuidString.lowercased(),
+                datasetID: parent.datasetID, command: command, parent: parent, result: result, rules: destination)
+            try persist(accepted)
+            _ = try exportBackup()
+        }
+        return try snapshot(programID: programID)
+    }
     func finalize(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
         let result: AdvanceResult = try transaction {
             let current = try snapshot(programID: programID)
@@ -365,7 +408,7 @@ import TrainingCore
                 // Ordinary saves may append performed sets and update effort/status,
                 // but cannot rewrite recorded reps/sides/load or remove a safety flag.
                 // Corrections require an explicit path that retains the originals.
-                if current.state.schemaVersion == 3 {
+                if [3, 4].contains(current.state.schemaVersion) {
                     guard Set(existing.acknowledgedMovementIDs ?? []).isSubset(of: Set(draft.acknowledgedMovementIDs ?? [])) else { throw BackupService.invalid("draft_observation_changed") }
                 }
                 for original in existing.logs {
@@ -375,7 +418,7 @@ import TrainingCore
                           original.problem == .none || updated.problem == original.problem else {
                         throw BackupService.invalid("draft_observation_changed")
                     }
-                    if current.state.schemaVersion == 3 {
+                    if [3, 4].contains(current.state.schemaVersion) {
                         guard let originalSkipped = original.skippedSetIndices, let updatedSkipped = updated.skippedSetIndices,
                               updatedSkipped.starts(with: originalSkipped),
                               original.mixedLoads != true || updated.mixedLoads == true,
