@@ -24,6 +24,8 @@ public func applyStarterIntroductoryDose(exercise: inout ExerciseState, dose: Mo
     let qualified = observation.phase == .normal && observation.problem == .none &&
         observation.effort != .unknown && observation.effort != .tooHard &&
         !observation.eventID.isEmpty &&
+        (exercise.lastCompletedDate.map { observation.date > $0 } ?? true) &&
+        !starter.windows.values.contains { $0.exposures.contains { $0.eventID == observation.eventID } } &&
         (window.exposures.last.map { observation.date > $0.date && observation.eventID != $0.eventID } ?? (window.introStreak == 0)) &&
         observation.load == exercise.load && context.load == exercise.load &&
         observation.plannedSetCount == exercise.normalSets && context.normalSetCount == exercise.normalSets &&
@@ -31,6 +33,7 @@ public func applyStarterIntroductoryDose(exercise: inout ExerciseState, dose: Mo
         context.repCeiling == exercise.repCeiling && context.restSeconds == dose.restSeconds &&
         ((observation.loadingMode == .bodyweight && observation.load == nil) ||
             (observation.loadingMode == .externalLoad && observation.load != nil)) &&
+        observation.prescribedTargets == exercise.exactRepState!.normalTargets &&
         observation.prescribedTargets == actual.map(\.reps) &&
         actual.count == exercise.normalSets && (actual.first?.reps ?? 0) >= exercise.repFloor && actual.map(\.setIndex) == actual.indices.map(Optional.some) &&
         actual.allSatisfy { $0.reps > 0 && $0.reps <= exercise.repCeiling &&

@@ -438,3 +438,63 @@ extension StarterProgressionTests {
         }
     }
 }
+
+extension StarterProgressionTests {
+    @Test func introHelperRejectsTargetsThatDifferFromCurrentIssuedGoals() throws {
+        let input = try starterPromotionInput()
+        let id = input.state.config.activeVariantIDs![rdl]!
+        var exercise = input.state.exercises[id]!
+        let key = exercise.starterState!.windows.keys.first!
+        let dose = try resolveMovementDose(config: input.state.config, variantID: id, exercise: exercise, rules: input.rules)
+        var observation = exercise.starterState!.windows[key]!.exposures[0]
+        observation.eventID = input.event.eventID
+        observation.date = input.event.date
+        observation.prescribedTargets = [10, 9]
+        observation.actualSets = [ActualSet(reps: 10, setIndex: 0), ActualSet(reps: 9, setIndex: 1)]
+        observation.log!.actualSets = observation.actualSets
+        #expect(exercise.exactRepState!.normalTargets == [12, 12])
+        #expect(try !applyStarterIntroductoryDose(exercise: &exercise, dose: dose,
+            observation: observation, windowKey: key))
+        #expect(exercise.normalSets == 2 && exercise.exactRepState!.normalTargets == [12, 12])
+        #expect(exercise.starterState!.windows[key]?.introStreak == 0)
+    }
+
+    @Test(arguments: ["older", "same_date", "repeated_retained_id"])
+    func introHelperRejectsNoncurrentEvidenceAcrossContexts(_ fault: String) throws {
+        let input = try starterPromotionInput()
+        var state = input.state
+        let id = state.config.activeVariantIDs![rdl]!
+        let sunKey = state.exercises[id]!.starterState!.windows.keys.first!
+        let priorSUN = state.exercises[id]!.starterState!.windows[sunKey]!.exposures[0]
+        let thursday = try LocalDate(iso8601: "2026-10-15")
+        let earlierThursday = try LocalDate(iso8601: "2026-10-08")
+        let nextSunday = try LocalDate(iso8601: "2026-10-18")
+        let thursdayWorkout = try plannedWorkout(state: state, rules: input.rules,
+            slot: WorkoutSlot(date: thursday, slotID: "THU"))
+        let frozenTHU = try admittedStarterWindow(state: state, prescription: thursdayWorkout, variantID: id, rules: input.rules)
+        var retainedTHU = frozenTHU
+        retainedTHU.exposures = [earlierThursday, thursday].enumerated().map { index, date in
+            var exposure = priorSUN
+            exposure.eventID = "retained-thu-\(index)"
+            exposure.date = date
+            exposure.exactRepContext = frozenTHU.context
+            return exposure
+        }
+        // Fully coherent retained SUN/THU windows, with THU completing last.
+        state.exercises[id]!.starterState!.windows[retainedTHU.contextKey] = retainedTHU
+        state.exercises[id]!.lastCompletedDate = thursday
+        state.lastSessionDate = thursday
+        try starterRefresh(&state, slotID: "SUN", date: nextSunday)
+        try validateStarterProgram(state: state, rules: input.rules)
+        var exercise = state.exercises[id]!
+        let dose = try resolveMovementDose(config: state.config, variantID: id, exercise: exercise, rules: input.rules)
+        var observation = priorSUN
+        observation.eventID = fault == "repeated_retained_id" ? "retained-thu-0" : "distinct-current-observation"
+        observation.date = fault == "older" ? input.event.date : fault == "same_date" ? thursday : nextSunday
+        #expect(try !applyStarterIntroductoryDose(exercise: &exercise, dose: dose,
+            observation: observation, windowKey: sunKey))
+        #expect(exercise.normalSets == 2 && exercise.exactRepState!.normalTargets == [12, 12])
+        #expect(exercise.starterState!.windows[sunKey]?.introStreak == 0)
+        #expect(exercise.starterState!.windows[retainedTHU.contextKey] == retainedTHU)
+    }
+}
