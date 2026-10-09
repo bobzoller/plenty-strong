@@ -28,7 +28,7 @@ final class CloudRecoveryFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["sync.account-unavailable"].label.contains("iOS Settings"))
         app.buttons["sync.disable"].tap()
         app.navigationBars.buttons.firstMatch.tap()
-        app.buttons["onboarding.goal.size"].tap(); app.buttons["onboarding.confirm"].tap()
+        app.selectInitialUpperProgram()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
     }
     @MainActor func testFullStorageOffersExportAndRetainsHistoryWhenDisabled() {

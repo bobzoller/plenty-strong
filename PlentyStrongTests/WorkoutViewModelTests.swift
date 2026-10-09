@@ -926,7 +926,7 @@ extension WorkoutViewModelTests {
             else { composition.restoreBeforeImportForTesting = { await checkpoint.pause() } }
             let restore = Task { try await composition.restoreBackupData(BackupService.bytes(document)) }
             await checkpoint.waitUntilEntered()
-            await composition.confirm(goal: .strength)
+            await composition.confirm(choice: .upperBody, goal: .strength)
             checkpoint.release()
             _ = try await restore.value
             let backup = try await repository.exportBackup()

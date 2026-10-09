@@ -16,17 +16,35 @@ final class OfflineAcceptanceTests: XCTestCase {
         let restore = app.buttons["onboarding.restore"]
         XCTAssertTrue(restore.waitForExistence(timeout: 15)); XCTAssertTrue(restore.isHittable)
         let confirm = app.buttons["onboarding.confirm"]
-        XCTAssertTrue(confirm.exists); XCTAssertTrue(confirm.isHittable); XCTAssertFalse(confirm.isEnabled)
+        app.revealWorkoutControl(confirm, scrollDistance: 300)
+        XCTAssertTrue(confirm.isHittable); XCTAssertFalse(confirm.isEnabled)
+        let emphasis = app.buttons["onboarding.program.upper_body"]
+        for _ in 0..<12 where !restore.isHittable { app.swipeDown() }
+        XCTAssertTrue(restore.isHittable)
+        for _ in 0..<30 {
+            let top = app.navigationBars.firstMatch.frame.maxY
+            if emphasis.exists, emphasis.frame.minY >= top, emphasis.frame.minY + 100 < app.frame.maxY - 100 { break }
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let above = emphasis.exists && emphasis.frame.minY < top
+            let deficit = emphasis.exists ? (above ? top + 16 - emphasis.frame.minY : max(40, emphasis.frame.minY + 100 - (app.frame.maxY - 100))) : 200
+            let distance = min(200, max(40, deficit))
+            let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: above ? top + 40 : app.frame.maxY - 150))
+            let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: above ? top + 40 + distance : app.frame.maxY - 150 - distance))
+            start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
+        }
+        XCTAssertTrue(emphasis.isHittable)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: emphasis.frame.midX, dy: emphasis.frame.minY + 50)).tap()
+        XCTAssertTrue(emphasis.isSelected)
         let goal = app.buttons["onboarding.goal.size"]
-        // Onboarding has its own pinned footer. Reach the whole Size row
-        // inside the Form before tapping; a partial AX hit is insufficient.
-        app.revealWorkoutControl(goal, pinnedFooter: confirm, scrollDistance: 100)
+        // Accessibility sizes keep confirmation in the scrollable Form.
+        app.revealWorkoutControl(goal, scrollDistance: 300)
         XCTAssertTrue(goal.isHittable); goal.tap()
-        let selected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in goal.isSelected && confirm.isEnabled }, object: nil)
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: goal)
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
         XCTAssertTrue(goal.isSelected)
+        app.revealWorkoutControl(confirm, scrollDistance: 300)
         XCTAssertTrue(confirm.isHittable); XCTAssertTrue(confirm.isEnabled)
-        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Large text onboarding pinned confirmation"; attachment.lifetime = .keepAlways; add(attachment)
+        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Large text onboarding scrollable confirmation"; attachment.lifetime = .keepAlways; add(attachment)
         confirm.tap(); XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15))
         app.revealWorkoutControl(app.buttons["today.start"])
     }

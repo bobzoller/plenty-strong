@@ -53,11 +53,14 @@ import TrainingCore
         let (app, _, _) = try await composition(s, provider: FakeCloudAccountProvider(nextAccount))
         await app.setCloudRecoveryEnabled(true)
         #expect(app.cloudStatus.phase == .accountUnavailable)
-        try await app.createSeparateCloudProgram(goal: .maintenance)
+        try await app.createSeparateCloudProgram(choice: .wholeBodyGlutes, goal: .maintenance)
         let roots = try await app.recoveryProof().envelopes.values.filter { $0.parentEnvelopeHash == nil }
         #expect(roots.count == 2)
         #expect(Set(roots.map(\.datasetID)).count == 2)
         let newRoot = try #require(roots.first { $0.programID != s.programID.uuidString.lowercased() })
+        #expect(newRoot.returnedState.config.profileID == "starter-glute-v1")
+        #expect(newRoot.returnedState.config.goal == .maintenance)
+        #expect(newRoot.returnedState.schemaVersion == 4)
         #expect(try await s.repository.datasetAssociation(UUID(uuidString: newRoot.datasetID)!) == nextAccount.key)
         #expect(try await s.repository.pendingCloudRecords(scope: recoveryScope).count == 4)
         #expect(try await s.repository.datasetAssociation(UUID(uuidString: old.datasetID)!) == recoveryScope.key)
@@ -372,7 +375,7 @@ extension CloudRecoveryLifecycleTests {
             _ = try await CloudIngestor(repository: s.repository).ingest(recoveryRecords(other), scope: recoveryScope)
         }
         let before = try await s.repository.exportBackup()
-        await #expect(throws: (any Error).self) { try await app.createSeparateCloudProgram(goal: .maintenance) }
+        await #expect(throws: (any Error).self) { try await app.createSeparateCloudProgram(choice: .upperBody, goal: .maintenance) }
         #expect(try await s.repository.exportBackup() == before)
     }
 }

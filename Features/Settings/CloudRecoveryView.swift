@@ -7,7 +7,8 @@ struct CloudRecoveryView: View {
     @State private var stagedExportURL: URL?
     @State private var message: String?
     @State private var creating = false
-    @State private var newGoal: Goal = .size
+    @State private var newGoal: Goal?
+    @State private var newChoice: StarterProgramChoice?
     var body: some View {
         List {
             Section("Optional iCloud recovery") {
@@ -67,9 +68,16 @@ struct CloudRecoveryView: View {
                 Section("Use a different iCloud account") {
                     Text("Old local history remains available for viewing and export. Create a separate program for the current account; this does not transfer old history.")
                     Text("This version cannot create a separate program while retained programs need recovery review, contain a saved workout, or have safety restrictions beyond the new defaults.")
-                    Picker("New program goal", selection: $newGoal) { ForEach(Goal.allCases, id: \.self) { Text($0.title).tag($0) } }
+                    ProgramChoiceView(selection: $newChoice, identifierPrefix: "sync.new-program")
+                    Picker("New program goal", selection: $newGoal) {
+                        Text("Choose a goal").tag(Optional<Goal>.none)
+                        ForEach(Goal.allCases, id: \.self) { Text($0.title).tag(Optional($0)) }
+                    }
+                    if let choice = newChoice, let goal = newGoal {
+                        NavigationLink("Preview this program") { ProgramPreviewView(choice: choice, goal: goal) }
+                    }
                     Button("Create separate program for current account") { creating = true }
-                        .disabled(composition.busy || composition.workout?.snapshot.draft != nil || composition.workout?.hasAmbiguousFinish == true)
+                        .disabled(newChoice == nil || newGoal == nil || composition.busy || composition.workout?.snapshot.draft != nil || composition.workout?.hasAmbiguousFinish == true)
                         .accessibilityIdentifier("sync.new-account-program")
                 }
             }
@@ -78,7 +86,7 @@ struct CloudRecoveryView: View {
         }.navigationTitle("iCloud recovery")
         .task { try? await composition.refreshRecoveryPrograms() }
         .confirmationDialog("Create a separate program? All existing history stays on this phone and retains its original iCloud association.", isPresented: $creating) {
-            Button("Create separate program") { Task { do { try await composition.createSeparateCloudProgram(goal: newGoal) } catch { message = error.localizedDescription } } }
+            Button("Create separate program") { guard let newChoice, let newGoal else { return }; Task { do { try await composition.createSeparateCloudProgram(choice: newChoice, goal: newGoal) } catch { message = error.localizedDescription } } }
         }
     }
     @ViewBuilder private var status: some View {

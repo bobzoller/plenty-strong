@@ -34,14 +34,14 @@ struct WorkoutDetailView: View {
                     if envelope.returnedState.config.goal == .maintenance { Text("Stable good reps at the right effort support maintenance. An increase is not required.").accessibilityIdentifier("history.maintenance") }
                     Text(Self.coverage(event)).accessibilityIdentifier("history.coverage")
                     Text(event.sessionMode == .easier ? "Easier work is recorded without progression qualification." : "Actuals below are what was recorded, independent of future targets.")
-                    if savedPolicy == .fixedExactV1 { Text("These exact rep changes are evidence-informed product adaptations, not scientifically validated forecasts.").accessibilityIdentifier("history.policy-basis") }
+                    if savedPolicy?.usesExactTargets == true { Text("These exact rep changes are evidence-informed product adaptations, not scientifically validated forecasts.").accessibilityIdentifier("history.policy-basis") }
                 }
                 let logs = event.exercises.filter { variantID == nil || $0.movementID == variantID }
                 ForEach(Array(logs.enumerated()), id: \.element.movementID) { index, log in
-                    Section(envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.name ?? log.baseMovementID ?? log.movementID) {
+                    Section(MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.name ?? log.baseMovementID ?? log.movementID) {
                         Text(log.modificationsSnapshot?.isEmpty == false ? log.modificationsSnapshot! : "Default setup").accessibilityIdentifier("history.setup.\(log.movementID)")
                         if let issued, let row = issued.displayed.exercises.first(where: { $0.movementID == log.movementID }) {
-                            let counting = issued.state.config.movements.first { $0.id == row.baseMovementID }?.repCounting ?? .total
+                            let counting = MovementPrescriptionSummary.effectiveMovement(state: issued.state, variantID: row.movementID)?.repCounting ?? .total
                             Text("Goal issued for this workout").font(.headline)
                             Text(MovementPrescriptionSummary.goal(row, policy: issued.policy, repCounting: counting)).accessibilityIdentifier(index == 0 ? "history.issued-goal" : "history.issued-goal.\(log.movementID)")
                             if let load = row.load { Text("Issued load: \(MovementPrescriptionSummary.load(load))") }
@@ -51,7 +51,10 @@ struct WorkoutDetailView: View {
                         } else { Text("Issued goal unavailable — the original prescription reference could not be verified").accessibilityIdentifier("history.issued-unavailable") }
                         Text("Actual").font(.headline)
                         if let load = log.actualLoad { Text("Actual load: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
-                        else { Text("Actual load: no numeric load recorded") }
+                        else {
+                            Text(MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.loadingMode == .bodyweight ? "Actual load: bodyweight — no numeric load recorded" : "Actual load: no numeric load recorded")
+                                .accessibilityIdentifier("history.actual-load.\(log.movementID)")
+                        }
                         Text(log.actualSets.isEmpty ? "No sets recorded" : Self.reps(log))
                             .accessibilityLabel(log.actualSets.isEmpty ? "No sets recorded" : Self.reps(log))
                             .accessibilityIdentifier(index == 0 ? "history.actual-reps" : "history.actual-reps.\(log.movementID)")
@@ -72,13 +75,13 @@ struct WorkoutDetailView: View {
                                 Text("Saved dose: \(target.nextSetOverride ?? target.normalSets) sets")
                                 if let load = target.load { Text("Saved target load: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
                             }
-                            if savedPolicy == .fixedExactV1 {
+                            if savedPolicy?.usesExactTargets == true {
                                 if let nextRow = envelope.returnedPrescription.exercises.first(where: { $0.movementID == log.movementID }) {
                                     Text("Next issued goal when saved").font(.headline)
-                                    Text(MovementPrescriptionSummary.goal(nextRow, policy: savedPolicy, repCounting: envelope.returnedState.config.movements.first { $0.id == log.baseMovementID }?.repCounting ?? .total)).accessibilityIdentifier(index == 0 ? "history.next-goal" : "history.next-goal.\(log.movementID)")
+                                    Text(MovementPrescriptionSummary.goal(nextRow, policy: savedPolicy, repCounting: MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: log.movementID)?.repCounting ?? .total)).accessibilityIdentifier(index == 0 ? "history.next-goal" : "history.next-goal.\(log.movementID)")
                                 } else { Text("This setup was not in the next issued workout.") }
                                 if let retained = target.exactRepState?.normalTargets {
-                                    let counting = envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.repCounting ?? .total
+                                    let counting = MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: log.movementID)?.repCounting ?? .total
                                     Text("Retained normal goals when saved: \(retained.map(String.init).joined(separator: " / ")) reps\(counting == .perSide ? " per side" : "")").accessibilityIdentifier(index == 0 ? "history.retained-goal" : "history.retained-goal.\(log.movementID)")
                                 }
                             } else if savedPolicy != nil {

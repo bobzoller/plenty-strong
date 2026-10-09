@@ -341,3 +341,25 @@ struct StarterWorkoutPlannerTests {
         #expect(throws: EngineError.self) { try reconfigureProgram(state: state, change: review, rules: rules, nextWorkout: slot) }
     }
 }
+
+extension StarterWorkoutPlannerTests {
+    @Test func freshStrengthHandlingAdmitsOnlyExplicitCatalogLoad() throws {
+        for base in ["incline_db_press_30", "chest_supported_db_row_30_neutral", "suitcase_db_squat"] {
+            let (state, rules) = try initial(.wholeBodyGlutes, .strength)
+            let id = state.config.activeVariantIDs![base]!
+            let load = state.config.movements.first { $0.id == base }!.availableLoads[2]
+            #expect(state.exercises[id]!.load == nil)
+            let result = try reconfigureProgram(state: state, change: .reviewStrengthHandling(variantID: id, choice: .lowRep(load: load)), rules: rules, nextWorkout: slot)
+            #expect(result.state.exercises[id]!.load == load)
+            #expect(result.state.exercises[id]!.starterState!.strengthHandling == .lowRep(load: load))
+            #expect(result.state.exercises[id]!.exactRepState!.normalTargets == [4, 4])
+            #expect(result.state.exercises[id]!.starterState!.windows.isEmpty)
+            #expect(throws: EngineError.self) {
+                try reconfigureProgram(state: result.state, change: .reviewStrengthHandling(variantID: id, choice: .lowRep(load: Load(amount: "20", unit: .lb, basis: .perImplement))), rules: rules, nextWorkout: slot)
+            }
+            for wrong in [Load(amount: "15", unit: .lb, basis: .total), Load(amount: "17", unit: .lb, basis: .perImplement)] {
+                #expect(throws: EngineError.self) { try reconfigureProgram(state: state, change: .reviewStrengthHandling(variantID: id, choice: .lowRep(load: wrong)), rules: rules, nextWorkout: slot) }
+            }
+        }
+    }
+}

@@ -5,8 +5,7 @@ final class MovementSetupTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store"]
         app.launch()
-        XCTAssertTrue(app.buttons["onboarding.goal.size"].waitForExistence(timeout: 15))
-        app.buttons["onboarding.goal.size"].tap(); app.buttons["onboarding.confirm"].tap()
+        app.selectInitialUpperProgram()
         app.buttons["today.start"].tap(); XCTAssertTrue(app.buttons["movement.setup"].waitForExistence(timeout: 15)); app.buttons["movement.setup"].tap()
         app.textFields["setup.modifications"].tap(); app.textFields["setup.modifications"].typeText("+25 lb")
         app.buttons["setup.new"].tap()

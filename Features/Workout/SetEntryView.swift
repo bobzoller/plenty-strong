@@ -13,7 +13,7 @@ struct SetEntryView: View {
     @FocusState private var focused: Field?
     private var movement: Movement { model.movement(for: row) }
     private var nextIndex: Int? { model.nextSetIndex(for: row.movementID) }
-    private var exact: Bool { (try? RulesetCatalog.resolve(version: model.snapshot.state.rulesetVersion, hash: model.snapshot.state.rulesetHash)).flatMap { try? ProgramPolicy.resolve(schemaVersion: model.snapshot.state.schemaVersion, rules: $0) } == .fixedExactV1 }
+    private var exact: Bool { (try? RulesetCatalog.resolve(version: model.snapshot.state.rulesetVersion, hash: model.snapshot.state.rulesetHash)).flatMap { try? ProgramPolicy.resolve(schemaVersion: model.snapshot.state.schemaVersion, rules: $0) }?.usesExactTargets == true }
     private func number(_ text: String) -> Int? {
         guard !text.isEmpty, text.allSatisfy(\.isNumber), let number = Int(text), number >= 0 else { return nil }
         return number

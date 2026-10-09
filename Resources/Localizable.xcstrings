@@ -332,6 +332,646 @@
           }
         }
       }
+    },
+    "Choose the emphasis you want. Either program is for anyone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the emphasis you want. Either program is for anyone."
+          }
+        }
+      }
+    },
+    "Selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected"
+          }
+        }
+      }
+    },
+    "Sunday · Tuesday · Thursday": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunday · Tuesday · Thursday"
+          }
+        }
+      }
+    },
+    "Dumbbell loads are per hand unless the movement says total. A single dumbbell uses its total weight. Bodyweight has no numeric load. Per-side reps stay separate; a set completed on both sides counts once.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dumbbell loads are per hand unless the movement says total. A single dumbbell uses its total weight. Bodyweight has no numeric load. Per-side reps stay separate; a set completed on both sides counts once."
+          }
+        }
+      }
+    },
+    "Starting with 2 sets": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting with 2 sets"
+          }
+        }
+      }
+    },
+    "Every movement starts with 2 working sets. Size and strength can reach 3 sets for RDL, press, row and suitcase squat after two qualifying normal exposures in the same context. Keep the same weight and establish your baseline. Fat loss and maintenance retain 2 sets.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every movement starts with 2 working sets. Size and strength can reach 3 sets for RDL, press, row and suitcase squat after two qualifying normal exposures in the same context. Keep the same weight and establish your baseline. Fat loss and maintenance retain 2 sets."
+          }
+        }
+      }
+    },
+    "36 starting sets weekly (12 / 12 / 12). Established size and strength: 44 sets (15 / 13 / 16).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "36 starting sets weekly (12 / 12 / 12). Established size and strength: 44 sets (15 / 13 / 16)."
+          }
+        }
+      }
+    },
+    "Weekly muscle exposure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly muscle exposure"
+          }
+        }
+      }
+    },
+    "Coverage and setup limitations": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coverage and setup limitations"
+          }
+        }
+      }
+    },
+    "Movement cues": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Movement cues"
+          }
+        }
+      }
+    },
+    "Program preview unavailable. The stored definition could not be verified.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Program preview unavailable. The stored definition could not be verified."
+          }
+        }
+      }
+    },
+    "Program preview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Program preview"
+          }
+        }
+      }
+    },
+    "Upper-body emphasis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upper-body emphasis"
+          }
+        }
+      }
+    },
+    "Whole-body, glute emphasis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whole-body, glute emphasis"
+          }
+        }
+      }
+    },
+    "Whole-body training with extra attention to your chest, back, shoulders, and arms.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whole-body training with extra attention to your chest, back, shoulders, and arms."
+          }
+        }
+      }
+    },
+    "Whole-body training with extra attention to your glutes, while building your legs and upper body.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whole-body training with extra attention to your glutes, while building your legs and upper body."
+          }
+        }
+      }
+    },
+    "Dumbbells 5–80 lb in 5 lb steps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dumbbells 5–80 lb in 5 lb steps"
+          }
+        }
+      }
+    },
+    "Adjustable bench": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjustable bench"
+          }
+        }
+      }
+    },
+    "Pull-up bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull-up bar"
+          }
+        }
+      }
+    },
+    "Allow about 45–65 minutes; your time may vary.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow about 45–65 minutes; your time may vary."
+          }
+        }
+      }
+    },
+    "Exact exercise choices and doses are coaching and product defaults, not a research-validated complete routine.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact exercise choices and doses are coaching and product defaults, not a research-validated complete routine."
+          }
+        }
+      }
+    },
+    "Strength uses a handling check for press, row, and suitcase squat at your chosen load. Choose standard 8–12 reps or confirm safe handling for 4–6 reps. RDL uses 6–10 reps.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strength uses a handling check for press, row, and suitcase squat at your chosen load. Choose standard 8–12 reps or confirm safe handling for 4–6 reps. RDL uses 6–10 reps."
+          }
+        }
+      }
+    },
+    "The original routine concentrates lower-body and direct trunk work once a week. It does not provide twice-weekly coverage of every muscle.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original routine concentrates lower-body and direct trunk work once a week. It does not provide twice-weekly coverage of every muscle."
+          }
+        }
+      }
+    },
+    "Pull-ups and chin-ups need a setup you can perform comfortably. A bar alone may not be sufficient.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull-ups and chin-ups need a setup you can perform comfortably. A bar alone may not be sufficient."
+          }
+        }
+      }
+    },
+    "Primary / compound and indirect work overlap. Do not add muscle rows together to calculate workout sets.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primary / compound and indirect work overlap. Do not add muscle rows together to calculate workout sets."
+          }
+        }
+      }
+    },
+    "These exact rep changes are evidence-informed product adaptations, not scientifically validated forecasts.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These exact rep changes are evidence-informed product adaptations, not scientifically validated forecasts."
+          }
+        }
+      }
+    },
+    "Actual load: bodyweight — no numeric load recorded": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actual load: bodyweight — no numeric load recorded"
+          }
+        }
+      }
+    },
+    "Actual load: no numeric load recorded": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actual load: no numeric load recorded"
+          }
+        }
+      }
+    },
+    "Your emphasis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your emphasis"
+          }
+        }
+      }
+    },
+    "Preview this program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview this program"
+          }
+        }
+      }
+    },
+    "Required: dumbbells in 5 lb steps, 5–80 lb per dumbbell; a pull-up bar; an adjustable bench.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required: dumbbells in 5 lb steps, 5–80 lb per dumbbell; a pull-up bar; an adjustable bench."
+          }
+        }
+      }
+    },
+    "Required: dumbbells in 5 lb steps, 5–80 lb per dumbbell; an adjustable bench.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required: dumbbells in 5 lb steps, 5–80 lb per dumbbell; an adjustable bench."
+          }
+        }
+      }
+    },
+    "Confirm emphasis and goal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm emphasis and goal"
+          }
+        }
+      }
+    },
+    "New program goal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New program goal"
+          }
+        }
+      }
+    },
+    "Choose a goal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a goal"
+          }
+        }
+      }
+    },
+    "Create separate program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create separate program"
+          }
+        }
+      }
+    },
+    "Training emphasis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Training emphasis"
+          }
+        }
+      }
+    },
+    "Preview current program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview current program"
+          }
+        }
+      }
+    },
+    "Change training emphasis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change training emphasis"
+          }
+        }
+      }
+    },
+    "Program changes preserve original history, usable known loads, and stricter safety restrictions. The selected program restarts its initial dose and baselines.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Program changes preserve original history, usable known loads, and stricter safety restrictions. The selected program restarts its initial dose and baselines."
+          }
+        }
+      }
+    },
+    "Fixed routine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed routine"
+          }
+        }
+      }
+    },
+    "Sunday · Tuesday · Thursday. Dumbbells 5–80 lb in 5 lb steps; adjustable bench. The upper-body program also requires a pull-up bar.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunday · Tuesday · Thursday. Dumbbells 5–80 lb in 5 lb steps; adjustable bench. The upper-body program also requires a pull-up bar."
+          }
+        }
+      }
+    },
+    "Your goal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your goal"
+          }
+        }
+      }
+    },
+    "Choose program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose program"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "Keep history and restart baseline?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep history and restart baseline?"
+          }
+        }
+      }
+    },
+    "Keep history and change program": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep history and change program"
+          }
+        }
+      }
+    },
+    "Original workouts and safety restrictions remain. Comparisons restart for the selected program. A saved workout or Finish retry must be completed first.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original workouts and safety restrictions remain. Comparisons restart for the selected program. A saved workout or Finish retry must be completed first."
+          }
+        }
+      }
+    },
+    "Bridge setup check": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bridge setup check"
+          }
+        }
+      }
+    },
+    "Some adjustable dumbbells are too bulky or uncomfortable to secure on the pelvis. Use bodyweight if a dumbbell cannot be secured comfortably. Keep ribs down and extend your hips without arching your lower back.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some adjustable dumbbells are too bulky or uncomfortable to secure on the pelvis. Use bodyweight if a dumbbell cannot be secured comfortably. Keep ribs down and extend your hips without arching your lower back."
+          }
+        }
+      }
+    },
+    "Use a dumbbell": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a dumbbell"
+          }
+        }
+      }
+    },
+    "Use bodyweight": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use bodyweight"
+          }
+        }
+      }
+    },
+    "Each loading choice is a separate saved setup. Bodyweight has no numeric load; a dumbbell bridge uses one dumbbell's total weight.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each loading choice is a separate saved setup. Bodyweight has no numeric load; a dumbbell bridge uses one dumbbell's total weight."
+          }
+        }
+      }
+    },
+    "Strength handling check": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strength handling check"
+          }
+        }
+      }
+    },
+    "Practice unloaded or lightly loaded. Choose a load you can handle safely with controlled technique and about two good reps left. No working sets are issued until you choose a range.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Practice unloaded or lightly loaded. Choose a load you can handle safely with controlled technique and about two good reps left. No working sets are issued until you choose a range."
+          }
+        }
+      }
+    },
+    "Load for 4–6 reps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load for 4–6 reps"
+          }
+        }
+      }
+    },
+    "Choose a load": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a load"
+          }
+        }
+      }
+    },
+    "Use standard 8–12 reps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use standard 8–12 reps"
+          }
+        }
+      }
+    },
+    "I can safely handle this load for 4–6 reps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I can safely handle this load for 4–6 reps"
+          }
+        }
+      }
+    },
+    "Changing the load or setup requires another handling review. Grip, positioning and dumbbell clearance can limit loading.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changing the load or setup requires another handling review. Grip, positioning and dumbbell clearance can limit loading."
+          }
+        }
+      }
+    },
+    "Ready for 3 sets; keep the same weight and establish your baseline.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready for 3 sets; keep the same weight and establish your baseline."
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "Bodyweight Floor Glute Bridge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bodyweight Floor Glute Bridge"
+          }
+        }
+      }
+    },
+    "Bodyweight bridge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bodyweight bridge"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

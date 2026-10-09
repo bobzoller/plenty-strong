@@ -141,6 +141,7 @@ import TrainingCore
                        let value = TimeInterval(arguments[index + 1]), value.isFinite { offset = value } else { offset = 0 }
                     now = { Date(timeIntervalSince1970: 1791316800 + offset) }
                     #if targetEnvironment(simulator)
+                    if arguments.contains("-fixture-starter-intro") { now = { ISO8601DateFormatter().date(from: "2026-10-18T20:00:00Z")! } }
                     if arguments.contains("-fixture-exact-reps") { now = { ISO8601DateFormatter().date(from: "2026-10-08T20:00:00Z")!.addingTimeInterval(offset) } }
                     #endif
                     timeZoneID = "Pacific/Honolulu"
@@ -157,6 +158,9 @@ import TrainingCore
                 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
                 #if targetEnvironment(simulator)
+                if uiTesting, backup.heads.isEmpty, arguments.contains("-fixture-starter-intro") {
+                    try await seedStarterIntroduction(repository)
+                }
                 if uiTesting, backup.heads.isEmpty, arguments.contains("-fixture-exact-reps") {
                     let modeIndex = arguments.firstIndex(of: "-fixture-exact-mode")
                     let mode = modeIndex.flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "normal"
@@ -201,6 +205,29 @@ import TrainingCore
     #if targetEnvironment(simulator)
     /// Disposable simulator-only records, produced by the same journal writer and
     /// core transitions as real local training. Optional services remain inert.
+    private func seedStarterIntroduction(_ repository: TrainingRepository) async throws {
+        var config = try selectStarterProgram(choice: .wholeBodyGlutes, goal: .size, programID: UUID())
+        config.initialLoads["db_romanian_deadlift"] = Load(amount: "15", unit: .lb, basis: .perImplement)
+        let rules = try RulesetCatalog.starter(.wholeBodyGlutes)
+        let id = UUID(uuidString: config.programID)!
+        var snapshot = try await repository.initialize(config: config, rules: rules,
+            firstWorkout: WorkoutSlot(date: LocalDate(iso8601: "2026-10-04"), slotID: "SUN"))
+        for nextDate in ["2026-10-11", "2026-10-18"] {
+            let p = snapshot.state.activePrescription
+            let logs = p.exercises.enumerated().map { index, row in
+                ExerciseLog(movementID: row.movementID, prescriptionID: p.id, status: index == 0 ? .completed : .skipped,
+                    actualLoad: index == 0 ? row.load : nil, actualSets: index == 0 ? row.sets.enumerated().map { ActualSet(reps: $0.element.targetReps!, setIndex: $0.offset) } : [],
+                    finalEffort: index == 0 ? .onTarget : .unknown, problem: .none, baseMovementID: row.baseMovementID,
+                    modificationsSnapshot: row.modificationsSnapshot, effortScope: .allWorkingSets, skippedSetIndices: [], mixedLoads: false)
+            }
+            let event = CompletedWorkout(eventID: UUID().uuidString.lowercased(), date: p.date, slotID: p.slotID,
+                prescriptionID: p.id, plannedPrescriptionID: p.id, sessionMode: .normal, exercises: logs)
+            let receipt = try await repository.finalize(programID: id, expectedRevision: snapshot.state.revision, event: event,
+                next: WorkoutSlot(date: LocalDate(iso8601: nextDate), slotID: "SUN"))
+            guard case .applied = receipt.result else { throw BackupService.invalid("starter_intro_fixture") }
+            snapshot = receipt.snapshot
+        }
+    }
     private func seedExactHistory(_ repository: TrainingRepository, mode: String) async throws {
         guard ["normal", "no-history", "baseline", "legacy-unfinished", "easier", "per-side", "setup-review"].contains(mode) else { throw BackupService.invalid("exact_fixture_mode") }
         var config = try selectFixedProgram(goal: .size, programID: UUID())
@@ -325,19 +352,23 @@ import TrainingCore
         if case let .rejected(_, errors) = receipt.result { throw EngineError(code: errors.joined(separator: ","), field: "syntheticSeed") }
     }
     #endif
-    func confirm(goal: Goal) async {
+    func confirm(choice: StarterProgramChoice, goal: Goal) async {
         guard let repository, workout == nil, readOnlyProgram == nil, errorText == nil, !busy else { return }
         do {
             try await operations.perform { operation in
-                let config = try selectFixedProgram(goal: goal, programID: UUID())
+                #if DEBUG
+                let legacyRepairFixture = uiTesting && ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion")
+                let config = try legacyRepairFixture ? selectFixedProgram(goal: goal, programID: UUID()) : selectStarterProgram(choice: choice, goal: goal, programID: UUID())
+                #else
+                let config = try selectStarterProgram(choice: choice, goal: goal, programID: UUID())
+                #endif
                 try await requireSafeNewProgram(config, repository: repository)
                 let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
                 let first = try WorkoutScheduler.nextSlot(onOrAfter: today, config: config)
                 #if DEBUG
-                let legacyRepairFixture = uiTesting && ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion")
-                let initializationRules = try legacyRepairFixture ? RulesetCatalog.fixedV1() : RulesetCatalog.exactV1()
+                let initializationRules = try legacyRepairFixture ? RulesetCatalog.fixedV1() : RulesetCatalog.starter(choice)
                 #else
-                let initializationRules = try RulesetCatalog.exactV1()
+                let initializationRules = try RulesetCatalog.starter(choice)
                 #endif
                 let snapshot = try await repository.initialize(config: config, rules: initializationRules, firstWorkout: first)
                 #if DEBUG
@@ -711,7 +742,7 @@ extension AppComposition {
             }
         }
     }
-    func createSeparateCloudProgram(goal: Goal) async throws {
+    func createSeparateCloudProgram(choice: StarterProgramChoice, goal: Goal) async throws {
         guard let repository, cloudEnabled, let coordinator = cloudCoordinator,
               workout?.snapshot.draft == nil, workout?.hasAmbiguousFinish != true else { throw BackupUIError.protectedWorkout }
         let ticket = cloudGeneration
@@ -720,10 +751,10 @@ extension AppComposition {
         guard ticket == cloudGeneration, cloudEnabled, try await coordinator.verifiedScope() == scope else { throw CloudFailure.accountUnavailable }
         try await operations.perform { operation in
             guard ticket == cloudGeneration, cloudEnabled else { throw CloudFailure.accountUnavailable }
-            let config = try selectFixedProgram(goal: goal, programID: UUID())
+            let config = try selectStarterProgram(choice: choice, goal: goal, programID: UUID())
             try await requireSafeNewProgram(config, repository: repository)
             let date = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
-            let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.exactV1(), firstWorkout: WorkoutScheduler.nextSlot(onOrAfter: date, config: config), datasetID: UUID())
+            let snapshot = try await repository.initialize(config: config, rules: RulesetCatalog.starter(choice), firstWorkout: WorkoutScheduler.nextSlot(onOrAfter: date, config: config), datasetID: UUID())
             try await installSelectedSnapshot(snapshot, repository: repository, operation: operation)
             preferences.activeProgramID = config.programID; try savePreferences()
             try await refreshRecoveryPrograms()

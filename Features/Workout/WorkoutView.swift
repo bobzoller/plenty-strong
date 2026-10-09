@@ -21,9 +21,9 @@ struct WorkoutView: View {
                         let issued = MovementPrescriptionSummary.issuedWorkout(envelope: envelope, history: model.snapshot.history)
                         ForEach(event.exercises, id: \.movementID) { log in
                             VStack(alignment: .leading) {
-                                Text(envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.name ?? "Movement").font(.headline)
+                                Text(MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.name ?? "Movement").font(.headline)
                                 if let row = issued?.displayed.exercises.first(where: { $0.movementID == log.movementID }) {
-                                    let issuedMovement = issued?.state.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }
+                                    let issuedMovement = issued.flatMap { MovementPrescriptionSummary.effectiveMovement(state: $0.state, variantID: row.movementID) }
                                     Text("Today's goal: \(MovementPrescriptionSummary.goal(row, policy: issued?.policy, repCounting: issuedMovement?.repCounting ?? .total))").accessibilityIdentifier("workout.completed-goal.\(log.movementID)")
                                     let issuedLoad = row.load.map { "Issued load: \(MovementPrescriptionSummary.load($0))" } ?? issuedMovement.map { $0.loadingMode == .externalLoad ? "Issued load: no numeric load prescribed" : "Issued load: bodyweight / your setup — no numeric load inferred" } ?? "Issued load unavailable — movement metadata unverified"
                                     Text(issuedLoad)
@@ -33,19 +33,23 @@ struct WorkoutView: View {
                                     Text("Issued load unavailable — original prescription unverified").accessibilityIdentifier("workout.completed-issued-load.\(log.movementID)")
                                 }
                                 Text(log.actualSets.isEmpty ? "Actual: no performed sets" : "Actual: \(WorkoutDetailView.reps(log))").accessibilityIdentifier("workout.completed-actual.\(log.movementID)")
-                                let loadingMode = envelope.returnedState.config.movements.first { $0.id == (log.baseMovementID ?? log.movementID) }?.loadingMode
+                                let loadingMode = MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.loadingMode
                                 Text(log.actualLoad.map { "Actual load: \(MovementPrescriptionSummary.load($0))" } ?? (loadingMode != nil && loadingMode != .externalLoad ? "Actual load: bodyweight / your setup — no numeric load recorded" : "Actual load: not recorded"))
                                     .accessibilityIdentifier("workout.completed-actual-load.\(log.movementID)")
                                 Text("Outcome: \(log.status.rawValue)")
+                                if envelope.returnedState.exercises[log.movementID]?.starterState?.doseStage == .established,
+                                   issued?.displayed.exercises.first(where: { $0.movementID == log.movementID })?.sets.count == 2 {
+                                    Text("Ready for 3 sets; keep the same weight and establish your baseline.").accessibilityIdentifier("workout.completed-set-growth")
+                                }
                             }
                         }
                         Text("Next saved prescription").font(.headline)
                         Text("Next: \(envelope.returnedPrescription.slotID), \(envelope.returnedPrescription.date.iso8601)").accessibilityIdentifier("workout.next-prescription")
                         ForEach(envelope.returnedPrescription.exercises, id: \.movementID) { row in
                             VStack(alignment: .leading) {
-                                Text(envelope.returnedState.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }?.name ?? "Movement").font(.headline)
+                                Text(MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: row.movementID)?.name ?? "Movement").font(.headline)
                                 if row.kind == .paused { Text("Paused") }
-                                else { Text(MovementPrescriptionSummary.goal(row, policy: MovementPrescriptionSummary.make(row: row, state: envelope.returnedState, history: model.snapshot.history, draft: nil).policy, repCounting: envelope.returnedState.config.movements.first { $0.id == (row.baseMovementID ?? row.movementID) }?.repCounting ?? .total)).accessibilityIdentifier("workout.next-goal.\(row.movementID)") }
+                                else { Text(MovementPrescriptionSummary.goal(row, policy: MovementPrescriptionSummary.make(row: row, state: envelope.returnedState, history: model.snapshot.history, draft: nil).policy, repCounting: MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: row.movementID)?.repCounting ?? .total)).accessibilityIdentifier("workout.next-goal.\(row.movementID)") }
                                 if let load = row.load { Text("Prescription: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
                             }
                         }
@@ -153,6 +157,16 @@ struct WorkoutView: View {
         Text(row.modificationsSnapshot?.isEmpty == false ? row.modificationsSnapshot! : "Default setup").accessibilityIdentifier("movement.modifications")
         if model.blockedWorkingMovementIDs.contains(row.movementID) {
             Text("Additional working sets are unavailable: a saved program has a pause or stricter effort reserve for this movement. Keep any already-performed reps as partial or stopped, then finish safely. Changing programs does not clear safety.").accessibilityIdentifier("movement.retained-safety")
+        }
+        if model.snapshot.state.exercises[row.movementID]?.starterState?.doseStage == .introductory {
+            Text("Starting with 2 sets").accessibilityIdentifier("movement.introductory")
+        } else if model.snapshot.state.exercises[row.movementID]?.starterState?.doseStage == .established, row.phase == .baseline {
+            Text("Ready for 3 sets; keep the same weight and establish your baseline.").accessibilityIdentifier("movement.established-baseline")
+        }
+        if let choice = try? StarterProgramCatalog.choice(for: model.snapshot.state.config),
+           let details = try? StarterProgramPresentation.details(choice: choice, goal: model.snapshot.state.config.goal),
+           let cues = details.cuesByMovementID[row.baseMovementID ?? row.movementID] {
+            DisclosureGroup("Movement cues") { ForEach(cues, id: \.self) { Text($0) } }
         }
         if row.phase == .baseline { Text("Baseline — this setup has its own starting point").accessibilityIdentifier("movement.baseline") }
         if model.canChangePreparation, pendingActual == nil { Button("Movement setup") { showingSetup = true }.accessibilityIdentifier("movement.setup") }

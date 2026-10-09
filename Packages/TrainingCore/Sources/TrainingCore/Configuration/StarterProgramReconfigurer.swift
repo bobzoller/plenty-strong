@@ -36,9 +36,12 @@ public func reconfigureStarterProgram(state: ProgramState, change: Configuration
         }
         if case let .lowRep(load) = choice {
             let movement = try resolveEffectiveMovement(config: state.config, variantID: id, rules: rules)
-            guard exercise.load == load, movement.availableLoads.contains(load) else {
+            guard (exercise.load == nil || exercise.load == load), movement.availableLoads.contains(load) else {
                 throw EngineError(code: "handling_load_mismatch", field: "load")
             }
+            // An explicit first handling review may establish only an unknown load.
+            // Existing known loads retain the exact-match safeguard.
+            if exercise.load == nil { updated.exercises[id]!.load = load }
         }
         guard exercise.starterState!.strengthHandling != choice else { return unchangedConfiguration(state) }
         updated.exercises[id]!.starterState!.strengthHandling = choice

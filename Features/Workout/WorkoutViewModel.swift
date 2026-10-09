@@ -54,11 +54,16 @@ import TrainingCore
         return today != draft.date
     }
     func movement(for row: ExercisePrescription) -> Movement {
-        // Verified legacy movement IDs may omit the app's base identifier.
-        if let movement = snapshot.state.config.movements.first(where: { $0.id == (row.baseMovementID ?? row.movementID) }) { return movement }
+        if let movement = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) { return movement }
         // Unsupported roots never enter training, but rendering remains defensive.
         return Movement(id: row.baseMovementID ?? row.movementID, name: row.baseMovementID ?? row.movementID,
             primaryMuscles: [], secondaryMuscles: [], minimumRir: 2, availableLoads: [])
+    }
+    private func admittedMovement(for row: ExercisePrescription) throws -> Movement {
+        guard let movement = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) else {
+            throw EngineError(code: "invalid_variant", field: "movementID")
+        }
+        return movement
     }
     private(set) var blockedWorkingMovementIDs: Set<String> = []
     func refreshWorkingAdmission(operation: TrainingOperationGate.Lease) async throws {
@@ -114,6 +119,7 @@ import TrainingCore
         case "unsupported_training": "This archived program is available for viewing and export. Training is unavailable in the fixed routine."
         case "incomplete_workout": "Choose performed, partial, skipped, or stopped for every movement before finishing."
         case "incomplete_sets": "Completed requires every set and equal positive reps on both sides. Keep unfinished work as partial."
+        case "handling_load_mismatch": "This load has not been reviewed for 4–6 reps. Before working sets, use Movement setup to choose standard 8–12 reps or review the saved load. Recorded observations cannot be replaced."
         case "load_confirmation_required": "Choose and confirm the actual load from your dumbbell catalog."
         case "load_correction_required": "Saved sets retain their original load. Use Correct load to keep observations and stop this movement."
         case "problem_requires_finalization": "Keep the original date and observations, handle the remaining movements, and finish so the safety stop is retained."
@@ -220,14 +226,22 @@ import TrainingCore
     private func confirmLoadBody(movementID: String, load: Load) async throws {
         var draft = try editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
-        guard movement(for: row).loadingMode == .externalLoad, movement(for: row).availableLoads.contains(load) else { throw EngineError(code: "invalid_load", field: "load") }
+        let movement = try admittedMovement(for: row)
+        guard movement.loadingMode == .externalLoad, movement.availableLoads.contains(load) else { throw EngineError(code: "invalid_load", field: "load") }
         guard draft.logs[i].actualSets.isEmpty else {
             if draft.logs[i].actualLoad == load { return }
             throw EngineError(code: "load_correction_required", field: "load")
         }
         guard !handled(movementID), draft.logs[i].problem == .none, row.kind != .paused else { throw EngineError(code: "movement_stopped", field: "load") }
+        try requireReviewedHandling(movementID: movementID, load: load)
         draft.logs[i].actualLoad = load
         try await save(draft)
+    }
+    private func requireReviewedHandling(movementID: String, load: Load?) throws {
+        if case let .lowRep(reviewed) = snapshot.state.exercises[movementID]?.starterState?.strengthHandling,
+           reviewed != load {
+            throw EngineError(code: "handling_load_mismatch", field: "load")
+        }
     }
     /// Skips occupy intended slots without fabricating a performed observation.
     func nextSetIndex(for movementID: String) -> Int? {
@@ -284,7 +298,7 @@ import TrainingCore
             guard actual.setIndex == nil || actual.setIndex == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
             indexedActual.setIndex = setIndex
         }
-        let row = draft.displayed.exercises[i]; let movement = movement(for: row)
+        let row = draft.displayed.exercises[i]; let movement = try admittedMovement(for: row)
         guard row.kind != .paused, draft.logs[i].problem == .none, !handled(movementID) else { throw EngineError(code: "movement_stopped", field: "set") }
         if [3, 4].contains(snapshot.state.schemaVersion) {
             if draft.logs[i].actualSets.first(where: { $0.setIndex == setIndex }) == indexedActual { return }
@@ -294,6 +308,7 @@ import TrainingCore
               [3, 4].contains(snapshot.state.schemaVersion) || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
         if movement.repCounting == .total, actual.leftReps != nil || actual.rightReps != nil { throw EngineError(code: "unexpected_side_reps", field: "set") }
         guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
+        try requireReviewedHandling(movementID: movementID, load: draft.logs[i].actualLoad)
         try requireMissReason(indexedActual, row: row, index: setIndex)
         try await requireWorkingExposure(row)
         draft.logs[i].actualSets.append(indexedActual); draft.workingSetsStarted = true
@@ -327,9 +342,10 @@ import TrainingCore
     private func appendPending(_ actual: ActualSet?, at index: Int, to draft: inout WorkoutDraft) throws {
         guard let actual else { return }
         let row = draft.displayed.exercises[index]
+        let metadata = try admittedMovement(for: row)
         guard !handled(row.movementID), row.kind != .paused, let slot = nextSetIndex(log: draft.logs[index], row: row),
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
-              movement(for: row).repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil) else {
+              metadata.repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil) else {
             throw EngineError(code: "invalid_set", field: "pendingActual")
         }
         // Unknown load/missing side remain unknown. Raw set and outcome commit together.
@@ -370,7 +386,7 @@ import TrainingCore
         try await recordStatusBody(movementID: movementID, status: .partial, pendingActual: pendingActual)
     }
     private func validCompletion(_ log: ExerciseLog, row: ExercisePrescription) -> Bool {
-        let metadata = movement(for: row)
+        guard let metadata = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) else { return false }
         let indexedComplete = ![3, 4].contains(snapshot.state.schemaVersion) ||
             (log.skippedSetIndices == [] && log.mixedLoads == false &&
              Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
@@ -425,6 +441,41 @@ import TrainingCore
         let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
         snapshot = try await repository.applyVariantChange(programID: programID, expectedRevision: snapshot.state.revision, change: change, next: slot, invalidateEmptyDraft: true)
         if let mode { try await startBody(easierToday: mode == .easier, retainingLegacyDraftPolicy: startedWithLegacyDraft) }
+    }
+    func reviewStrengthHandling(variantID: String, choice: StrengthHandlingChoice) async throws {
+        try await operations.perform { _ in
+            try requireReady()
+            guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "handling") }
+            let mode = snapshot.draft?.sessionMode
+            let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
+            snapshot = try await repository.applyConfiguration(programID: programID, expectedRevision: snapshot.state.revision,
+                change: .reviewStrengthHandling(variantID: variantID, choice: choice), next: slot, invalidateEmptyDraft: true)
+            if let mode { try await startBody(easierToday: mode == .easier) }
+        }
+    }
+    func selectBridgeLoadingMode(variantID: String, mode: LoadingMode) async throws {
+        try await operations.perform { _ in
+            try requireReady()
+            guard canChangePreparation, snapshot.state.schemaVersion == 4,
+                  snapshot.state.config.profileID == "starter-glute-v1",
+                  let variant = snapshot.state.config.variants?[variantID], variant.baseMovementID == "db_floor_glute_bridge",
+                  mode == .bodyweight || mode == .externalLoad else {
+                throw EngineError(code: "invalid_loading_override", field: "loadingMode")
+            }
+            let rules = try RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash)
+            if try resolveEffectiveMovement(config: snapshot.state.config, variantID: variantID, rules: rules).loadingMode == mode { return }
+            let candidates = try (snapshot.state.config.variants ?? [:]).values.filter {
+                guard $0.baseMovementID == variant.baseMovementID else { return false }
+                return try resolveEffectiveMovement(config: snapshot.state.config, variantID: $0.id, rules: rules).loadingMode == mode
+            }.sorted { $0.id < $1.id }
+            if let saved = candidates.first {
+                try await changeSetupBody(.select(baseMovementID: variant.baseMovementID, variantID: saved.id))
+            } else {
+                guard mode == .bodyweight else { throw EngineError(code: "invalid_loading_override", field: "loadingMode") }
+                try await changeSetupBody(.createLoadingMode(baseMovementID: variant.baseMovementID,
+                    variantID: UUID().uuidString.lowercased(), modifications: "Bodyweight bridge", mode: .bodyweight))
+            }
+        }
     }
     // Settings never discard/rebind an active draft or a frozen Finish payload.
     var canEditProgramSettings: Bool { (submitted == nil || finished) && snapshot.draft == nil && snapshot.health == .ready }

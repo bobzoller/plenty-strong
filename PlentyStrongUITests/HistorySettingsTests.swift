@@ -162,6 +162,18 @@ final class HistorySettingsTests: XCTestCase {
 // launches expose only the visible native label; this verifies user navigation
 // without changing the app hierarchy or claiming the identifier check passed.
 extension XCUIApplication {
+    @MainActor func selectInitialUpperProgram(goal: String = "size", confirmSelection: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
+        let footer = buttons["onboarding.confirm"]
+        let card = buttons["onboarding.program.upper_body"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15), file: file, line: line)
+        revealWorkoutControl(card, pinnedFooter: footer, scrollDistance: 100, file: file, line: line)
+        card.tap()
+        let goalButton = buttons["onboarding.goal.\(goal)"]
+        revealWorkoutControl(goalButton, pinnedFooter: footer, scrollDistance: 100, file: file, line: line)
+        goalButton.tap()
+        XCTAssertTrue(footer.isEnabled, file: file, line: line)
+        if confirmSelection { footer.tap() }
+    }
     @MainActor func revealWorkoutControl(_ element: XCUIElement, pinnedFooter: XCUIElement? = nil, scrollDistance: CGFloat = 320, file: StaticString = #filePath, line: UInt = #line) {
         func footer() -> XCUIElement? {
             if let pinnedFooter { return pinnedFooter }

@@ -15,9 +15,7 @@ final class WorkoutFlowTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-cloud-disabled", "-products-unavailable"]
         app.launch()
-        XCTAssertTrue(app.buttons["onboarding.goal.size"].waitForExistence(timeout: 15))
-        app.buttons["onboarding.goal.size"].tap()
-        app.buttons["onboarding.confirm"].tap()
+        app.selectInitialUpperProgram()
         app.buttons["today.start"].tap()
         app.tapWorkoutControl("workout.easier")
         let easierMode = XCTNSPredicateExpectation(
@@ -45,9 +43,7 @@ extension WorkoutFlowTests {
         app.launchArguments = ["-ui-testing", "-cloud-disabled", "-products-unavailable", "-ui-clock-offset", String(clockOffset)] + (reset ? ["-reset-local-store"] : [])
         app.launch()
         if reset {
-            XCTAssertTrue(app.buttons["onboarding.goal.\(goal)"].waitForExistence(timeout: 15))
-            app.buttons["onboarding.goal.\(goal)"].tap()
-            app.buttons["onboarding.confirm"].tap()
+            app.selectInitialUpperProgram(goal: goal)
         }
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
         app.buttons["today.start"].tap()
@@ -59,9 +55,9 @@ extension WorkoutFlowTests {
             let app = XCUIApplication()
             app.launchArguments = ["-ui-testing", "-reset-local-store"]
             app.launch()
-            XCTAssertTrue(app.buttons["onboarding.goal.\(goal)"].waitForExistence(timeout: 15))
+            app.selectInitialUpperProgram(goal: goal, confirmSelection: false)
+            app.revealWorkoutControl(app.staticTexts["onboarding.equipment"], pinnedFooter: app.buttons["onboarding.confirm"], scrollDistance: 100)
             XCTAssertTrue(app.staticTexts["onboarding.equipment"].label.contains("5–80 lb per dumbbell"))
-            app.buttons["onboarding.goal.\(goal)"].tap()
             app.buttons["onboarding.confirm"].tap()
             XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15))
             XCTAssertEqual(app.staticTexts["today.schedule"].label, "Sunday · Tuesday · Thursday")
@@ -246,8 +242,7 @@ extension WorkoutFlowTests {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-ui-fixture-malformed-completion"]
         app.launch()
-        XCTAssertTrue(app.buttons["onboarding.goal.size"].waitForExistence(timeout: 15))
-        app.buttons["onboarding.goal.size"].tap(); app.buttons["onboarding.confirm"].tap()
+        app.selectInitialUpperProgram()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
         app.buttons["today.start"].tap()
         XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))

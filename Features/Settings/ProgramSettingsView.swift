@@ -6,6 +6,10 @@ struct ProgramSettingsView: View {
     @State private var pending: ConfigurationChange?
     @State private var showingConfirmation = false
     @State private var setupRow: ExercisePrescription?
+    @State private var choosingProgram = false
+    @State private var programChoice: StarterProgramChoice?
+    @State private var programGoal: Goal?
+    @State private var confirmingProgram = false
     var body: some View {
         List {
             if model.snapshot.health != .ready {
@@ -23,7 +27,17 @@ struct ProgramSettingsView: View {
                 }
                 Text("Goal changes restart baselines. Original work, known loads, setup identities and stricter safety restrictions are retained.")
             }
-            Section("Fixed routine") { Text("Sunday · Tuesday · Thursday. Dumbbells 5–80 lb in 5 lb steps; pull-up bar; adjustable bench. Schedule, equipment and base movements are fixed in this version.") }
+            Section("Training emphasis") {
+                if let choice = try? StarterProgramCatalog.choice(for: model.snapshot.state.config) {
+                    Text(choice.title).accessibilityIdentifier("settings.current-program")
+                    NavigationLink("Preview current program") { ProgramPreviewView(choice: choice, goal: model.snapshot.state.config.goal) }
+                }
+                Button("Change training emphasis") {
+                    programChoice = nil; programGoal = nil; choosingProgram = true
+                }.disabled(!model.canEditProgramSettings || model.busy).accessibilityIdentifier("settings.change-program")
+                Text("Program changes preserve original history, usable known loads, and stricter safety restrictions. The selected program restarts its initial dose and baselines.")
+            }
+            Section("Fixed routine") { Text("Sunday · Tuesday · Thursday. Dumbbells 5–80 lb in 5 lb steps; adjustable bench. The upper-body program also requires a pull-up bar.") }
             Section("Saved setups and safety") {
                 ForEach(model.snapshot.state.config.movements, id: \.id) { movement in
                     if let id = model.snapshot.state.config.activeVariantIDs?[movement.id], let state = model.snapshot.state.exercises[id], let variant = model.snapshot.state.config.variants?[id] {
@@ -49,6 +63,36 @@ struct ProgramSettingsView: View {
         }.navigationTitle("Program")
         .sheet(isPresented: Binding(get: { setupRow != nil }, set: { if !$0 { setupRow = nil } })) {
             if let row = setupRow { MovementSetupView(model: model, row: row) }
+        }
+        .sheet(isPresented: $choosingProgram) {
+            NavigationStack {
+                Form {
+                    Section("Your emphasis") { ProgramChoiceView(selection: $programChoice, identifierPrefix: "settings.program") }
+                    Section("Your goal") {
+                        ForEach(Goal.allCases, id: \.self) { goal in
+                            Button { programGoal = goal } label: {
+                                HStack { Text(goal.title); Spacer(); if programGoal == goal { Image(systemName: "checkmark") } }
+                            }.accessibilityIdentifier("settings.program-goal.\(goal.rawValue)")
+                                .accessibilityAddTraits(programGoal == goal ? [.isSelected] : [])
+                        }
+                    }
+                    if let choice = programChoice, let goal = programGoal {
+                        NavigationLink("Preview this program") { ProgramPreviewView(choice: choice, goal: goal) }
+                            .accessibilityIdentifier("settings.program-preview")
+                    }
+                    Button("Confirm emphasis and goal") { confirmingProgram = true }
+                        .disabled(programChoice == nil || programGoal == nil || !model.canEditProgramSettings || model.busy)
+                        .accessibilityIdentifier("settings.program-confirm")
+                }.navigationTitle("Choose program")
+                    .toolbar { Button("Cancel") { choosingProgram = false }.accessibilityIdentifier("settings.program-cancel") }
+                    .alert("Keep history and restart baseline?", isPresented: $confirmingProgram) {
+                        Button("Cancel", role: .cancel) {}
+                        Button("Keep history and change program") {
+                            guard let choice = programChoice, let goal = programGoal else { return }
+                            Task { await model.run { try await model.changeStarterProgram(choice: choice, goal: goal); choosingProgram = false } }
+                        }.accessibilityIdentifier("settings.program-apply")
+                    } message: { Text("Original workouts and safety restrictions remain. Comparisons restart for the selected program. A saved workout or Finish retry must be completed first.") }
+            }
         }
         .alert(confirmationTitle, isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { pending = nil }
