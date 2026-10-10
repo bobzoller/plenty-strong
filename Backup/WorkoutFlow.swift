@@ -68,7 +68,10 @@ enum WorkoutFlowResolver {
             guard !indexed || log.actualSets.allSatisfy({ $0.setIndex != nil }),
                   Set(actual).count == actual.count, Set(skipped).count == skipped.count,
                   Set(actual).isDisjoint(with: Set(skipped)),
-                  (actual + skipped).allSatisfy({ row.sets.indices.contains($0) }) else { throw invalid("set_binding") }
+                  // Legacy array-position observations were admitted without a
+                  // prescribed-count bound. Retain raw overflow; reconciliation
+                  // closes at Summary and cursor admission remains bounded.
+                  ((!indexed && skipped.isEmpty) || (actual + skipped).allSatisfy({ row.sets.indices.contains($0) })) else { throw invalid("set_binding") }
         }
         if let flow = draft.flow {
             let reviewed = Set(flow.reviewedSummaryMovementIDs)
@@ -89,7 +92,7 @@ enum WorkoutFlowResolver {
             case let .summary(id):
                 let (row, log) = try binding(id, draft: draft)
                 guard acknowledged.contains(id) || (id == firstUnhandled &&
-                    (log.problem != .none || log.status != .partial || nextIndex(log, row: row) == nil)) else { throw invalid("summary") }
+                    (log.problem != .none || log.status != .partial || nextIndex(log, row: row) == nil || hasDemotedCompletion(log, draft: draft))) else { throw invalid("summary") }
             case .workoutReview:
                 // A correction may invalidate one review while this cursor stays
                 // on Workout review. Finish readiness is checked independently.
@@ -143,6 +146,15 @@ enum WorkoutFlowResolver {
         } else {
             guard event.timing == nil else { throw invalid("pendingFinish.timing") }
         }
+    }
+
+    /// The repository/backup boundary validates the complete trail. A truthful
+    /// demotion retains the declared completion's Summary even without an inferred
+    /// acknowledgement, and cannot create another working attempt.
+    static func hasDemotedCompletion(_ log: ExerciseLog, draft: WorkoutDraft) -> Bool {
+        draft.observationAudit?.version == 1 && draft.observationAudit?.corrections.contains(where: {
+            $0.movementID.utf8.elementsEqual(log.movementID.utf8) && $0.beforeStatus == .completed && $0.afterStatus == .partial
+        }) == true
     }
 
     private static func binding(_ id: String, draft: WorkoutDraft) throws -> (ExercisePrescription, ExerciseLog) {

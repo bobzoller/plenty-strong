@@ -230,3 +230,43 @@ extension BackupTests {
             command: .workout(completedWorkout: commandEvent, next: initial.next), rules: RulesetCatalog.fixedV1()) }
     }
 }
+
+extension BackupTests {
+    @MainActor @Test func correctedUnfinishedDraftReopensWithOriginalsInBothFormats() async throws {
+        for schema in [3, 4] {
+            let f = try await GuidedWorkoutFixture.make(schemaVersion: schema)
+            var draft = try #require(f.model.snapshot.draft)
+            draft.logs[0].actualSets = [ActualSet(reps: 7, setIndex: 0, missedGoalReason: .effortLimit)]
+            draft.workingSetsStarted = true
+            _ = try await f.repository.saveDraft(draft)
+            let original = try await f.repository.exportBackup()
+            let corrected = try await f.repository.correctDraftSet(programID: f.model.programID, expectedDraftHash: BackupService.hash(draft),
+                operationID: UUID(), movementID: draft.logs[0].movementID, setIndex: 0, replacement: ActualSet(reps: 8, setIndex: 0))
+            let effective = try #require(corrected.draft)
+            let v1 = try await f.repository.exportBackup()
+            #expect(v1.journal == original.journal && v1.heads == original.heads)
+            var v2 = v1; v2.formatVersion = 2
+            v2.recovery = BackupService.graphManifest(try RecoveryVerifier().verify(BackupService.recoveryRecords(v1)), originals: [], quarantines: [], resolved: [])
+            await f.repository.close()
+            let sourceReopened = try TrainingRepository.open(at: f.storeURL)
+            #expect(try BackupService.bytes(await sourceReopened.snapshot(programID: f.model.programID).draft) == BackupService.bytes(effective))
+            await sourceReopened.close()
+            for document in [v1, v2] {
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let url = directory.appendingPathComponent("training.store")
+                let destination = try TrainingRepository.open(at: url)
+                _ = try await destination.importBackup(document)
+                await destination.close()
+                let reopened = try TrainingRepository.open(at: url)
+                let saved = try await reopened.snapshot(programID: f.model.programID)
+                #expect(try BackupService.bytes(saved.draft) == BackupService.bytes(effective))
+                #expect(try await reopened.exportBackup().journal == original.journal)
+                #expect(try ObservationAuditValidator.originalLogs(effective: effective.logs, audit: effective.observationAudit,
+                    prescription: effective.displayed, config: saved.state.config, schemaVersion: schema) == draft.logs)
+                #expect(try await reopened.counts() == [original.journal.count, 1, 1, document.formatVersion == 1 ? original.journal.count : 0, 0])
+                await reopened.close()
+            }
+        }
+    }
+}

@@ -65,8 +65,13 @@ import TrainingCore
     nonisolated func rules(for state: ProgramState) async throws -> Ruleset {
         try await offMain { try $0.rulesBody(for: state) }
     }
-    @discardableResult nonisolated func saveDraft(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) async throws -> StoreSnapshot {
-        try await offMain { try $0.saveDraftBody(draft, expectedExistingDraft: expectedExistingDraft) }
+    @discardableResult nonisolated func saveDraft(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil, expectedDraftHash: String? = nil) async throws -> StoreSnapshot {
+        try await offMain { try $0.saveDraftBody(draft, expectedExistingDraft: expectedExistingDraft, expectedDraftHash: expectedDraftHash) }
+    }
+    @discardableResult nonisolated func correctDraftSet(programID: UUID, expectedDraftHash: String, operationID: UUID,
+                                                       movementID: String, setIndex: Int, replacement: ActualSet) async throws -> StoreSnapshot {
+        try await offMain { try $0.correctDraftSetBody(programID: programID, expectedDraftHash: expectedDraftHash,
+            operationID: operationID, movementID: movementID, setIndex: setIndex, replacement: replacement) }
     }
     nonisolated func activateExactPolicy(programID: UUID, expectedRevision: Int, expectedHeadHash: String) async throws -> StoreSnapshot {
         try await offMain { try $0.activateExactPolicyBody(programID: programID, expectedRevision: expectedRevision, expectedHeadHash: expectedHeadHash) }
@@ -456,12 +461,22 @@ import TrainingCore
     private func prepareReturnBody(programID: UUID, expectedRevision: Int, asOf: LocalDate) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .interruption(asOf: asOf), invalidateEmptyDraft: false)
     }
-    private func saveDraftBody(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) throws -> StoreSnapshot {
+    private func saveDraftBody(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil, expectedDraftHash: String? = nil) throws -> StoreSnapshot {
         try transaction {
             guard let id = UUID(uuidString: draft.programID) else { throw BackupService.invalid("draft_program") }
             let admitted = try admittedBackup()
             var current = try projectSnapshot(programID: id.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
             guard let rules = admitted.replay.rulesByHash[current.state.rulesetHash] else { throw BackupService.invalid("missing_rules") }
+            if let expectedDraftHash {
+                guard let existing = current.draft, try BackupService.hash(existing) == expectedDraftHash else {
+                    throw BackupService.invalid("draft_changed")
+                }
+            }
+            // The explicit correction writer is the sole owner of the audit trail.
+            // Canonical bytes also retain distinctions in raw Unicode spellings.
+            guard try BackupService.bytes(draft.observationAudit) == BackupService.bytes(current.draft?.observationAudit) else {
+                throw BackupService.invalid("draft_observation_changed")
+            }
             try BackupService.validateDraft(draft, state: current.state, rules: rules)
             if let expected = expectedExistingDraft {
                 // Explicit unaccepted-completion repair proof: canonical exact draft,
@@ -486,10 +501,16 @@ import TrainingCore
                 }
                 for original in existing.logs {
                     guard let updated = draft.logs.first(where: { $0.movementID == original.movementID }),
-                          updated.actualSets.starts(with: original.actualSets),
-                          original.actualSets.isEmpty || updated.actualLoad == original.actualLoad,
+                          updated.movementID.utf8.elementsEqual(original.movementID.utf8),
+                          updated.actualSets.count >= original.actualSets.count,
+                          try BackupService.bytes(Array(updated.actualSets.prefix(original.actualSets.count))) == BackupService.bytes(original.actualSets),
+                          try original.actualSets.isEmpty || BackupService.bytes(updated.actualLoad) == BackupService.bytes(original.actualLoad),
                           original.problem == .none || updated.problem == original.problem else {
                         throw BackupService.invalid("draft_observation_changed")
+                    }
+                    if WorkoutFlowResolver.hasDemotedCompletion(original, draft: existing) {
+                        guard updated.actualSets.count == original.actualSets.count,
+                              updated.status != .completed else { throw BackupService.invalid("draft_observation_changed") }
                     }
                     if [3, 4].contains(current.state.schemaVersion) {
                         guard let originalSkipped = original.skippedSetIndices, let updatedSkipped = updated.skippedSetIndices,
@@ -497,8 +518,8 @@ import TrainingCore
                               original.mixedLoads != true || updated.mixedLoads == true,
                               original.effortScope == updated.effortScope else { throw BackupService.invalid("draft_observation_changed") }
                         if existing.acknowledgedMovementIDs?.contains(original.movementID) == true {
-                            guard updated.actualSets == original.actualSets,
-                                  updated.actualLoad == original.actualLoad,
+                            guard try BackupService.bytes(updated.actualSets) == BackupService.bytes(original.actualSets),
+                                  try BackupService.bytes(updated.actualLoad) == BackupService.bytes(original.actualLoad),
                                   updated.skippedSetIndices == original.skippedSetIndices,
                                   updated.mixedLoads == original.mixedLoads,
                                   updated.status == original.status ||
@@ -518,6 +539,89 @@ import TrainingCore
             current.draft = draft
             return current
         }
+    }
+    private func correctDraftSetBody(programID: UUID, expectedDraftHash: String, operationID: UUID,
+                                     movementID: String, setIndex: Int, replacement: ActualSet) throws -> StoreSnapshot {
+        try transaction {
+            let admitted = try admittedBackup()
+            var current = try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
+            guard var draft = current.draft else { throw BackupService.invalid("draft_missing") }
+            var actual = replacement
+            if current.state.schemaVersion >= 3 {
+                guard actual.setIndex == nil || actual.setIndex == setIndex else { throw BackupService.invalid("draft_set_index") }
+                actual.setIndex = setIndex
+            }
+            // Successful retry identity precedes CAS: subsequent feedback or another
+            // correction must not turn a committed operation into a stale failure.
+            if let previous = draft.observationAudit?.corrections.first(where: { $0.operationID == operationID }) {
+                guard previous.movementID.utf8.elementsEqual(movementID.utf8), previous.setIndex == setIndex,
+                      try BackupService.bytes(previous.after) == BackupService.bytes(actual) else {
+                    throw BackupService.invalid("draft_correction_operation_conflict")
+                }
+                return current
+            }
+            guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
+            guard draft.expectedRevision == current.state.revision,
+                  try BackupService.hash(draft) == expectedDraftHash,
+                  draft.pendingFinish == nil,
+                  try !modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { UUID(uuidString: $0.eventID) == draft.id }) else {
+                throw BackupService.invalid("draft_correction_proof_changed")
+            }
+            guard let rules = admitted.replay.rulesByHash[current.state.rulesetHash] else { throw BackupService.invalid("missing_rules") }
+            try BackupService.validateDraft(draft, state: current.state, rules: rules)
+            guard let logIndex = draft.logs.firstIndex(where: { $0.movementID.utf8.elementsEqual(movementID.utf8) }),
+                  let row = draft.displayed.exercises.first(where: { $0.movementID.utf8.elementsEqual(movementID.utf8) }),
+                  row.sets.indices.contains(setIndex), row.kind != .paused, row.kind != .setupReview,
+                  let movement = try? resolveEffectiveMovement(config: current.state.config, variantID: row.movementID, rules: rules),
+                  draft.logs[logIndex].status != .skipped else { throw BackupService.invalid("draft_correction_binding") }
+            let log = draft.logs[logIndex]
+            let positions = log.actualSets.indices.filter { (log.actualSets[$0].setIndex ?? $0) == setIndex }
+            guard positions.count == 1 else { throw BackupService.invalid("draft_correction_binding") }
+            let position = positions[0], before = log.actualSets[position]
+            guard actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
+                  movement.repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil),
+                  current.state.schemaVersion >= 3 || (actual.setIndex == nil && actual.missedGoalReason == nil) else {
+                throw BackupService.invalid("draft_correction_actual")
+            }
+            if try BackupService.bytes(before) == BackupService.bytes(actual) { return current }
+            let acknowledged = draft.acknowledgedMovementIDs?.contains(movementID) == true
+            if current.state.schemaVersion >= 3, log.problem == .none, log.status == .completed || !acknowledged,
+               let target = row.sets[setIndex].targetReps,
+               [actual.reps, actual.leftReps, actual.rightReps].compactMap({ $0 }).contains(where: { $0 < target }),
+               actual.missedGoalReason == nil {
+                throw EngineError(code: "missed_goal_reason_required", field: "missedGoalReason")
+            }
+            draft.logs[logIndex].actualSets[position] = actual
+            // A correction can demote a claimed completion, never promote a
+            // partial or stopped decision, remove acknowledgement, or reopen work.
+            if log.status == .completed && !correctionCompletionIsValid(draft.logs[logIndex], row: row,
+                movement: movement, schemaVersion: current.state.schemaVersion) {
+                draft.logs[logIndex].status = .partial
+            }
+            let correction = SetCorrection(operationID: operationID, movementID: movementID, setIndex: setIndex,
+                before: before, after: actual, beforeStatus: log.status, afterStatus: draft.logs[logIndex].status,
+                outcomeAcknowledged: acknowledged)
+            if draft.observationAudit == nil { draft.observationAudit = ObservationAudit(corrections: []) }
+            draft.observationAudit!.corrections.append(correction)
+            draft.flow?.reviewedSummaryMovementIDs.removeAll(where: { $0 == movementID })
+            try BackupService.validateDraft(draft, state: current.state, rules: rules)
+            guard let record = try modelContext.fetch(FetchDescriptor<DraftRecord>()).first(where: { $0.id == draft.id }) else {
+                throw BackupService.invalid("draft_missing")
+            }
+            record.bytes = try BackupService.bytes(draft)
+            current.draft = draft
+            return current
+        }
+    }
+    private func correctionCompletionIsValid(_ log: ExerciseLog, row: ExercisePrescription,
+                                              movement: Movement, schemaVersion: Int) -> Bool {
+        let indexedComplete = schemaVersion < 3 || (log.skippedSetIndices == [] && log.mixedLoads == false &&
+            Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
+        return indexedComplete && !row.sets.isEmpty && log.problem == .none && log.actualSets.count == row.sets.count &&
+            log.actualSets.allSatisfy { set in
+                set.reps > 0 && (movement.repCounting != .perSide ||
+                    (set.leftReps != nil && set.leftReps == set.rightReps && set.reps == set.leftReps))
+            } && (movement.loadingMode != .externalLoad || log.actualLoad != nil)
     }
     func discardDraft(id: UUID) throws {
         try transaction {

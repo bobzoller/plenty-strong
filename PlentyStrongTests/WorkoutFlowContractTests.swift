@@ -245,6 +245,36 @@ import TrainingCore
         await f.repository.close()
     }
 
+    @Test func legacyOverflowRemainsRawAndResumesSummaryWithoutOutOfRangeCursors() async throws {
+        let scenario = try await RepositoryTestHarness.make(goal: .size)
+        var draft = try await scenario.draft()
+        let id = draft.logs[0].movementID, count = draft.displayed.exercises[0].sets.count
+        draft.logs[0].actualSets.append(ActualSet(reps: 1))
+        draft.logs[0].status = .partial
+        let raw = draft.logs
+        let rules = try RulesetCatalog.fixedV1()
+        let state = try await scenario.repository.snapshot(programID: scenario.programID).state
+        try BackupService.validateDraft(draft, state: state, rules: rules)
+        #expect(try WorkoutFlowResolver.reconciled(draft).forward == .summary(movementID: id))
+        _ = try await scenario.repository.saveDraft(draft)
+        draft.flow = try WorkoutFlowResolver.reconciled(draft)
+        try BackupService.validateDraft(draft, state: state, rules: rules)
+        _ = try await scenario.repository.saveDraft(draft)
+        #expect(try await scenario.repository.snapshot(programID: scenario.programID).draft?.logs == raw)
+        var bad = draft; bad.flow!.forward = .set(movementID: id, index: count)
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(bad) }
+        bad = draft; bad.restDeadline = Date(timeIntervalSinceReferenceDate: 812_000_000)
+        bad.flow!.forward = .rest(sourceMovementID: id, sourceSetIndex: count, destination: .introduction(movementID: draft.logs[1].movementID))
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(bad) }
+        bad = draft; bad.logs[0].actualSets = [ActualSet(reps: 8, setIndex: count)]
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(bad) }
+        bad = draft; bad.logs[0].actualSets = []; bad.logs[0].skippedSetIndices = [count]
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(bad) }
+        let reopened = try await scenario.reopened()
+        #expect(try await reopened.snapshot(programID: scenario.programID).draft?.logs == raw)
+        await reopened.close()
+    }
+
     private func readyDraft(_ original: WorkoutDraft) -> WorkoutDraft {
         var draft = original
         for i in draft.logs.indices { draft.logs[i].status = .skipped }

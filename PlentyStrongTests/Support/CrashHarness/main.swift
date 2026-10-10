@@ -36,13 +36,18 @@ func run() async throws {
             plannedPrescriptionID: p.id, sessionMode: .normal, exercises: logs)
         let next = WorkoutSlot(date: try LocalDate(iso8601: "2026-10-06"), slotID: config.weeklySlots[1].id)
         var draftLogs = logs
+        if mode == "setup-correction" {
+            draftLogs[0].actualSets[0].reps = 7
+            if draftLogs[0].actualSets[0].leftReps != nil { draftLogs[0].actualSets[0].leftReps = 7 }
+            if draftLogs[0].actualSets[0].rightReps != nil { draftLogs[0].actualSets[0].rightReps = 7 }
+        }
         if mode == "setup-variant" { for i in draftLogs.indices { draftLogs[i].actualSets = []; draftLogs[i].finalEffort = .unknown } }
         if mode != "setup-activation" {
             try await repository.saveDraft(WorkoutDraft(id: eventID, programID: config.programID, expectedRevision: 0,
                 planned: p, displayed: p, date: p.date, timeZoneID: "Pacific/Honolulu", sessionMode: .normal,
                 logs: draftLogs, workingSetsStarted: mode != "setup-variant"))
         }
-        if mode == "setup-activation" {
+        if mode == "setup-activation" || mode == "setup-correction" {
             try BackupService.bytes(await repository.exportBackup()).write(to: directory.appendingPathComponent("original-backup.json"))
         }
         try BackupService.bytes(CrashInput(programID: id, event: event, next: next, base: p.exercises[0].baseMovementID!)).write(to: inputURL)
@@ -60,7 +65,15 @@ func run() async throws {
                     while true { pause() }
                 }
             }
-            if mode == "commit-activation" {
+            if mode == "commit-correction" {
+                let draft = try await repository.snapshot(programID: input.programID).draft!
+                var replacement = draft.logs[0].actualSets[0]; replacement.reps = 8
+                if replacement.leftReps != nil { replacement.leftReps = 8 }
+                if replacement.rightReps != nil { replacement.rightReps = 8 }
+                _ = try await repository.correctDraftSet(programID: input.programID, expectedDraftHash: BackupService.hash(draft),
+                    operationID: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+                    movementID: draft.logs[0].movementID, setIndex: 0, replacement: replacement)
+            } else if mode == "commit-activation" {
                 let document = try await repository.exportBackup()
                 _ = try await repository.activateExactPolicy(programID: input.programID, expectedRevision: 0, expectedHeadHash: document.heads[input.programID.uuidString.lowercased()]!)
             } else if mode == "commit-variant" {
@@ -70,6 +83,33 @@ func run() async throws {
             } else {
                 _ = try await repository.finalize(programID: input.programID, expectedRevision: 0, event: input.event, next: input.next)
             }
+        } else if mode == "verify-correction" {
+            let expected = Int(args[4])!
+            let original = try JSONDecoder().decode(BackupDocument.self, from: Data(contentsOf: directory.appendingPathComponent("original-backup.json")))
+            let originalDraft = try JSONDecoder().decode(WorkoutDraft.self, from: original.drafts[0].bytes)
+            let snapshot = try await repository.snapshot(programID: input.programID)
+            let document = try await repository.exportBackup(), counts = try await repository.counts()
+            guard snapshot.state.revision == 0, counts == [1,1,1,1,0],
+                  document.journal == original.journal, document.heads == original.heads,
+                  document.rules == original.rules, document.profiles == original.profiles,
+                  let draft = snapshot.draft else { throw BackupService.invalid("correction_crash_atomicity") }
+            if expected == 0 {
+                guard document == original, try BackupService.bytes(draft) == BackupService.bytes(originalDraft) else {
+                    throw BackupService.invalid("correction_partial_commit")
+                }
+            } else {
+                guard draft.logs[0].actualSets[0].reps == 8, let audit = draft.observationAudit, audit.corrections.count == 1,
+                      audit.corrections[0].before.reps == 7, audit.corrections[0].after.reps == 8,
+                      try ObservationAuditValidator.originalLogs(effective: draft.logs, audit: audit, prescription: draft.displayed,
+                        config: snapshot.state.config, schemaVersion: snapshot.state.schemaVersion) == originalDraft.logs else {
+                    throw BackupService.invalid("correction_trail_atomicity")
+                }
+                var restored = draft; restored.logs = originalDraft.logs; restored.observationAudit = nil
+                guard try BackupService.bytes(restored) == BackupService.bytes(originalDraft) else {
+                    throw BackupService.invalid("correction_unrelated_mutation")
+                }
+            }
+            print("FRESH PROCESS VERIFIED correction=\(expected) revision=0 journal/head/draft/outbox/quarantine=\(counts); original/trail atomic; unchanged journal/head/outbox")
         } else if mode == "verify" || mode == "verify-variant" || mode == "verify-activation" {
             let expected = Int(args[4])!
             let snapshot = try await repository.snapshot(programID: input.programID)
