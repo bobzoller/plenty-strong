@@ -20,6 +20,24 @@ import TrainingCore
         var draft = try #require(f.model.snapshot.draft)
         let row = draft.displayed.exercises[0], id = row.movementID
         #expect(try WorkoutFlowResolver.reconciled(draft).forward == .introduction(movementID: id))
+        for status in [LogStatus.skipped, .completed, .stopped] {
+            var legacy = draft
+            legacy.acknowledgedMovementIDs = nil
+            legacy.logs[0].status = status
+            legacy.logs[0].skippedSetIndices = nil
+            if status != .skipped {
+                legacy.logs[0].actualSets = [ActualSet(reps: row.sets[0].targetReps!, setIndex: 0)]
+            }
+            let originalLogs = legacy.logs
+            let flow = try WorkoutFlowResolver.reconciled(legacy)
+            #expect(flow.forward == .summary(movementID: id), "Declared \(status) must not reopen work")
+            #expect(flow.reviewedSummaryMovementIDs.isEmpty)
+            #expect(legacy.acknowledgedMovementIDs == nil && legacy.logs == originalLogs)
+            legacy.flow = flow
+            do { try WorkoutFlowResolver.validate(legacy) }
+            catch { Issue.record("A reconciled legacy \(status) flow must be admitted: \(error)") }
+            #expect(legacy.acknowledgedMovementIDs == nil && legacy.logs == originalLogs)
+        }
         draft.restDeadline = Date(timeIntervalSince1970: 1791662520)
         draft.logs[0].actualSets = [ActualSet(reps: row.sets[0].targetReps!, setIndex: 0)]
         #expect(try WorkoutFlowResolver.reconciled(draft).forward == .set(movementID: id, index: 1))
@@ -65,7 +83,11 @@ import TrainingCore
         draft.restDeadline = Date(timeIntervalSince1970: 1791662520)
         draft.flow = WorkoutFlow(forward: .rest(sourceMovementID: id, sourceSetIndex: 0, destination: .set(movementID: id, index: 1)), reviewedSummaryMovementIDs: [])
         try WorkoutFlowResolver.validate(draft)
-        var bad = draft; bad.restDeadline = nil
+        var bad = draft; bad.logs[0].status = .completed
+        #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
+        bad.flow!.forward = .set(movementID: id, index: 1)
+        #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
+        bad = draft; bad.restDeadline = nil
         #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
         bad = draft; bad.flow!.forward = .rest(sourceMovementID: id, sourceSetIndex: 1, destination: .set(movementID: id, index: 1))
         #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
@@ -77,6 +99,12 @@ import TrainingCore
         draft.flow!.reviewedSummaryMovementIDs = []
         try WorkoutFlowResolver.validate(draft)
         #expect(draft.flow!.forward == cursor && draft.restDeadline == deadline)
+        for status in [LogStatus.stopped, .completed, .skipped] {
+            bad = draft; bad.logs[1].status = status
+            #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
+            bad.flow!.forward = .introduction(movementID: draft.logs[1].movementID)
+            #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
+        }
         bad = draft; bad.acknowledgedMovementIDs = []
         #expect(throws: (any Error).self) { try WorkoutFlowResolver.validate(bad) }
         bad = draft; bad.flow!.forward = .rest(sourceMovementID: "unknown", sourceSetIndex: 0, destination: .introduction(movementID: draft.logs[1].movementID))

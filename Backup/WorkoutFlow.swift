@@ -41,7 +41,7 @@ enum WorkoutFlowResolver {
         }
         let occupied = occupiedIndices(log)
         let step: WorkoutStep
-        if log.problem != .none || log.status == .stopped || (!occupied.isEmpty && nextIndex(log, row: row) == nil) {
+        if log.problem != .none || log.status != .partial || (!occupied.isEmpty && nextIndex(log, row: row) == nil) {
             step = .summary(movementID: row.movementID)
         } else if occupied.isEmpty {
             step = .introduction(movementID: row.movementID)
@@ -89,7 +89,7 @@ enum WorkoutFlowResolver {
             case let .summary(id):
                 let (row, log) = try binding(id, draft: draft)
                 guard acknowledged.contains(id) || (id == firstUnhandled &&
-                    (log.problem != .none || log.status == .stopped || nextIndex(log, row: row) == nil)) else { throw invalid("summary") }
+                    (log.problem != .none || log.status != .partial || nextIndex(log, row: row) == nil)) else { throw invalid("summary") }
             case .workoutReview:
                 // A correction may invalidate one review while this cursor stays
                 // on Workout review. Finish readiness is checked independently.
@@ -104,15 +104,17 @@ enum WorkoutFlowResolver {
                       row.kind != .paused, row.kind != .setupReview else { throw invalid("rest_source") }
                 switch destination {
                 case let .set(id, index):
-                    guard id == source, source == firstUnhandled,
+                    guard id == source, source == firstUnhandled, log.status == .partial,
                           nextIndex(log, row: row) == index, index > sourceIndex else { throw invalid("rest_destination") }
                 case let .introduction(id):
-                    let (_, destinationLog) = try binding(id, draft: draft)
+                    let (destinationRow, destinationLog) = try binding(id, draft: draft)
                     // Corrections can invalidate source review while retaining this cursor.
                     guard acknowledged.contains(source), id == firstUnhandled,
                           let sourcePosition = ids.firstIndex(of: source), let destinationPosition = ids.firstIndex(of: id),
                           destinationPosition == sourcePosition + 1,
-                          occupiedIndices(destinationLog).isEmpty, destinationLog.problem == .none else { throw invalid("rest_destination") }
+                          occupiedIndices(destinationLog).isEmpty, destinationLog.problem == .none,
+                          destinationLog.status != .stopped,
+                          destinationRow.sets.isEmpty || destinationLog.status == .partial else { throw invalid("rest_destination") }
                 }
             }
         }
