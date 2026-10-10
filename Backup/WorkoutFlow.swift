@@ -131,9 +131,17 @@ enum WorkoutFlowResolver {
             plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode,
             exercises: draft.logs, observationAudit: draft.observationAudit)
         expected.timing = event.timing
-        guard pending.version == 1, let flow = draft.flow, flow.forward == .workoutReview,
-              Set(draft.acknowledgedMovementIDs ?? []) == ids,
-              Set(flow.reviewedSummaryMovementIDs) == ids,
+        if let flow = draft.flow {
+            guard flow.forward == .workoutReview, Set(draft.acknowledgedMovementIDs ?? []) == ids,
+                  Set(flow.reviewedSummaryMovementIDs) == ids else { throw invalid("pendingFinish.review") }
+        } else if let acknowledged = draft.acknowledgedMovementIDs {
+            guard Set(acknowledged) == ids else { throw invalid("pendingFinish.outcomes") }
+        } else {
+            guard draft.logs.allSatisfy({ $0.status != .partial || $0.problem != .none }) else {
+                throw invalid("pendingFinish.outcomes")
+            }
+        }
+        guard pending.version == 1,
               pending.expectedRevision == draft.expectedRevision,
               // Canonical bytes bind raw text as well as values; Swift String
               // equality alone accepts canonically equivalent Unicode edits.

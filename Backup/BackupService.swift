@@ -220,6 +220,32 @@ enum BackupService {
         case .resolveConflict: throw invalid("resolution_requires_graph")
         }
     }
+    /// Exact retained rejection plus a no-write pinned-core acceptance proof owns
+    /// every allowed outcome demotion. Raw observations and audit remain unchanged.
+    static func rejectedCompletionRepair(_ draft: WorkoutDraft, state: ProgramState, rules: Ruleset,
+                                         submission: PendingWorkoutFinish) throws -> WorkoutDraft? {
+        try validateDraft(draft, state: state, rules: rules)
+        do {
+            _ = try transition(state: state, command: .workout(completedWorkout: submission.event, next: submission.next), rules: rules)
+            return nil
+        } catch let error as EngineError {
+            guard error.code == "invalid_sets" else { return nil }
+        }
+        var repaired = draft
+        var changed = false
+        for (i, row) in draft.displayed.exercises.enumerated() where draft.logs[i].status == .completed {
+            let movement = try resolveEffectiveMovement(config: state.config, variantID: row.movementID, rules: rules)
+            if !qualifiesCompletedExercise(draft.logs[i], prescription: row, movement: movement, schemaVersion: state.schemaVersion) {
+                repaired.logs[i].status = draft.logs[i].actualSets.isEmpty && draft.logs[i].problem == .none ? .skipped : .partial
+                changed = true
+            }
+        }
+        guard changed else { return nil }
+        var event = submission.event; event.exercises = repaired.logs
+        _ = try transition(state: state, command: .workout(completedWorkout: event, next: submission.next), rules: rules)
+        repaired.pendingFinish = nil
+        return repaired
+    }
     static func validateDraft(_ draft: WorkoutDraft, state: ProgramState, rules: Ruleset) throws {
         let displayed = try prepareWorkout(state: state, rules: rules, easierToday: draft.sessionMode == .easier)
         if [3, 4].contains(state.schemaVersion) {

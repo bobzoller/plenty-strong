@@ -500,7 +500,10 @@ extension WorkoutViewModelTests {
         do { try await restored.recoverRejectedCompletion(); XCTFail("Repair save failure") } catch {}
         XCTAssertTrue(restored.canRecoverRejectedCompletion)
         let failedSave = try await repository.snapshot(programID: model.programID)
-        XCTAssertEqual(failedSave, before)
+        XCTAssertEqual(failedSave.history, before.history)
+        var retained = failedSave.draft!; retained.pendingFinish = nil
+        XCTAssertEqual(retained, before.draft)
+        XCTAssertNotNil(failedSave.draft?.pendingFinish)
         do { try await restored.recordStatus(movementID: malformed.logs[1].movementID, status: .partial); XCTFail("Failed save must retain freeze") } catch {}
         try await restored.recoverRejectedCompletion()
         XCTAssertFalse(restored.canRecoverRejectedCompletion)
@@ -594,13 +597,14 @@ extension WorkoutViewModelTests {
         do { _ = try await restored.finish(); XCTFail("Malformed") } catch {}
         XCTAssertTrue(restored.canRecoverRejectedCompletion)
         var changed = malformed; changed.logs[0].finalEffort = .tooEasy
-        try await repository.saveDraft(changed)
-        do { try await restored.recoverRejectedCompletion(); XCTFail("Proof changed") }
-        catch let error as EngineError { XCTAssertEqual(error.code, "recovery_proof_changed") }
+        do { try await repository.saveDraft(changed); XCTFail("Ordinary save cannot change frozen proof") } catch {}
         do { try await restored.recordStatus(movementID: changed.logs[0].movementID, status: .partial); XCTFail("Freeze must remain") } catch {}
         let after = try await repository.snapshot(programID: model.programID)
-        XCTAssertEqual(after.draft, changed)
+        XCTAssertEqual(after.draft, restored.snapshot.draft)
+        XCTAssertNotNil(after.draft?.pendingFinish)
         XCTAssertEqual(after.history, before.history)
+        try await restored.recoverRejectedCompletion()
+        XCTAssertNil(restored.snapshot.draft?.pendingFinish)
         await repository.close()
     }
 }

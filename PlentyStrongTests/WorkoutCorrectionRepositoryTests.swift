@@ -190,7 +190,7 @@ import TrainingCore
         }
         let next = try WorkoutScheduler.nextRotation(after: max(draft.date, draft.planned.date), consumedSlotID: draft.planned.slotID, config: f.model.snapshot.state.config)
         draft.pendingFinish = PendingWorkoutFinish(event: event, next: next, expectedRevision: draft.expectedRevision)
-        let frozen = try #require(await f.repository.saveDraft(draft).draft)
+        let frozen = try #require(await f.repository.freezeDraftFinish(programID: f.model.programID, expectedDraftHash: BackupService.hash(before), submission: draft.pendingFinish!).draft)
         let backup = try await f.repository.exportBackup()
         await #expect(throws: EngineError.self) { try await correct(f, draft: frozen, replacement: ActualSet(reps: 9)) }
         #expect(try await f.repository.exportBackup() == backup)

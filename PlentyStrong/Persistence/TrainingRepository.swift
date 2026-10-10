@@ -73,6 +73,12 @@ import TrainingCore
         try await offMain { try $0.correctDraftSetBody(programID: programID, expectedDraftHash: expectedDraftHash,
             operationID: operationID, movementID: movementID, setIndex: setIndex, replacement: replacement) }
     }
+    @discardableResult nonisolated func freezeDraftFinish(programID: UUID, expectedDraftHash: String, submission: PendingWorkoutFinish) async throws -> StoreSnapshot {
+        try await offMain { try $0.freezeDraftFinishBody(programID: programID, expectedDraftHash: expectedDraftHash, submission: submission) }
+    }
+    @discardableResult nonisolated func repairRejectedDraft(programID: UUID, expectedDraftHash: String) async throws -> StoreSnapshot {
+        try await offMain { try $0.repairRejectedDraftBody(programID: programID, expectedDraftHash: expectedDraftHash) }
+    }
     nonisolated func activateExactPolicy(programID: UUID, expectedRevision: Int, expectedHeadHash: String) async throws -> StoreSnapshot {
         try await offMain { try $0.activateExactPolicyBody(programID: programID, expectedRevision: expectedRevision, expectedHeadHash: expectedHeadHash) }
     }
@@ -389,24 +395,37 @@ import TrainingCore
         }
         return try snapshotBody(programID: programID)
     }
-    func finalize(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
+    nonisolated func finalize(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) async throws -> FinalizationReceipt {
+        try await offMain { try $0.finalizeBody(programID: programID, expectedRevision: expectedRevision, event: event, next: next) }
+    }
+    private func finalizeBody(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
         let result: AdvanceResult = try transaction {
             let current = try snapshotBody(programID: programID)
             let command = JournalCommand.workout(completedWorkout: event, next: next)
-            let originals = current.history.filter { $0.eventID == event.eventID }
+            let originals = current.history.filter { UUID(uuidString: $0.eventID) == UUID(uuidString: event.eventID) }
             if !originals.isEmpty {
                 let eventHash = try BackupService.hash(event)
-                return originals.contains(where: { $0.eventHash == eventHash })
+                return try originals.contains(where: { try $0.eventHash == eventHash && BackupService.bytes($0.command) == BackupService.bytes(command) })
                     ? .noOp(nextState: current.state, reason: .eventReplayed)
                     : .rejected(nextState: current.state, errors: ["event_id_conflict"])
             }
-            if try modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { $0.eventID == event.eventID }) {
+            if try modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { UUID(uuidString: $0.eventID) == UUID(uuidString: event.eventID) }) {
                 return .rejected(nextState: current.state, errors: ["event_id_conflict"])
             }
             guard current.health == .ready else { return .rejected(nextState: current.state, errors: ["store_" + current.health.rawValue]) }
             guard expectedRevision == current.state.revision else { return .rejected(nextState: current.state, errors: ["stale_revision"]) }
             if let draft = current.draft {
-                guard draft.id.uuidString.lowercased() == event.eventID.lowercased(), draft.planned.id == event.plannedPrescriptionID,
+                if let pending = draft.pendingFinish {
+                    guard pending.expectedRevision == expectedRevision,
+                          try BackupService.bytes(pending.event) == BackupService.bytes(event),
+                          try BackupService.bytes(pending.next) == BackupService.bytes(next) else {
+                        return .rejected(nextState: current.state, errors: ["draft_finish_binding_conflict"])
+                    }
+                } else if draft.flow != nil {
+                    return .rejected(nextState: current.state, errors: ["draft_finish_not_frozen"])
+                }
+                guard try BackupService.bytes(draft.observationAudit) == BackupService.bytes(event.observationAudit),
+                      draft.id.uuidString.lowercased() == event.eventID.lowercased(), draft.planned.id == event.plannedPrescriptionID,
                       draft.displayed.id == event.prescriptionID, draft.date == event.date,
                       draft.startedAtMilliseconds == event.timing?.startedAtMilliseconds,
                       event.timing == nil || (event.timing?.plannedDate == draft.planned.date && event.timing?.timeZoneID == draft.timeZoneID),
@@ -472,6 +491,10 @@ import TrainingCore
                     throw BackupService.invalid("draft_changed")
                 }
             }
+            guard try BackupService.bytes(draft.pendingFinish) == BackupService.bytes(current.draft?.pendingFinish),
+                  try current.draft?.pendingFinish == nil || BackupService.bytes(draft) == BackupService.bytes(current.draft) else {
+                throw BackupService.invalid("draft_finish_locked")
+            }
             // The explicit correction writer is the sole owner of the audit trail.
             // Canonical bytes also retain distinctions in raw Unicode spellings.
             guard try BackupService.bytes(draft.observationAudit) == BackupService.bytes(current.draft?.observationAudit) else {
@@ -479,11 +502,10 @@ import TrainingCore
             }
             try BackupService.validateDraft(draft, state: current.state, rules: rules)
             if let expected = expectedExistingDraft {
-                // Explicit unaccepted-completion repair proof: canonical exact draft,
-                // unchanged revision and globally absent event, checked atomically.
+                // Compatibility CAS only. This grants no observation or freeze rewrite authority.
                 guard let existing = current.draft, current.state.revision == expected.expectedRevision,
                       try BackupService.bytes(existing) == BackupService.bytes(expected),
-                      try !modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { $0.eventID == expected.id.uuidString.lowercased() }) else {
+                      try !modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { UUID(uuidString: $0.eventID) == expected.id }) else {
                     throw BackupService.invalid("draft_repair_proof_changed")
                 }
             }
@@ -523,7 +545,6 @@ import TrainingCore
                                   updated.skippedSetIndices == original.skippedSetIndices,
                                   updated.mixedLoads == original.mixedLoads,
                                   updated.status == original.status ||
-                                    (expectedExistingDraft != nil && original.status == .completed && (updated.status == .partial || updated.status == .skipped)) ||
                                     (updated.problem != .none && updated.status == .stopped) else { throw BackupService.invalid("draft_observation_changed") }
                         }
                     }
@@ -537,6 +558,57 @@ import TrainingCore
                 } else { modelContext.insert(DraftRecord(id: draft.id, programID: draft.programID, bytes: try BackupService.bytes(draft))) }
             }
             current.draft = draft
+            return current
+        }
+    }
+    private func freezeDraftFinishBody(programID: UUID, expectedDraftHash: String, submission: PendingWorkoutFinish) throws -> StoreSnapshot {
+        try transaction {
+            let admitted = try admittedBackup()
+            var current = try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
+            guard var draft = current.draft else { throw BackupService.invalid("draft_missing") }
+            if let pending = draft.pendingFinish {
+                guard try BackupService.bytes(pending) == BackupService.bytes(submission) else {
+                    throw BackupService.invalid("draft_finish_locked")
+                }
+                return current
+            }
+            guard current.health == .ready, draft.expectedRevision == current.state.revision,
+                  try BackupService.hash(draft) == expectedDraftHash,
+                  try !modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { UUID(uuidString: $0.eventID) == draft.id }),
+                  let rules = admitted.replay.rulesByHash[current.state.rulesetHash] else {
+                throw BackupService.invalid("draft_finish_proof_changed")
+            }
+            draft.pendingFinish = submission
+            try BackupService.validateDraft(draft, state: current.state, rules: rules)
+            guard let record = try modelContext.fetch(FetchDescriptor<DraftRecord>()).first(where: { $0.id == draft.id }) else {
+                throw BackupService.invalid("draft_missing")
+            }
+            record.bytes = try BackupService.bytes(draft)
+            current.draft = draft
+            return current
+        }
+    }
+    private func repairRejectedDraftBody(programID: UUID, expectedDraftHash: String) throws -> StoreSnapshot {
+        try transaction {
+            let admitted = try admittedBackup()
+            var current = try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
+            guard let draft = current.draft, current.health == .ready,
+                  draft.expectedRevision == current.state.revision,
+                  try BackupService.hash(draft) == expectedDraftHash,
+                  try !modelContext.fetch(FetchDescriptor<JournalRecord>()).contains(where: { UUID(uuidString: $0.eventID) == draft.id }),
+                  let pending = draft.pendingFinish,
+                  let rules = admitted.replay.rulesByHash[current.state.rulesetHash] else {
+                throw BackupService.invalid("draft_repair_proof_changed")
+            }
+            guard let repaired = try BackupService.rejectedCompletionRepair(draft, state: current.state, rules: rules, submission: pending) else {
+                throw BackupService.invalid("draft_repair_unavailable")
+            }
+            try BackupService.validateDraft(repaired, state: current.state, rules: rules)
+            guard let record = try modelContext.fetch(FetchDescriptor<DraftRecord>()).first(where: { $0.id == draft.id }) else {
+                throw BackupService.invalid("draft_missing")
+            }
+            record.bytes = try BackupService.bytes(repaired)
+            current.draft = repaired
             return current
         }
     }
@@ -615,7 +687,12 @@ import TrainingCore
     }
     func discardDraft(id: UUID) throws {
         try transaction {
-            for record in try modelContext.fetch(FetchDescriptor<DraftRecord>()) where record.id == id { modelContext.delete(record) }
+            for record in try modelContext.fetch(FetchDescriptor<DraftRecord>()) where record.id == id {
+                guard try JSONDecoder().decode(WorkoutDraft.self, from: record.bytes).pendingFinish == nil else {
+                    throw BackupService.invalid("draft_finish_locked")
+                }
+                modelContext.delete(record)
+            }
         }
     }
     func importBackup(_ document: BackupDocument) throws -> ImportReceipt {

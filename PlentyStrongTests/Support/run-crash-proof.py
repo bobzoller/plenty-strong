@@ -9,7 +9,7 @@ import time
 
 binary = pathlib.Path(sys.argv[1]).resolve()
 source = pathlib.Path(sys.argv[2]).resolve()
-for kind in ("workout", "variant", "activation", "correction"):
+for kind in ("workout", "variant", "activation", "correction", "freeze"):
     for phase, expected in (("before_save", 0), ("after_commit", 1)):
         with tempfile.TemporaryDirectory(prefix="plenty-crash-") as directory:
             setup = "setup" if kind == "workout" else f"setup-{kind}"
@@ -38,3 +38,5 @@ for kind in ("workout", "variant", "activation", "correction"):
                     child.wait(timeout=10)
 print("Preexisting: 6/6 macOS process-kill/reopen proofs passed.")
 print("Added correction boundaries: 2/2 macOS process-kill/reopen proofs passed; this is not an iOS process-kill claim.")
+
+print("Added freeze boundaries: 2/2 macOS process-kill/reopen proofs passed; no journal advance and exact payload retained.")

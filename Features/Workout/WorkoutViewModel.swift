@@ -26,6 +26,9 @@ import TrainingCore
         self.repository = repository; self.snapshot = snapshot; self.timeZoneID = timeZoneID; self.now = now
         self.operations = operations ?? TrainingOperationGate()
         self.activatesExactPolicy = activatesExactPolicy
+        if let pending = snapshot.draft?.pendingFinish {
+            submitted = (pending.event, pending.next, pending.expectedRevision)
+        }
     }
     var hasAmbiguousFinish: Bool { submitted != nil && !finished }
     /// Read-only identity projection of this model's accepted frozen Finish.
@@ -49,7 +52,7 @@ import TrainingCore
     var canDiscardDraft: Bool { submitted == nil && snapshot.draft?.logs.contains { $0.problem != .none } != true }
     var canChangePreparation: Bool { (submitted == nil || finished) && !(snapshot.draft?.hasObservations ?? false) }
     var needsDateChoice: Bool {
-        guard let draft = snapshot.draft, !retainedOriginalDate,
+        guard let draft = snapshot.draft, draft.pendingFinish == nil, submitted == nil, !retainedOriginalDate,
               let today = try? CalendarContext(timeZoneID: draft.timeZoneID).localDate(at: now()) else { return false }
         return today != draft.date
     }
@@ -144,7 +147,7 @@ import TrainingCore
     }
     private func editableDraft(allowDateChoice: Bool = false) async throws -> WorkoutDraft {
         try await requireReady()
-        guard submitted == nil, let draft = snapshot.draft else { throw EngineError(code: "draft_unavailable", field: "draft") }
+        guard submitted == nil, let draft = snapshot.draft, draft.pendingFinish == nil else { throw EngineError(code: "draft_unavailable", field: "draft") }
         guard allowDateChoice || !needsDateChoice else { throw EngineError(code: "date_choice_required", field: "date") }
         return draft
     }
@@ -161,6 +164,7 @@ import TrainingCore
     }
     private func prepareTodayBody(asOf: LocalDate? = nil) async throws {
         try await requireReady()
+        guard !hasAmbiguousFinish, snapshot.draft?.pendingFinish == nil else { throw EngineError(code: "finish_in_flight", field: "draft") }
         guard snapshot.draft == nil else { return }
         let today = try asOf ?? CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
         // Suggested dates never consume or replace a pending rotation slot.
@@ -175,6 +179,7 @@ import TrainingCore
     }
     private func startBody(easierToday: Bool, retainingLegacyDraftPolicy: Bool = false) async throws {
         try await requireReady()
+        guard !hasAmbiguousFinish, snapshot.draft?.pendingFinish == nil else { throw EngineError(code: "finish_in_flight", field: "draft") }
         let startedWithLegacyDraft = retainingLegacyDraftPolicy || (snapshot.draft != nil && snapshot.draft?.startedAtMilliseconds == nil)
         if let existing = snapshot.draft {
             if (existing.sessionMode == .easier) == easierToday { try await refreshWorkingAdmissionBody(); return }
@@ -411,18 +416,6 @@ import TrainingCore
             repair.original.logs[i].status != repair.repaired.logs[i].status ? movement(for: row).name : nil
         }
     }
-    private func repairCandidate(_ original: WorkoutDraft, event: CompletedWorkout, next: WorkoutSlot) throws -> WorkoutDraft? {
-        var repaired = original
-        for (i, row) in original.displayed.exercises.enumerated() where original.logs[i].status == .completed && !validCompletion(original.logs[i], row: row) {
-            repaired.logs[i].status = original.logs[i].actualSets.isEmpty && original.logs[i].problem == .none ? .skipped : .partial
-        }
-        guard repaired != original else { return nil }
-        var repairedEvent = event; repairedEvent.exercises = repaired.logs
-        // A demotion cannot repair invalid raw observations. Prove the unchanged core
-        // accepts these truthful outcomes before offering them; this writes no journal.
-        _ = try BackupService.transition(state: snapshot.state, command: .workout(completedWorkout: repairedEvent, next: next), rules: RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash))
-        return repaired
-    }
     func recoverRejectedCompletion() async throws {
         try await operations.perform { _ in try await recoverRejectedCompletionBody() }
     }
@@ -432,9 +425,7 @@ import TrainingCore
         let current = try await repository.snapshot(programID: programID)
         guard current.health == .ready, current.state.revision == revision, current.draft == repair.original,
               !current.history.contains(where: { $0.eventID == event.eventID }) else { throw EngineError(code: "recovery_proof_changed", field: "draft") }
-        // Repository save rechecks revision/binding and immutable observation prefixes.
-        // If proof or save fails, keep the exact frozen Finish payload for safe retry.
-        try await save(repair.repaired, expectedExistingDraft: repair.original)
+        snapshot = try await repository.repairRejectedDraft(programID: programID, expectedDraftHash: BackupService.hash(repair.original))
         submitted = nil; rejectedRepair = nil
     }
     func changeSetup(_ change: VariantChange) async throws {
@@ -542,9 +533,19 @@ import TrainingCore
         try await requireReady()
         if submitted == nil {
             let draft = try await editableDraft()
-            guard Set(draft.acknowledgedMovementIDs ?? []) == Set(draft.displayed.exercises.map(\.movementID)) else { throw EngineError(code: "incomplete_workout", field: "logs") }
+            if let acknowledged = draft.acknowledgedMovementIDs {
+                guard Set(acknowledged) == Set(draft.displayed.exercises.map(\.movementID)) else { throw EngineError(code: "incomplete_workout", field: "logs") }
+            } else {
+                guard draft.logs.allSatisfy({ $0.status != .partial || $0.problem != .none }) else { throw EngineError(code: "incomplete_workout", field: "logs") }
+            }
+            if let flow = draft.flow {
+                guard flow.forward == .workoutReview,
+                      Set(flow.reviewedSummaryMovementIDs) == Set(draft.displayed.exercises.map(\.movementID)) else {
+                    throw EngineError(code: "incomplete_workout", field: "review")
+                }
+            }
             var event = CompletedWorkout(eventID: draft.id.uuidString.lowercased(), date: draft.date, slotID: draft.displayed.slotID,
-                prescriptionID: draft.displayed.id, plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode, exercises: draft.logs)
+                prescriptionID: draft.displayed.id, plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode, exercises: draft.logs, observationAudit: draft.observationAudit)
             let finish = try SessionTiming.milliseconds(at: now())
             let today = try SessionTiming.localDate(milliseconds: finish, timeZoneID: draft.timeZoneID)
             let next: WorkoutSlot
@@ -558,6 +559,10 @@ import TrainingCore
             submitted = (event, next, draft.expectedRevision)
         }
         let (event, next, revision) = submitted!
+        if snapshot.draft?.pendingFinish == nil, let draft = snapshot.draft {
+            snapshot = try await repository.freezeDraftFinish(programID: programID, expectedDraftHash: BackupService.hash(draft),
+                submission: PendingWorkoutFinish(event: event, next: next, expectedRevision: revision))
+        }
         let receipt = try await repository.finalize(programID: programID, expectedRevision: revision, event: event, next: next)
         if case let .rejected(_, errors) = receipt.result {
             if errors == ["invalid_sets"], receipt.snapshot.health == .ready,
@@ -565,8 +570,15 @@ import TrainingCore
                let original = snapshot.draft, receipt.snapshot.draft == original,
                original.id.uuidString.lowercased() == event.eventID, original.logs == event.exercises,
                !receipt.snapshot.history.contains(where: { $0.eventID == event.eventID }),
-               let repaired = try? repairCandidate(original, event: event, next: next) {
-                rejectedRepair = (original, repaired)
+               let pending = original.pendingFinish {
+                let state = receipt.snapshot.state
+                let repaired = try? await Task.detached(priority: .userInitiated) {
+                    try BackupService.rejectedCompletionRepair(original, state: state,
+                        rules: RulesetCatalog.resolve(version: state.rulesetVersion, hash: state.rulesetHash), submission: pending)
+                }.value
+                if let repaired {
+                    rejectedRepair = (original, repaired)
+                }
             }
             throw EngineError(code: errors.joined(separator: ", "), field: "finish")
         }

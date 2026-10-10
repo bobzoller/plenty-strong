@@ -143,7 +143,6 @@ import TrainingCore
             bad = draft; bad.pendingFinish!.next.date = draft.date; mutations.append(bad)
             bad = draft; bad.flow!.reviewedSummaryMovementIDs.removeLast(); mutations.append(bad)
             bad = draft; bad.acknowledgedMovementIDs!.removeLast(); mutations.append(bad)
-            bad = draft; bad.flow = nil; mutations.append(bad)
             if draft.startedAtMilliseconds != nil {
                 bad = draft; bad.pendingFinish!.event.timing!.timeZoneID = "UTC"; mutations.append(bad)
                 bad = draft; bad.pendingFinish!.event.timing!.startedAtMilliseconds += 1; mutations.append(bad)
@@ -154,6 +153,20 @@ import TrainingCore
                 bad = draft; bad.pendingFinish!.event.timing = SessionTiming(plannedDate: draft.planned.date, startedAtMilliseconds: 1791662400000, finishedAtMilliseconds: 1791662460000, timeZoneID: draft.timeZoneID); mutations.append(bad)
             }
             for (index, invalid) in mutations.enumerated() { #expect(throws: (any Error).self, "schema \(schema), mutation \(index)") { try BackupService.validateDraft(invalid, state: f.model.snapshot.state, rules: rules) } }
+            // Archived nil-flow Finish retains outcome handling without inventing
+            // summary reviews; explicit outcome IDs still require completeness.
+            var legacy = draft; legacy.flow = nil
+            let legacyBytes = try BackupService.bytes(legacy)
+            try BackupService.validateDraft(legacy, state: f.model.snapshot.state, rules: rules)
+            #expect(legacy.flow == nil && legacy.acknowledgedMovementIDs == draft.acknowledgedMovementIDs)
+            #expect(try BackupService.bytes(legacy) == legacyBytes)
+            legacy.acknowledgedMovementIDs = nil
+            let withoutOutcomeIDsBytes = try BackupService.bytes(legacy)
+            try BackupService.validateDraft(legacy, state: f.model.snapshot.state, rules: rules)
+            #expect(try BackupService.bytes(legacy) == withoutOutcomeIDsBytes)
+            #expect(legacy.flow == nil && legacy.acknowledgedMovementIDs == nil)
+            legacy.logs[0].status = .partial; legacy.pendingFinish!.event.exercises = legacy.logs
+            #expect(throws: (any Error).self) { try BackupService.validateDraft(legacy, state: f.model.snapshot.state, rules: rules) }
             let bytes = try BackupService.bytes(draft)
             #expect(try JSONDecoder().decode(WorkoutDraft.self, from: bytes) == draft)
             await f.repository.close()

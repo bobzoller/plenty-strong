@@ -32,7 +32,7 @@ func run() async throws {
                 baseMovementID: row.baseMovementID, modificationsSnapshot: row.modificationsSnapshot)
         }
         let eventID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        let event = CompletedWorkout(eventID: eventID.uuidString.lowercased(), date: p.date, slotID: p.slotID, prescriptionID: p.id,
+        var event = CompletedWorkout(eventID: eventID.uuidString.lowercased(), date: p.date, slotID: p.slotID, prescriptionID: p.id,
             plannedPrescriptionID: p.id, sessionMode: .normal, exercises: logs)
         let next = WorkoutSlot(date: try LocalDate(iso8601: "2026-10-06"), slotID: config.weeklySlots[1].id)
         var draftLogs = logs
@@ -47,7 +47,21 @@ func run() async throws {
                 planned: p, displayed: p, date: p.date, timeZoneID: "Pacific/Honolulu", sessionMode: .normal,
                 logs: draftLogs, workingSetsStarted: mode != "setup-variant"))
         }
-        if mode == "setup-activation" || mode == "setup-correction" {
+        if mode == "setup-freeze" {
+            var draft = try await repository.snapshot(programID: id).draft!
+            draft.acknowledgedMovementIDs = draft.logs.map(\.movementID)
+            draft.flow = WorkoutFlow(forward: .workoutReview, reviewedSummaryMovementIDs: draft.logs.map(\.movementID))
+            _ = try await repository.saveDraft(draft)
+            var replacement = draft.logs[0].actualSets[0]; replacement.reps = 11
+            if replacement.leftReps != nil { replacement.leftReps = 11 }
+            if replacement.rightReps != nil { replacement.rightReps = 11 }
+            draft = try await repository.correctDraftSet(programID: id, expectedDraftHash: BackupService.hash(draft), operationID: UUID(),
+                movementID: draft.logs[0].movementID, setIndex: 0, replacement: replacement).draft!
+            draft.flow!.reviewedSummaryMovementIDs = draft.logs.map(\.movementID)
+            _ = try await repository.saveDraft(draft)
+            event.exercises = draft.logs; event.observationAudit = draft.observationAudit
+        }
+        if mode == "setup-activation" || mode == "setup-correction" || mode == "setup-freeze" {
             try BackupService.bytes(await repository.exportBackup()).write(to: directory.appendingPathComponent("original-backup.json"))
         }
         try BackupService.bytes(CrashInput(programID: id, event: event, next: next, base: p.exercises[0].baseMovementID!)).write(to: inputURL)
@@ -65,7 +79,11 @@ func run() async throws {
                     while true { pause() }
                 }
             }
-            if mode == "commit-correction" {
+            if mode == "commit-freeze" {
+                let draft = try await repository.snapshot(programID: input.programID).draft!
+                _ = try await repository.freezeDraftFinish(programID: input.programID, expectedDraftHash: BackupService.hash(draft),
+                    submission: PendingWorkoutFinish(event: input.event, next: input.next, expectedRevision: draft.expectedRevision))
+            } else if mode == "commit-correction" {
                 let draft = try await repository.snapshot(programID: input.programID).draft!
                 var replacement = draft.logs[0].actualSets[0]; replacement.reps = 8
                 if replacement.leftReps != nil { replacement.leftReps = 8 }
@@ -83,6 +101,24 @@ func run() async throws {
             } else {
                 _ = try await repository.finalize(programID: input.programID, expectedRevision: 0, event: input.event, next: input.next)
             }
+        } else if mode == "verify-freeze" {
+            let expected = Int(args[4])!
+            let original = try JSONDecoder().decode(BackupDocument.self, from: Data(contentsOf: directory.appendingPathComponent("original-backup.json")))
+            let snapshot = try await repository.snapshot(programID: input.programID)
+            let document = try await repository.exportBackup(), counts = try await repository.counts()
+            guard snapshot.state.revision == 0, counts == [1,1,1,1,0], document.journal == original.journal,
+                  document.heads == original.heads, document.rules == original.rules, document.profiles == original.profiles,
+                  var draft = snapshot.draft else { throw BackupService.invalid("freeze_crash_atomicity") }
+            if expected == 0 {
+                guard draft.pendingFinish == nil, document == original else { throw BackupService.invalid("freeze_partial_commit") }
+            } else {
+                let pending = PendingWorkoutFinish(event: input.event, next: input.next, expectedRevision: 0)
+                guard try BackupService.bytes(draft.pendingFinish) == BackupService.bytes(pending),
+                      draft.pendingFinish?.event.observationAudit == draft.observationAudit else { throw BackupService.invalid("freeze_payload_atomicity") }
+                draft.pendingFinish = nil
+                guard try BackupService.bytes(draft) == original.drafts[0].bytes else { throw BackupService.invalid("freeze_unrelated_mutation") }
+            }
+            print("FRESH PROCESS VERIFIED freeze=\(expected) exact event/audit/next/revision; unchanged journal/head/outbox counts=\(counts)")
         } else if mode == "verify-correction" {
             let expected = Int(args[4])!
             let original = try JSONDecoder().decode(BackupDocument.self, from: Data(contentsOf: directory.appendingPathComponent("original-backup.json")))

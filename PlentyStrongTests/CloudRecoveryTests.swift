@@ -385,3 +385,67 @@ extension CloudRecoveryTests {
         #expect(try await s.repository.snapshot(programID: s.programID).health == .unsupportedVersion)
     }
 }
+
+extension CloudRecoveryTests {
+    @MainActor @Test func correctedFrozenFinishReplaysBothFormatsAndUnknownAuditQuarantines() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        var draft = try #require(f.model.snapshot.draft)
+        for i in draft.logs.indices { draft.logs[i].status = .skipped }
+        let row = draft.displayed.exercises[0], movement = f.model.movement(for: row)
+        draft.logs[0].status = .partial
+        draft.logs[0].actualLoad = movement.loadingMode == .externalLoad ? movement.availableLoads.first : nil
+        draft.logs[0].actualSets = [ActualSet(reps: 8, leftReps: movement.repCounting == .perSide ? 8 : nil,
+            rightReps: movement.repCounting == .perSide ? 8 : nil, setIndex: 0)]
+        draft.acknowledgedMovementIDs = draft.logs.map(\.movementID)
+        draft.flow = WorkoutFlow(forward: .workoutReview, reviewedSummaryMovementIDs: draft.logs.map(\.movementID))
+        draft.workingSetsStarted = true
+        _ = try await f.repository.saveDraft(draft)
+        var replacement = draft.logs[0].actualSets[0]; replacement.reps = 9
+        if replacement.leftReps != nil { replacement.leftReps = 9 }
+        if replacement.rightReps != nil { replacement.rightReps = 9 }
+        draft = try #require(await f.repository.correctDraftSet(programID: f.model.programID, expectedDraftHash: BackupService.hash(draft),
+            operationID: UUID(), movementID: row.movementID, setIndex: 0, replacement: replacement).draft)
+        draft.flow!.reviewedSummaryMovementIDs = draft.logs.map(\.movementID)
+        let snapshot = try await f.repository.saveDraft(draft)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: snapshot, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        let receipt = try await model.finish()
+        guard case let .workout(event, _) = receipt.snapshot.history.last?.command else { Issue.record("Missing corrected event"); return }
+        #expect(event.observationAudit == draft.observationAudit)
+        let document = try await f.repository.exportBackup()
+        #expect(document.formatVersion == 1)
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        #expect(proof.quarantined.isEmpty && proof.envelopes.count == document.journal.count)
+        var graph = document; graph.formatVersion = 2
+        graph.recovery = BackupService.graphManifest(proof, originals: [], quarantines: [], resolved: [])
+        for backup in [document, graph] {
+            let replay = try BackupService.validate(backup)
+            #expect(replay.heads[draft.programID]?.returnedState == receipt.snapshot.state)
+            let replayed = try RecoveryVerifier().verify(BackupService.recoveryRecords(backup))
+            #expect(replayed.quarantined.isEmpty && replayed.envelopes.count == document.journal.count)
+            let (fresh, url) = try recoveryEmpty()
+            _ = try await fresh.importBackup(backup)
+            #expect(try await fresh.snapshot(programID: model.programID).history == receipt.snapshot.history)
+            await fresh.close()
+            let reopened = try TrainingRepository.open(at: url)
+            #expect(try await reopened.snapshot(programID: model.programID).history == receipt.snapshot.history)
+            await reopened.close()
+        }
+        var future = receipt.snapshot.history.last!
+        guard case let .workout(accepted, next) = future.command else { return }
+        var unsupported = accepted; unsupported.observationAudit!.version = 99
+        future.command = .workout(completedWorkout: unsupported, next: next)
+        future.eventHash = try BackupService.eventHash(future.command)
+        future.envelopeHash = try BackupService.envelopeHash(future)
+        let bytes = try BackupService.bytes(future)
+        var records = try BackupService.recoveryRecords(document)
+        records.removeAll { $0.bytes == document.journal.last!.bytes }
+        let dataset = UUID(uuidString: future.datasetID)!
+        records.append(ArchivedRecord(observation: CloudObservation(recordID: try CloudRecordCodec.recordName(kind: .journal, datasetID: dataset, identity: future.eventID),
+            zoneName: CloudRecordCodec.zoneID(dataset).zoneName, recordType: CloudRecordKind.journal.recordType,
+            claimedChecksum: BackupService.hash(bytes), payload: bytes, systemFields: Data())))
+        let quarantined = try RecoveryVerifier().verify(records)
+        #expect(quarantined.quarantined.contains { $0.record.bytes == bytes })
+        #expect(!quarantined.envelopes.values.contains { $0.eventID == future.eventID })
+        await f.repository.close()
+    }
+}
