@@ -259,6 +259,18 @@ enum BackupService {
                   log.modificationsSnapshot != nil && log.modificationsSnapshot!.utf8.elementsEqual(state.config.variants?[log.movementID]?.modifications.utf8 ?? "".utf8) &&
                   log.actualSets.allSatisfy { $0.reps >= 0 && ($0.leftReps ?? 0) >= 0 && ($0.rightReps ?? 0) >= 0 }
               }) else { throw invalid("draft_binding") }
+        try WorkoutFlowResolver.validate(draft)
+        _ = try ObservationAuditValidator.originalLogs(effective: draft.logs, audit: draft.observationAudit,
+            prescription: draft.displayed, config: state.config, schemaVersion: state.schemaVersion)
+        if let pending = draft.pendingFinish {
+            try WorkoutScheduler.validate(slot: pending.next, config: state.config, schedulingPolicy: state.schedulingPolicy)
+            if let timing = pending.event.timing {
+                let finishedDate = try timing.validate(sessionDate: draft.date, plannedDate: draft.planned.date)
+                let expectedNext = try WorkoutScheduler.nextRotation(after: max(finishedDate, draft.planned.date),
+                    consumedSlotID: draft.planned.slotID, config: state.config)
+                guard pending.next == expectedNext else { throw invalid("draft_pending_finish_schedule") }
+            }
+        }
     }
 }
 

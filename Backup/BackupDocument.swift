@@ -47,6 +47,10 @@ struct WorkoutDraft: Codable, Equatable, Sendable {
     // UI-only metadata. Nil preserves old draft encoding and compatibility.
     var acknowledgedMovementIDs: [String]? = nil
     var restDeadline: Date? = nil
+    // Optional durable metadata keeps legacy canonical drafts byte-for-byte.
+    var flow: WorkoutFlow? = nil
+    var observationAudit: ObservationAudit? = nil
+    var pendingFinish: PendingWorkoutFinish? = nil
     // Nil retains pre-flexible drafts byte-for-byte and their original date policy.
     var startedAtMilliseconds: Int64? = nil
     // Persisted UI deadlines use whole reference seconds; recording rounds up by <1s.
