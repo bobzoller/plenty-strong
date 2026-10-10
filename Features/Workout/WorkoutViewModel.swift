@@ -587,6 +587,9 @@ import TrainingCore
 @MainActor @Observable final class TrainingOperationGate {
     struct Lease { fileprivate let id: UUID }
     private var owner: UUID?
+    #if DEBUG
+    var contextEnabled = true
+    #endif
     var afterRelease: (@MainActor () -> Void)?
     private var deferred: (@MainActor (Lease) async -> Void)?
     func whenIdle(_ action: @escaping @MainActor (Lease) async -> Void) {
@@ -594,6 +597,9 @@ import TrainingCore
         runDeferred()
     }
     private func runDeferred() {
+        #if DEBUG
+        guard contextEnabled else { return }
+        #endif
         guard owner == nil, let action = deferred else { return }
         deferred = nil
         let lease = try! begin()
@@ -606,6 +612,9 @@ import TrainingCore
         return try await action(lease)
     }
     fileprivate func begin() throws -> Lease {
+        #if DEBUG
+        guard contextEnabled else { throw EngineError(code: "inactive_context", field: "operation") }
+        #endif
         guard owner == nil else { throw EngineError(code: "operation_in_progress", field: "operation") }
         let lease = Lease(id: UUID()); owner = lease.id
         return lease

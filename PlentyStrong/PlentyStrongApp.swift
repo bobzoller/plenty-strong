@@ -5,7 +5,12 @@ import TrainingCore
     private enum Screen: Hashable { case today, history, settings }
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = Screen.today
+    #if DEBUG
+    @State private var developerMode = DeveloperDemoMode()
+    private var composition: AppComposition { developerMode.active }
+    #else
     @State private var composition = AppComposition()
+    #endif
     var body: some Scene {
         WindowGroup {
             Group {
@@ -38,8 +43,33 @@ import TrainingCore
                     }
                 } else { ProgressView("Opening local training…") }
             }
+            #if DEBUG
+            .id(developerMode.viewIdentity)
+            .environment(developerMode)
+            .safeAreaInset(edge: .top) {
+                if developerMode.enabled {
+                    Text("Demo data").font(.caption.bold()).frame(maxWidth: .infinity).padding(6)
+                        .background(.yellow.opacity(0.25)).accessibilityIdentifier("developer.demo-banner")
+                }
+            }
+            .overlay {
+                if developerMode.switching {
+                    ProgressView(developerMode.progressText).padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(.black.opacity(0.1))
+                        .accessibilityIdentifier("developer.switching")
+                }
+            }
+            .allowsHitTesting(!developerMode.switching)
+            .onChange(of: developerMode.viewIdentity) { _, _ in selectedTab = .today }
+            #endif
             .modifier(SyntheticAccessibilityOverrides())
-            .task { await composition.load() }
+            .task {
+                #if DEBUG
+                await developerMode.load()
+                #else
+                await composition.load()
+                #endif
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, composition.cloudEnabled { Task { await composition.retryCloudRecovery() } }
                 else if phase != .active { Task { await composition.pauseRecoveryForBackground() } }
@@ -67,6 +97,9 @@ private struct ArchivedProgramView: View {
     let snapshot: StoreSnapshot
     var body: some View {
         List {
+            #if DEBUG
+            DeveloperModeSection()
+            #endif
             Section("Archived program") {
                 Text("Training unavailable for this archived program").font(.headline).accessibilityIdentifier("archive.training-unavailable")
                 Text("This valid archived routine is not supported by the fixed trainer. Original history, prescriptions and saved observations remain available for viewing, lossless export and recovery. No training changes have been made.")

@@ -15,6 +15,28 @@ import TrainingCore
     private(set) var loaded = false
     private(set) var optionalServicesUnavailable = false
     private var uiTesting = false
+    #if DEBUG
+    var isDemoContext = false
+    func performContextTransition<T>(_ action: @MainActor () async throws -> T) async throws -> T {
+        try await operations.perform { _ in try await action() }
+    }
+    func suspendContext() async {
+        operations.contextEnabled = false
+        cloudGeneration += 1; selectionGeneration += 1
+        cloudEnabled = false; verifiedCloudScope = nil
+        stagedScope = nil; stagedRecords = []; lastIngestedObservations = []
+        await cloudCoordinator?.setUpdateHandler(nil)
+        await cloudCoordinator?.disable()
+    }
+    func resumeContext() async {
+        operations.contextEnabled = true
+        guard !isDemoContext else { return }
+        cloudEnabled = preferences.enabled
+        do { try await installRecoveryServices(); try await refreshRecoveryPrograms() }
+        catch { recoveryMessage = "Recovery configuration could not be opened. Local training is retained." }
+        if cloudEnabled { await resumeRecovery() }
+    }
+    #endif
     private(set) var cloudStatus = SyncStatus()
     private(set) var cloudEnabled = false
     private(set) var recoveryPrograms: [RecoveryProgramSummary] = []
@@ -120,7 +142,7 @@ import TrainingCore
         }
         return receipt
     }
-    func load() async {
+    func load(installOptionalServices: Bool = true) async {
         guard !loaded else { return }
         loaded = true
         do {
@@ -162,7 +184,7 @@ import TrainingCore
                 let backup = try await repository.exportBackup()
                 preferencesURL = directory.appendingPathComponent("recovery-preferences.json")
                 if let url = preferencesURL, FileManager.default.fileExists(atPath: url.path) { preferences = (try? JSONDecoder().decode(CloudRecoveryPreferences.self, from: Data(contentsOf: url))) ?? .init() }
-                cloudEnabled = preferences.enabled
+                cloudEnabled = installOptionalServices && preferences.enabled
                 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
                 #if targetEnvironment(simulator)
@@ -196,16 +218,18 @@ import TrainingCore
                 }
                 #endif
                 try await restoreProgramSelection(operation: operation)
-                if let model = workout, model.snapshot.health == .ready { try await model.prepareToday(operation: operation) }
+                if installOptionalServices, let model = workout, model.snapshot.health == .ready { try await model.prepareToday(operation: operation) }
             }
-            do { try await installRecoveryServices() } catch { cloudStatus = .init(phase: .accountUnavailable); recoveryMessage = "Recovery configuration could not be opened. Local training is retained." }
-            try await refreshRecoveryPrograms()
-            if cloudEnabled {
-                #if DEBUG
-                await resumeRecovery(allowAssociation: uiTesting && ProcessInfo.processInfo.arguments.contains("-fixture"))
-                #else
-                await resumeRecovery()
-                #endif
+            if installOptionalServices {
+                do { try await installRecoveryServices() } catch { cloudStatus = .init(phase: .accountUnavailable); recoveryMessage = "Recovery configuration could not be opened. Local training is retained." }
+                try await refreshRecoveryPrograms()
+                if cloudEnabled {
+                    #if DEBUG
+                    await resumeRecovery(allowAssociation: uiTesting && ProcessInfo.processInfo.arguments.contains("-fixture"))
+                    #else
+                    await resumeRecovery()
+                    #endif
+                }
             }
         } catch { errorText = "Local training could not be opened. Your stored data has been retained. \(error)" }
     }
@@ -461,6 +485,9 @@ extension AppComposition {
         if let preferencesURL { try JSONEncoder().encode(preferences).write(to: preferencesURL, options: .atomic) }
     }
     private func installRecoveryServices() async throws {
+        #if DEBUG
+        guard !isDemoContext, operations.contextEnabled else { return }
+        #endif
         guard let repository else { return }
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -491,6 +518,9 @@ extension AppComposition {
         recoveryPrograms = try await repository.recoveryPrograms()
     }
     func setCloudRecoveryEnabled(_ enabled: Bool) async {
+        #if DEBUG
+        guard !isDemoContext, operations.contextEnabled else { return }
+        #endif
         cloudGeneration += 1; cloudEnabled = enabled; verifiedCloudScope = nil
         let ticket = cloudGeneration
         do { try savePreferences() } catch { recoveryMessage = "The recovery preference could not be saved. Local history is retained." }
