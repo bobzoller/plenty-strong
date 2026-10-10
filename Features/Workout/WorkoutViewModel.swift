@@ -59,8 +59,11 @@ import TrainingCore
         return Movement(id: row.baseMovementID ?? row.movementID, name: row.baseMovementID ?? row.movementID,
             primaryMuscles: [], secondaryMuscles: [], minimumRir: 2, availableLoads: [])
     }
-    private func admittedMovement(for row: ExercisePrescription) throws -> Movement {
-        guard let movement = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) else {
+    private func admittedMovement(for row: ExercisePrescription) async throws -> Movement {
+        let state = snapshot.state
+        guard let movement = await Task.detached(priority: .userInitiated, operation: {
+            MovementPrescriptionSummary.effectiveMovement(state: state, variantID: row.movementID)
+        }).value else {
             throw EngineError(code: "invalid_variant", field: "movementID")
         }
         return movement
@@ -71,12 +74,16 @@ import TrainingCore
         try await refreshWorkingAdmissionBody()
     }
     private func refreshWorkingAdmissionBody() async throws {
+        let value = snapshot
+        let admission = try await repository.workingAdmission(for: value.state)
+        blockedWorkingMovementIDs = try await Task.detached(priority: .userInitiated) {
+            try Self.workingRestrictions(snapshot: value, roots: admission.roots, rules: admission.rules)
+        }.value
+    }
+    private nonisolated static func workingRestrictions(snapshot: StoreSnapshot, roots: [StoreSnapshot], rules: Ruleset) throws -> Set<String> {
         let rows = snapshot.draft?.displayed.exercises ?? snapshot.state.activePrescription.exercises
         var restrictions: [String: MovementSafetyState] = [:]
-        let document = try await repository.exportBackup()
-        for id in document.heads.keys.sorted() {
-            guard let uuid = UUID(uuidString: id) else { continue }
-            let current = try await repository.snapshot(programID: uuid)
+        for current in roots {
             // Only verified current ready projections contribute safety. Cleared
             // ancestors and unrelated corrupt roots never become inferred pauses.
             guard current.health == .ready else { continue }
@@ -90,10 +97,10 @@ import TrainingCore
                     minimumRir: max(movement.minimumRir, max(safety?.minimumRir ?? 0, old?.minimumRir ?? 0)), sourceEventIDs: [])
             }
         }
-        guard let parameters = try RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash).parameters else { throw EngineError(code: "missing_parameters", field: "rules") }
-        blockedWorkingMovementIDs = Set(rows.compactMap { row in
+        guard let parameters = rules.parameters else { throw EngineError(code: "missing_parameters", field: "rules") }
+        return Set(rows.compactMap { row in
             let base = row.baseMovementID ?? row.movementID
-            let localFloor = max(movement(for: row).minimumRir, max(snapshot.state.baseSafety?[base]?.minimumRir ?? 0,
+            let localFloor = max(MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID)?.minimumRir ?? 2, max(snapshot.state.baseSafety?[base]?.minimumRir ?? 0,
                 snapshot.draft?.sessionMode == .easier ? parameters.easierMinimumRir : parameters.normalMinimumRir))
             guard let restriction = restrictions[base], restriction.paused || restriction.minimumRir > localFloor else { return nil }
             return row.movementID
@@ -130,19 +137,19 @@ import TrainingCore
         default: "Could not save (\(code)). Your last saved observations are retained."
         }
     }
-    private func requireReady() throws {
-        guard AppTrainingCompatibility.supports(snapshot) else { throw EngineError(code: "unsupported_training", field: "program") }
+    private func requireReady() async throws {
+        let value = snapshot
+        guard await Task.detached(priority: .userInitiated, operation: { AppTrainingCompatibility.supports(value) }).value else { throw EngineError(code: "unsupported_training", field: "program") }
         guard snapshot.health == .ready else { throw EngineError(code: "store_\(snapshot.health.rawValue)", field: "health") }
     }
-    private func editableDraft(allowDateChoice: Bool = false) throws -> WorkoutDraft {
-        try requireReady()
+    private func editableDraft(allowDateChoice: Bool = false) async throws -> WorkoutDraft {
+        try await requireReady()
         guard submitted == nil, let draft = snapshot.draft else { throw EngineError(code: "draft_unavailable", field: "draft") }
         guard allowDateChoice || !needsDateChoice else { throw EngineError(code: "date_choice_required", field: "date") }
         return draft
     }
     private func save(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) async throws {
-        try await repository.saveDraft(draft, expectedExistingDraft: expectedExistingDraft)
-        snapshot = try await repository.snapshot(programID: programID)
+        snapshot = try await repository.saveDraft(draft, expectedExistingDraft: expectedExistingDraft)
     }
     /// Missed scheduling and interrupted-return preparation are explicit journal commands.
     func prepareToday() async throws {
@@ -153,7 +160,7 @@ import TrainingCore
         try await prepareTodayBody()
     }
     private func prepareTodayBody(asOf: LocalDate? = nil) async throws {
-        try requireReady()
+        try await requireReady()
         guard snapshot.draft == nil else { return }
         let today = try asOf ?? CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
         // Suggested dates never consume or replace a pending rotation slot.
@@ -167,7 +174,7 @@ import TrainingCore
         try await startBody(easierToday: easierToday)
     }
     private func startBody(easierToday: Bool, retainingLegacyDraftPolicy: Bool = false) async throws {
-        try requireReady()
+        try await requireReady()
         let startedWithLegacyDraft = retainingLegacyDraftPolicy || (snapshot.draft != nil && snapshot.draft?.startedAtMilliseconds == nil)
         if let existing = snapshot.draft {
             if (existing.sessionMode == .easier) == easierToday { try await refreshWorkingAdmissionBody(); return }
@@ -194,7 +201,10 @@ import TrainingCore
         let flexible = snapshot.state.schedulingPolicy == .flexibleV1
         guard flexible || snapshot.state.activePrescription.date <= today else { throw EngineError(code: "future_workout", field: "date") }
         guard snapshot.state.lastSessionDate == nil || today > snapshot.state.lastSessionDate! else { throw EngineError(code: "session_already_recorded", field: "date") }
-        let displayed = try prepareWorkout(state: snapshot.state, rules: RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash), easierToday: easierToday)
+        let state = snapshot.state
+        let displayed = try await Task.detached(priority: .userInitiated) {
+            try prepareWorkout(state: state, rules: RulesetCatalog.resolve(version: state.rulesetVersion, hash: state.rulesetHash), easierToday: easierToday)
+        }.value
         let logs = displayed.exercises.map {
             ExerciseLog(movementID: $0.movementID, prescriptionID: displayed.id, status: .partial, actualLoad: nil,
                 actualSets: [], finalEffort: .unknown, problem: .none, baseMovementID: $0.baseMovementID, modificationsSnapshot: $0.modificationsSnapshot,
@@ -229,9 +239,9 @@ import TrainingCore
         try await operations.perform { _ in try await confirmLoadBody(movementID: movementID, load: load) }
     }
     private func confirmLoadBody(movementID: String, load: Load) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
-        let movement = try admittedMovement(for: row)
+        let movement = try await admittedMovement(for: row)
         guard movement.loadingMode == .externalLoad, movement.availableLoads.contains(load) else { throw EngineError(code: "invalid_load", field: "load") }
         guard draft.logs[i].actualSets.isEmpty else {
             if draft.logs[i].actualLoad == load { return }
@@ -264,7 +274,7 @@ import TrainingCore
         try await operations.perform { _ in try await skipSetBody(movementID: movementID, index: setIndex) }
     }
     private func skipSetBody(movementID: String, index setIndex: Int) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
         guard [3, 4].contains(snapshot.state.schemaVersion), row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
         if draft.logs[i].skippedSetIndices?.contains(setIndex) == true { return }
@@ -278,7 +288,7 @@ import TrainingCore
         try await operations.perform { _ in try await recordMixedLoadsBody(movementID: movementID) }
     }
     private func recordMixedLoadsBody(movementID: String) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         guard [3, 4].contains(snapshot.state.schemaVersion) else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
         if draft.logs[i].mixedLoads == true { return }
         guard !handled(movementID), draft.logs[i].problem == .none, draft.displayed.exercises[i].kind != .paused else { throw EngineError(code: "movement_stopped", field: "load") }
@@ -297,13 +307,13 @@ import TrainingCore
         try await operations.perform { _ in try await recordSetBody(movementID: movementID, index: setIndex, actual: actual) }
     }
     private func recordSetBody(movementID: String, index setIndex: Int, actual: ActualSet) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         var indexedActual = actual
         if [3, 4].contains(snapshot.state.schemaVersion) {
             guard actual.setIndex == nil || actual.setIndex == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
             indexedActual.setIndex = setIndex
         }
-        let row = draft.displayed.exercises[i]; let movement = try admittedMovement(for: row)
+        let row = draft.displayed.exercises[i]; let movement = try await admittedMovement(for: row)
         guard row.kind != .paused, draft.logs[i].problem == .none, !handled(movementID) else { throw EngineError(code: "movement_stopped", field: "set") }
         if [3, 4].contains(snapshot.state.schemaVersion) {
             if draft.logs[i].actualSets.first(where: { $0.setIndex == setIndex }) == indexedActual { return }
@@ -327,7 +337,7 @@ import TrainingCore
         try await operations.perform { _ in try await recordEffortBody(movementID: movementID, effort: effort) }
     }
     private func recordEffortBody(movementID: String, effort: Effort) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         draft.logs[i].finalEffort = effort
         if [3, 4].contains(snapshot.state.schemaVersion) { draft.logs[i].effortScope = .allWorkingSets }
         try await save(draft)
@@ -337,17 +347,17 @@ import TrainingCore
     }
     private func recordProblemBody(movementID: String, problem: Problem, pendingActual: ActualSet? = nil) async throws {
         guard problem != .none else { throw EngineError(code: "problem_cannot_clear", field: "problem") }
-        var draft = try editableDraft(allowDateChoice: true); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(allowDateChoice: true); let i = try index(movementID, draft: draft)
         guard draft.logs[i].problem == .none || draft.logs[i].problem == problem else { throw EngineError(code: "problem_cannot_change", field: "problem") }
-        if draft.logs[i].problem == .none { try appendPending(pendingActual, at: i, to: &draft) }
+        if draft.logs[i].problem == .none { try await appendPending(pendingActual, at: i, to: &draft) }
         draft.logs[i].problem = problem; draft.logs[i].status = .stopped; draft.workingSetsStarted = true
         acknowledge(movementID, draft: &draft)
         try await save(draft)
     }
-    private func appendPending(_ actual: ActualSet?, at index: Int, to draft: inout WorkoutDraft) throws {
+    private func appendPending(_ actual: ActualSet?, at index: Int, to draft: inout WorkoutDraft) async throws {
         guard let actual else { return }
         let row = draft.displayed.exercises[index]
-        let metadata = try admittedMovement(for: row)
+        let metadata = try await admittedMovement(for: row)
         guard !handled(row.movementID), row.kind != .paused, let slot = nextSetIndex(log: draft.logs[index], row: row),
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
               metadata.repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil) else {
@@ -369,13 +379,13 @@ import TrainingCore
         try await operations.perform { _ in try await recordStatusBody(movementID: movementID, status: status, pendingActual: pendingActual) }
     }
     private func recordStatusBody(movementID: String, status: LogStatus, pendingActual: ActualSet? = nil) async throws {
-        var draft = try editableDraft(); let i = try index(movementID, draft: draft)
+        var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
         guard !handled(movementID) || status == draft.logs[i].status else { throw EngineError(code: "movement_stopped", field: "status") }
         if status == .completed, let pendingActual, let slot = nextSetIndex(log: draft.logs[i], row: row) {
             try requireMissReason(pendingActual, row: row, index: slot)
         }
-        try appendPending(pendingActual, at: i, to: &draft)
+        try await appendPending(pendingActual, at: i, to: &draft)
         let log = draft.logs[i]
         if log.problem != .none && status != .stopped { throw EngineError(code: "movement_stopped", field: "status") }
         if status == .completed, !validCompletion(log, row: row) { throw EngineError(code: "incomplete_sets", field: "status") }
@@ -424,7 +434,7 @@ import TrainingCore
         try await operations.perform { _ in try await recoverRejectedCompletionBody() }
     }
     private func recoverRejectedCompletionBody() async throws {
-        try requireReady()
+        try await requireReady()
         guard let repair = rejectedRepair, let (event, _, revision) = submitted else { throw EngineError(code: "recovery_unavailable", field: "draft") }
         let current = try await repository.snapshot(programID: programID)
         guard current.health == .ready, current.state.revision == revision, current.draft == repair.original,
@@ -438,7 +448,7 @@ import TrainingCore
         try await operations.perform { _ in try await changeSetupBody(change) }
     }
     private func changeSetupBody(_ change: VariantChange) async throws {
-        try requireReady()
+        try await requireReady()
         guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "setup") }
         // Setup invalidation and replacement remain within the retained draft's policy lifetime.
         let startedWithLegacyDraft = snapshot.draft != nil && snapshot.draft?.startedAtMilliseconds == nil
@@ -449,7 +459,7 @@ import TrainingCore
     }
     func reviewStrengthHandling(variantID: String, choice: StrengthHandlingChoice) async throws {
         try await operations.perform { _ in
-            try requireReady()
+            try await requireReady()
             guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "handling") }
             let mode = snapshot.draft?.sessionMode
             let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
@@ -460,7 +470,7 @@ import TrainingCore
     }
     func selectBridgeLoadingMode(variantID: String, mode: LoadingMode) async throws {
         try await operations.perform { _ in
-            try requireReady()
+            try await requireReady()
             guard canChangePreparation, snapshot.state.schemaVersion == 4,
                   snapshot.state.config.profileID == "starter-glute-v1",
                   let variant = snapshot.state.config.variants?[variantID], variant.baseMovementID == "db_floor_glute_bridge",
@@ -488,14 +498,14 @@ import TrainingCore
         try await operations.perform { _ in try await changeProgramBody(change) }
     }
     private func changeProgramBody(_ change: ConfigurationChange) async throws {
-        try requireReady()
+        try await requireReady()
         guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "settings") }
         let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
         snapshot = try await repository.applyConfiguration(programID: programID, expectedRevision: snapshot.state.revision, change: change, next: slot)
     }
     func changeStarterProgram(choice: StarterProgramChoice, goal: Goal) async throws {
         try await operations.perform { _ in
-            try requireReady()
+            try await requireReady()
             guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "settings") }
             let config = try selectStarterProgram(choice: choice, goal: goal, programID: programID)
             let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
@@ -517,7 +527,7 @@ import TrainingCore
         return try await restoreBackupBody(document)
     }
     private func restoreBackupBody(_ document: BackupDocument) async throws -> ImportReceipt {
-        try requireReady()
+        try await requireReady()
         guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "backup") }
         let receipt = try await repository.importBackup(document)
         #if DEBUG
@@ -536,9 +546,9 @@ import TrainingCore
         return try await task.value
     }
     private func finishBody() async throws -> FinalizationReceipt {
-        try requireReady()
+        try await requireReady()
         if submitted == nil {
-            let draft = try editableDraft()
+            let draft = try await editableDraft()
             guard Set(draft.acknowledgedMovementIDs ?? []) == Set(draft.displayed.exercises.map(\.movementID)) else { throw EngineError(code: "incomplete_workout", field: "logs") }
             var event = CompletedWorkout(eventID: draft.id.uuidString.lowercased(), date: draft.date, slotID: draft.displayed.slotID,
                 prescriptionID: draft.displayed.id, plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode, exercises: draft.logs)

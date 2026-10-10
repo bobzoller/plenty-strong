@@ -291,3 +291,33 @@ extension WorkoutFlowTests {
         XCTAssertTrue(resumed.staticTexts["movement.partial"].exists)
     }
 }
+
+
+extension WorkoutFlowTests {
+    @MainActor func testProgramAndStartShowBusyFeedbackWhileSaving() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-reset-local-store", "-ui-slow-save", "-cloud-disabled", "-products-unavailable"]
+        app.launch()
+        app.selectInitialUpperProgram(confirmSelection: false)
+        app.buttons["onboarding.confirm"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["onboarding.busy"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["onboarding.confirm"].isEnabled)
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
+        app.tapReadyWorkoutStart(waitForWorkout: false)
+        XCTAssertTrue(app.descendants(matching: .any)["today.busy"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["today.start"].isEnabled)
+        XCTAssertTrue(app.staticTexts["workout.session-mode"].waitForExistence(timeout: 15))
+    }
+    @MainActor func testConfirmPrescribedLoadShowsBusyFeedbackWhileSaving() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-ui-slow-save", "-cloud-disabled", "-products-unavailable"]
+        app.launch()
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 30))
+        app.tapReadyWorkoutStart()
+        app.tapWorkoutControl("load.confirm-prescribed")
+        XCTAssertTrue(app.descendants(matching: .any)["workout.busy"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["load.confirm-prescribed"].isEnabled)
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["load.confirm-prescribed"])
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 15), .completed)
+    }
+}

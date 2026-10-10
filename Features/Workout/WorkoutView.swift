@@ -104,6 +104,7 @@ struct WorkoutView: View {
                         VStack(alignment: .leading) { stopButtons(row) }
                     }.disabled(model.busy || model.log(for: row.movementID)?.problem != Problem.none)
                 }
+                if model.busy { ProgressView("Saving workout…").accessibilityIdentifier("workout.busy") }
                 if let error = model.errorText { Text(error).foregroundStyle(.red).accessibilityIdentifier("save.error") }
             }
             .padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)

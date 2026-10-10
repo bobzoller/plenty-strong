@@ -174,6 +174,15 @@ extension XCUIApplication {
         XCTAssertTrue(footer.isEnabled, file: file, line: line)
         if confirmSelection { footer.tap() }
     }
+    @MainActor func tapReadyWorkoutStart(waitForWorkout: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
+        let button = buttons["today.start"]
+        XCTAssertTrue(button.waitForExistence(timeout: 30), file: file, line: line)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: button)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Startup admission must release its lease before Start", file: file, line: line)
+        revealWorkoutControl(button, file: file, line: line)
+        button.tap()
+        if waitForWorkout { XCTAssertTrue(buttons["workout.close"].waitForExistence(timeout: 30), file: file, line: line) }
+    }
     @MainActor func revealWorkoutControl(_ element: XCUIElement, pinnedFooter: XCUIElement? = nil, scrollDistance: CGFloat = 320, file: StaticString = #filePath, line: UInt = #line) {
         func footer() -> XCUIElement? {
             if let pinnedFooter { return pinnedFooter }

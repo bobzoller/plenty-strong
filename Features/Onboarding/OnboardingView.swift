@@ -45,6 +45,7 @@ struct OnboardingView<Restore: View>: View {
     }
     private var confirmation: some View {
         VStack(spacing: 8) {
+            if saving || operationInProgress { ProgressView("Saving program…").accessibilityIdentifier("onboarding.busy") }
             Button(saving ? "Saving…" : "Confirm emphasis and goal") {
                 guard let emphasis, let selected, !saving, !operationInProgress else { return }
                 saving = true

@@ -9,7 +9,7 @@ final class ExactRepFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15))
         if extra.contains("-ui-large-text") { for _ in 0..<8 where !app.buttons["today.start"].exists { app.swipeUp() } }
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
-        reveal(app.buttons["today.start"], in: app); app.buttons["today.start"].tap(); XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 15))
+        app.tapReadyWorkoutStart()
         if app.buttons["workout.keep-original-date"].exists { reveal(app.buttons["workout.keep-original-date"], in: app); app.buttons["workout.keep-original-date"].tap() }
         return app
     }
@@ -39,9 +39,10 @@ final class ExactRepFlowTests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps"]
         app.launch()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
-        app.buttons["today.start"].tap()
+        app.tapReadyWorkoutStart()
         XCTAssertEqual(app.staticTexts["movement.last-reps"].label, "10 / 10 / 9 reps")
         XCTAssertEqual(app.staticTexts["movement.goal-reps"].label, "10 / 10 / 10 reps")
+        reveal(app.textFields["set.reps"], in: app)
         XCTAssertTrue(["", "Reps performed"].contains(app.textFields["set.reps"].value as? String ?? ""))
         screenshot(app, "Exact prior 10-10-9 and goal 10-10-10")
         app.buttons["workout.close"].tap()

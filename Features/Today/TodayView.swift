@@ -29,7 +29,7 @@ struct TodayView: View {
             if model.snapshot.health != .ready { Text("Local store requires attention: \(model.snapshot.health.rawValue)").accessibilityIdentifier("store.health") }
             if model.snapshot.health == .mixedPolicyConflict { Text("Recovery histories use different training policies. All original branches are retained and working admission is blocked. Export originals for review; choosing or dropping a branch is currently unsupported.").accessibilityIdentifier("store.mixed-policy-conflict") }
             if let error = model.errorText { Text(error).foregroundStyle(.red).accessibilityIdentifier("save.error") }
-            Button(model.snapshot.draft == nil ? "Start workout" : "Resume workout") {
+            Button(model.busy ? "Preparing workout…" : (model.snapshot.draft == nil ? "Start workout" : "Resume workout")) {
                 Task {
                     await model.run {
                         try await model.start(easierToday: model.snapshot.draft?.sessionMode == .easier)
@@ -38,6 +38,7 @@ struct TodayView: View {
                 }
             }.disabled(model.busy || model.snapshot.health != .ready)
                 .accessibilityIdentifier("today.start")
+            if model.busy { ProgressView("Preparing workout…").accessibilityIdentifier("today.busy") }
             Section("Prescription") {
                 ForEach((model.snapshot.draft?.displayed ?? model.snapshot.state.activePrescription).exercises, id: \.movementID) { row in
                     VStack(alignment: .leading) {

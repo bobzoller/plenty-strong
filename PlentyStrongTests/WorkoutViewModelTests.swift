@@ -1058,3 +1058,73 @@ extension WorkoutViewModelTests {
     }
     func release() { paused?.resume(); paused = nil }
 }
+
+
+extension WorkoutViewModelTests {
+    func testLegacyStartPolicyActivationCommitsOffMain() async throws {
+        let scenario = try await RepositoryTestHarness.make(goal: .size)
+        let initial = try await scenario.repository.snapshot(programID: scenario.programID)
+        let model = WorkoutViewModel(repository: scenario.repository, snapshot: initial,
+            timeZoneID: "Pacific/Honolulu", now: { ISO8601DateFormatter().date(from: "2026-10-06T20:00:00Z")! }, activatesExactPolicy: true)
+        let probe = ResponsiveSaveProbe()
+        await scenario.repository.observeCommits { probe.observe($0) }
+        try await model.start(easierToday: false)
+        XCTAssertEqual(model.snapshot.state.schemaVersion, 3)
+        XCTAssertFalse(probe.savedOnMain, "Legacy Start must move policy activation off the MainActor too")
+        XCTAssertGreaterThanOrEqual(probe.saveCount, 3)
+        await scenario.repository.observeCommits(nil)
+        await scenario.repository.close()
+    }
+    func testStartAndConfirmLoadKeepMainActorResponsiveDuringDurableSave() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let repository = try await TrainingRepository.openInBackground(at: root.appendingPathComponent("training.store"))
+        let composition = AppComposition(repository: repository)
+        composition.now = { Date(timeIntervalSince1970: 1791583200) }
+        composition.timeZoneID = "Pacific/Honolulu"
+        let probe = ResponsiveSaveProbe()
+        await repository.observeCommits { probe.observe($0) }
+        let confirmProgram = Task { @MainActor in await composition.confirm(choice: .upperBody, goal: .size) }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(composition.busy)
+        XCTAssertNil(composition.workout)
+        await confirmProgram.value
+        XCTAssertNil(composition.errorText)
+        let model = try XCTUnwrap(composition.workout)
+        let start = Task { @MainActor in await model.run { try await model.start(easierToday: false) } }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(model.busy, "The MainActor must run while the serial writer saves")
+        XCTAssertNil(model.snapshot.draft, "Adoption waits for durable completion")
+        await start.value
+        XCTAssertNil(model.errorText)
+        XCTAssertFalse(model.busy)
+        let row = try XCTUnwrap(model.snapshot.draft?.displayed.exercises.first { model.movement(for: $0).loadingMode == .externalLoad })
+        let load = try XCTUnwrap(model.movement(for: row).availableLoads.first)
+        let confirm = Task { @MainActor in await model.run { try await model.confirmLoad(movementID: row.movementID, load: load) } }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(model.busy)
+        XCTAssertNil(model.log(for: row.movementID)?.actualLoad)
+        await confirm.value
+        XCTAssertNil(model.errorText)
+        XCTAssertEqual(model.log(for: row.movementID)?.actualLoad, load)
+        XCTAssertFalse(probe.savedOnMain)
+        XCTAssertGreaterThanOrEqual(probe.saveCount, 2)
+        await repository.observeCommits(nil)
+        await repository.close()
+    }
+}
+
+private final class ResponsiveSaveProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var main = false
+    var savedOnMain: Bool { lock.withLock { main } }
+    var saveCount: Int { lock.withLock { count } }
+    func observe(_ stage: String) {
+        guard stage == "before_save" else { return }
+        lock.withLock { count += 1; main = main || Thread.isMainThread }
+        // A deterministic synthetic slow disk: verify rendering can run while the
+        // sole writer is inside its synchronous transaction, without timing the CPU.
+        Thread.sleep(forTimeInterval: 0.15)
+    }
+}
