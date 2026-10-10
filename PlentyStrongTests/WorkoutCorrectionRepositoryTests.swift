@@ -278,6 +278,82 @@ import TrainingCore
         }
     }
 
+    @Test func legacyOverflowCorrectionsRetainRawExtrasAcrossBackupFormats() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        var before = try await s.draft()
+        let extra = ActualSet(reps: 17)
+        before.logs[0].actualSets.append(extra)
+        _ = try await s.repository.saveDraft(before)
+        let original = try await s.repository.exportBackup()
+        var effective = before
+        // Correct an unrelated normal log first: adding any audit must retain
+        // admitted raw extras elsewhere in the same draft.
+        for index in [1, 0] {
+            var actual = effective.logs[index].actualSets[0]; actual.reps += 1
+            if actual.leftReps != nil { actual.leftReps = actual.reps; actual.rightReps = actual.reps }
+            effective = try #require(await s.repository.correctDraftSet(programID: s.programID,
+                expectedDraftHash: BackupService.hash(effective), operationID: UUID(),
+                movementID: effective.logs[index].movementID, setIndex: 0, replacement: actual).draft)
+            #expect(try BackupService.bytes(effective.logs[0].actualSets.last) == BackupService.bytes(extra))
+        }
+        await #expect(throws: EngineError.self) {
+            try await s.repository.correctDraftSet(programID: s.programID, expectedDraftHash: BackupService.hash(effective),
+                operationID: UUID(), movementID: effective.logs[0].movementID,
+                setIndex: effective.displayed.exercises[0].sets.count, replacement: ActualSet(reps: 18))
+        }
+        let v1 = try await s.repository.exportBackup()
+        var v2 = v1; v2.formatVersion = 2
+        v2.recovery = BackupService.graphManifest(try RecoveryVerifier().verify(BackupService.recoveryRecords(v1)), originals: [], quarantines: [], resolved: [])
+        let sourceReopened = try await s.reopened()
+        #expect(try BackupService.bytes(await sourceReopened.snapshot(programID: s.programID).draft) == BackupService.bytes(effective))
+        await sourceReopened.close()
+        for document in [v1, v2] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("training.store")
+            let destination = try TrainingRepository.open(at: url)
+            _ = try await destination.importBackup(document); await destination.close()
+            let reopened = try TrainingRepository.open(at: url)
+            let saved = try await reopened.snapshot(programID: s.programID)
+            #expect(try BackupService.bytes(saved.draft) == BackupService.bytes(effective))
+            #expect(try await reopened.exportBackup().journal == original.journal)
+            #expect(try ObservationAuditValidator.originalLogs(effective: effective.logs, audit: effective.observationAudit,
+                prescription: effective.displayed, config: saved.state.config, schemaVersion: 2) == before.logs)
+            await reopened.close()
+        }
+    }
+
+    @Test func nilFlowDemotedCompletionCannotResumeWorkingButDefaultPartialCan() async throws {
+        for declaredCompleted in [true, false] {
+            let s = try await RepositoryTestHarness.make(goal: .size)
+            var before = try await s.draft()
+            before.logs[0].actualSets = [ActualSet(reps: 10)]
+            before.logs[0].status = declaredCompleted ? .completed : .partial
+            #expect(before.flow == nil && before.acknowledgedMovementIDs == nil)
+            _ = try await s.repository.saveDraft(before)
+            let after = try #require(await s.repository.correctDraftSet(programID: s.programID,
+                expectedDraftHash: BackupService.hash(before), operationID: UUID(), movementID: before.logs[0].movementID,
+                setIndex: 0, replacement: ActualSet(reps: 0)).draft)
+            let id = after.logs[0].movementID
+            #expect(after.flow == nil && after.acknowledgedMovementIDs == nil)
+            #expect(try WorkoutFlowResolver.reconciled(after).forward == (declaredCompleted ? .summary(movementID: id) : .set(movementID: id, index: 1)))
+            for step in [WorkoutStep.set(movementID: id, index: 1),
+                .rest(sourceMovementID: id, sourceSetIndex: 0, destination: .set(movementID: id, index: 1))] {
+                var cursor = after; cursor.flow = WorkoutFlow(forward: step, reviewedSummaryMovementIDs: [])
+                cursor.restDeadline = Date(timeIntervalSince1970: 1791662520)
+                if declaredCompleted {
+                    await #expect(throws: EngineError.self) { try await s.repository.saveDraft(cursor) }
+                    #expect(try BackupService.bytes(await s.repository.snapshot(programID: s.programID).draft) == BackupService.bytes(after))
+                } else {
+                    _ = try await s.repository.saveDraft(cursor)
+                    let saved = try #require(await s.repository.snapshot(programID: s.programID).draft)
+                    #expect(saved.logs == after.logs && saved.acknowledgedMovementIDs == nil)
+                }
+            }
+            await s.repository.close()
+        }
+    }
+
     @Test func ordinarySaveAndCorrectionBindRawUnicodeMovementIdentity() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

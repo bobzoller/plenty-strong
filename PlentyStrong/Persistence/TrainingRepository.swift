@@ -594,7 +594,7 @@ import TrainingCore
             draft.logs[logIndex].actualSets[position] = actual
             // A correction can demote a claimed completion, never promote a
             // partial or stopped decision, remove acknowledgement, or reopen work.
-            if log.status == .completed && !correctionCompletionIsValid(draft.logs[logIndex], row: row,
+            if log.status == .completed && !qualifiesCompletedExercise(draft.logs[logIndex], prescription: row,
                 movement: movement, schemaVersion: current.state.schemaVersion) {
                 draft.logs[logIndex].status = .partial
             }
@@ -612,16 +612,6 @@ import TrainingCore
             current.draft = draft
             return current
         }
-    }
-    private func correctionCompletionIsValid(_ log: ExerciseLog, row: ExercisePrescription,
-                                              movement: Movement, schemaVersion: Int) -> Bool {
-        let indexedComplete = schemaVersion < 3 || (log.skippedSetIndices == [] && log.mixedLoads == false &&
-            Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
-        return indexedComplete && !row.sets.isEmpty && log.problem == .none && log.actualSets.count == row.sets.count &&
-            log.actualSets.allSatisfy { set in
-                set.reps > 0 && (movement.repCounting != .perSide ||
-                    (set.leftReps != nil && set.leftReps == set.rightReps && set.reps == set.leftReps))
-            } && (movement.loadingMode != .externalLoad || log.actualLoad != nil)
     }
     func discardDraft(id: UUID) throws {
         try transaction {

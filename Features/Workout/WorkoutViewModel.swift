@@ -402,14 +402,7 @@ import TrainingCore
     }
     private func validCompletion(_ log: ExerciseLog, row: ExercisePrescription) -> Bool {
         guard let metadata = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) else { return false }
-        let indexedComplete = ![3, 4].contains(snapshot.state.schemaVersion) ||
-            (log.skippedSetIndices == [] && log.mixedLoads == false &&
-             Set(log.actualSets.compactMap(\.setIndex)) == Set(row.sets.indices))
-        return indexedComplete && row.kind != .paused && !row.sets.isEmpty && log.problem == .none &&
-            log.actualSets.count == row.sets.count && log.actualSets.allSatisfy { set in
-                set.reps > 0 && (metadata.repCounting != .perSide ||
-                    (set.leftReps != nil && set.leftReps == set.rightReps && set.reps == set.leftReps))
-            } && (metadata.loadingMode != .externalLoad || log.actualLoad != nil)
+        return qualifiesCompletedExercise(log, prescription: row, movement: metadata, schemaVersion: snapshot.state.schemaVersion)
     }
     var canRecoverRejectedCompletion: Bool { rejectedRepair != nil }
     var recoveryMovementNames: [String] {

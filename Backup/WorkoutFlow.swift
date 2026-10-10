@@ -41,7 +41,7 @@ enum WorkoutFlowResolver {
         }
         let occupied = occupiedIndices(log)
         let step: WorkoutStep
-        if log.problem != .none || log.status != .partial || (!occupied.isEmpty && nextIndex(log, row: row) == nil) {
+        if log.problem != .none || log.status != .partial || hasDemotedCompletion(log, draft: draft) || (!occupied.isEmpty && nextIndex(log, row: row) == nil) {
             step = .summary(movementID: row.movementID)
         } else if occupied.isEmpty {
             step = .introduction(movementID: row.movementID)
@@ -87,7 +87,7 @@ enum WorkoutFlowResolver {
             case let .set(id, index):
                 let (row, log) = try binding(id, draft: draft)
                 guard id == firstUnhandled, row.kind != .paused, row.kind != .setupReview,
-                      log.problem == .none, log.status == .partial,
+                      log.problem == .none, log.status == .partial, !hasDemotedCompletion(log, draft: draft),
                       nextIndex(log, row: row) == index else { throw invalid("set") }
             case let .summary(id):
                 let (row, log) = try binding(id, draft: draft)
@@ -108,7 +108,7 @@ enum WorkoutFlowResolver {
                 switch destination {
                 case let .set(id, index):
                     guard id == source, source == firstUnhandled, log.status == .partial,
-                          nextIndex(log, row: row) == index, index > sourceIndex else { throw invalid("rest_destination") }
+                          !hasDemotedCompletion(log, draft: draft), nextIndex(log, row: row) == index, index > sourceIndex else { throw invalid("rest_destination") }
                 case let .introduction(id):
                     let (destinationRow, destinationLog) = try binding(id, draft: draft)
                     // Corrections can invalidate source review while retaining this cursor.

@@ -80,7 +80,10 @@ public enum ObservationAuditValidator {
             if schemaVersion >= 3 {
                 try validateIndexedExactLog(log, prescription: row)
             } else {
-                guard log.actualSets.count <= row.sets.count,
+                // Legacy unindexed observations may retain raw overflow. An audit
+                // neither removes those extras nor makes them issued correction keys.
+                guard (log.actualSets.count <= row.sets.count ||
+                       (log.actualSets.allSatisfy({ $0.setIndex == nil }) && (log.skippedSetIndices ?? []).isEmpty)),
                       log.status != .skipped || log.actualSets.isEmpty,
                       log.actualSets.allSatisfy({ $0.reps >= 0 && ($0.leftReps ?? 0) >= 0 && ($0.rightReps ?? 0) >= 0 }) else {
                     throw invalid("actualSets")
