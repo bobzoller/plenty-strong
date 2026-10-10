@@ -245,4 +245,49 @@ import TrainingCore
         await f.repository.close()
     }
 
+    private func invalidateEmptyDraft(_ f: GuidedWorkoutFixture, mutation: String) async throws -> StoreSnapshot {
+        let state = f.model.snapshot.state
+        let next = WorkoutSlot(date: state.activePrescription.date, slotID: state.activePrescription.slotID)
+        if mutation == "configuration" {
+            return try await f.repository.applyConfiguration(programID: f.model.programID, expectedRevision: state.revision,
+                change: .goal(.maintenance), next: next, invalidateEmptyDraft: true)
+        }
+        let base = try #require(state.activePrescription.exercises[0].baseMovementID)
+        return try await f.repository.applyVariantChange(programID: f.model.programID, expectedRevision: state.revision,
+            change: .create(baseMovementID: base, variantID: "synthetic-finish-invalidation", modifications: "Synthetic grip"),
+            next: next, invalidateEmptyDraft: true)
+    }
+    @Test(arguments: ["configuration", "variant"])
+    func invalidationCannotClearEmptyFrozenFinish(mutation: String) async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let ready = try await ready(f), frozen = try await freeze(f, draft: ready)
+        #expect(!frozen.hasObservations && frozen.pendingFinish != nil)
+        let before = try await f.repository.snapshot(programID: f.model.programID)
+        let backup = try await f.repository.exportBackup(), counts = try await f.repository.counts()
+        await #expect(throws: EngineError.self) { try await invalidateEmptyDraft(f, mutation: mutation) }
+        let after = try await f.repository.snapshot(programID: f.model.programID)
+        let retained = try await f.repository.exportBackup()
+        #expect(try BackupService.bytes(after.draft) == BackupService.bytes(before.draft))
+        #expect(retained.journal == backup.journal && retained.heads == backup.heads)
+        #expect(after.state.revision == before.state.revision)
+        #expect(try BackupService.bytes(retained) == BackupService.bytes(backup))
+        #expect(try await f.repository.counts() == counts)
+        await f.repository.close()
+    }
+    @Test(arguments: ["configuration", "variant"])
+    func editableEmptyDraftStillAllowsExplicitInvalidation(mutation: String) async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let draft = try #require(f.model.snapshot.draft)
+        #expect(!draft.hasObservations && draft.pendingFinish == nil)
+        let before = try await f.repository.exportBackup()
+        let changed = try await invalidateEmptyDraft(f, mutation: mutation)
+        #expect(changed.draft == nil && changed.state.revision == draft.expectedRevision + 1)
+        let after = try await f.repository.exportBackup()
+        #expect(before.journal.allSatisfy { after.journal.contains($0) })
+        #expect(after.journal.count == before.journal.count + 1)
+        if mutation == "configuration" { #expect(changed.state.config.goal == .maintenance) }
+        else { #expect(changed.state.config.variants?["synthetic-finish-invalidation"]?.modifications == "Synthetic grip") }
+        await f.repository.close()
+    }
+
 }

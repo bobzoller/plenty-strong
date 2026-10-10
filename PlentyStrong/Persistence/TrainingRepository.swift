@@ -454,7 +454,7 @@ import TrainingCore
             let result = try BackupService.transition(state: current.state, command: command, rules: rules)
             guard result.state.revision != current.state.revision else { return current }
             if let draft = current.draft {
-                guard !draft.hasObservations else { throw EngineError(code: "working_draft_locked", field: "draft") }
+                guard draft.pendingFinish == nil, !draft.hasObservations else { throw EngineError(code: "working_draft_locked", field: "draft") }
                 guard invalidateEmptyDraft else { throw EngineError(code: "draft_requires_explicit_invalidation", field: "draft") }
             }
             let accepted = try envelope(programID: current.state.config.programID, eventID: UUID().uuidString.lowercased(),
