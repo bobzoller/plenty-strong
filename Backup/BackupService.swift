@@ -91,15 +91,24 @@ enum BackupService {
     struct Replay {
         var histories: [String: [JournalEnvelope]]
         var heads: [String: JournalEnvelope]
+        var recoveryBatch: VerifiedCloudBatch? = nil
+        var rulesByHash: [String: Ruleset] = [:]
     }
     static func validate(_ document: BackupDocument) throws -> Replay {
         if document.formatVersion == 2 { return try validateGraph(document) }
         guard document.formatVersion == 1, document.recovery == nil else { throw EngineError(code: "unsupported_version", field: "formatVersion") }
         guard !document.datasetID.isEmpty else { throw invalid("dataset") }
         try [document.journal, document.rules, document.profiles, document.drafts].forEach(validateObjects)
+        // Admit each frozen archive once for this immutable document. Every event
+        // still replays with its referenced policy; nothing survives this invocation.
+        var admittedRules: [String: Ruleset] = [:]
         for archive in document.rules {
             guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") }
-            _ = try rules([archive], hash: archive.id)
+            admittedRules[archive.id] = try rules([archive], hash: archive.id)
+        }
+        func admittedRule(_ hash: String) throws -> Ruleset {
+            guard let rule = admittedRules[hash] else { throw invalid("missing_rules") }
+            return rule
         }
         for archive in document.profiles {
             guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") }
@@ -122,7 +131,7 @@ enum BackupService {
                   envelope.eventHash == (try eventHash(envelope.command)),
                   document.profiles.contains(where: { $0.id == envelope.profileHash }),
                   document.profiles.contains(where: { $0.id == envelope.sourceProfileHash }) else { throw invalid("envelope_hashes") }
-            let rule = try rules(document.rules, hash: envelope.rulesetHash)
+            let rule = try admittedRule(envelope.rulesetHash)
             let config = envelope.returnedState.config
             guard envelope.rulesetVersion == rule.version, envelope.profileID == config.profileID,
                   envelope.profileHash == config.profileHash, envelope.sourceProfileID == config.sourceProfileID,
@@ -141,7 +150,7 @@ enum BackupService {
                       envelope.inputStateHash == (try hash(parent.returnedState)) else { throw invalid("parent") }
                 if case let .activatePolicy(source, destination, _, _) = envelope.command {
                     guard source == parent.rulesetHash, destination == envelope.rulesetHash else { throw invalid("activation_rules") }
-                    _ = try rules(document.rules, hash: source)
+                    _ = try admittedRule(source)
                 }
                 replayed = try transition(state: parent.returnedState, command: envelope.command, rules: rule, legacyHistory: histories[envelope.programID] ?? [], archivedRules: document.rules, archivedProfiles: document.profiles)
                 guard replayed.state.revision == parent.returnedState.revision + 1 else { throw invalid("revision") }
@@ -161,9 +170,9 @@ enum BackupService {
             guard item.id == draft.id.uuidString.lowercased(), try bytes(draft) == item.bytes,
                   draftPrograms.insert(draft.programID).inserted,
                   let head = heads[draft.programID] else { throw invalid("draft") }
-            try validateDraft(draft, state: head.returnedState, rules: rules(document.rules, hash: head.rulesetHash))
+            try validateDraft(draft, state: head.returnedState, rules: admittedRule(head.rulesetHash))
         }
-        return Replay(histories: histories, heads: heads)
+        return Replay(histories: histories, heads: heads, rulesByHash: admittedRules)
     }
     static func eventHash(_ command: JournalCommand) throws -> String {
         if case let .workout(event, _) = command { return try hash(event) }
@@ -281,16 +290,31 @@ extension BackupService {
             quarantines: quarantines, resolvedQuarantineKeys: resolved.sorted())
     }
     static func validateGraph(_ document: BackupDocument) throws -> Replay {
+        try validateGraph(document, capturedBatch: nil)
+    }
+    /// The repository alone uses this for the exact immutable capture from which
+    /// it assembled the manifest. Untrusted import/restore use validate instead.
+    static func validateCapturedGraph(_ document: BackupDocument, batch: VerifiedCloudBatch) throws -> Replay {
+        try validateGraph(document, capturedBatch: batch)
+    }
+    private static func validateGraph(_ document: BackupDocument, capturedBatch: VerifiedCloudBatch?) throws -> Replay {
         guard let graph = document.recovery, graph.version == 1 else { throw invalid("graph_version") }
         try [document.journal, document.rules, document.profiles, document.drafts].forEach(validateObjects)
+        // Admit each frozen archive once for this immutable document. Every event
+        // still replays with its referenced policy; nothing survives this invocation.
+        var admittedRules: [String: Ruleset] = [:]
         for archive in document.rules {
             guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") }
-            _ = try rules([archive], hash: archive.id)
+            admittedRules[archive.id] = try rules([archive], hash: archive.id)
+        }
+        func admittedRule(_ hash: String) throws -> Ruleset {
+            guard let rule = admittedRules[hash] else { throw invalid("missing_rules") }
+            return rule
         }
         for archive in document.profiles { guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") } }
         guard Set(graph.quarantines.map(\.id)).count == graph.quarantines.count,
               graph.quarantines.allSatisfy({ hash($0.bytes) == $0.id }) else { throw invalid("portable_quarantine") }
-        let batch = try RecoveryVerifier().verify(recoveryRecords(document))
+        let batch = try capturedBatch ?? RecoveryVerifier().verify(recoveryRecords(document))
         let reviewed = Set(batch.envelopes.values.flatMap { envelope -> [String] in
             if case let .resolveConflict(selection, _, _, _) = envelope.command { return selection.reviewedQuarantineChecksums }; return []
         })
@@ -315,8 +339,8 @@ extension BackupService {
             let draft = try JSONDecoder().decode(WorkoutDraft.self, from: item.bytes)
             guard item.id == draft.id.uuidString.lowercased(), programs.insert(draft.programID).inserted,
                   let head = heads[draft.programID] else { throw invalid("draft") }
-            try validateDraft(draft, state: head.returnedState, rules: rules(document.rules, hash: head.rulesetHash))
+            try validateDraft(draft, state: head.returnedState, rules: admittedRule(head.rulesetHash))
         }
-        return Replay(histories: histories, heads: heads)
+        return Replay(histories: histories, heads: heads, recoveryBatch: batch, rulesByHash: admittedRules)
     }
 }

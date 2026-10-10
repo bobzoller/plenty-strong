@@ -236,3 +236,75 @@ extension RepositoryTests {
         #expect(try await reopened.exportBackup().drafts == backup.drafts)
     }
 }
+
+extension RepositoryTests {
+    @Test func draftReceiptIsDurableAndFailedSaveRetainsPreviousProjection() async throws {
+        let scenario = try await RepositoryTestHarness.make(goal: .size)
+        let draft = try await scenario.draft(empty: true)
+        let receipt = try await scenario.repository.saveDraft(draft)
+        #expect(receipt.draft == draft)
+        #expect(receipt == (try await scenario.repository.snapshot(programID: scenario.programID)))
+        #expect(try await scenario.repository.snapshots() == [receipt])
+        var changed = draft
+        changed.logs[0].actualSets = [ActualSet(reps: 8)]
+        changed.workingSetsStarted = true
+        await scenario.repository.failNextSave()
+        await #expect(throws: (any Error).self) { try await scenario.repository.saveDraft(changed) }
+        #expect(receipt == (try await scenario.repository.snapshot(programID: scenario.programID)))
+        let reopened = try await scenario.reopened()
+        #expect(receipt == (try await reopened.snapshot(programID: scenario.programID)))
+        await reopened.close()
+    }
+}
+
+
+extension RepositoryTests {
+    @MainActor @Test func opaqueArchivedRootContributesSafetyWithoutChangingItsBytes() async throws {
+        let scenario = try await RepositoryTestHarness.make(goal: .size)
+        let selected = try await scenario.repository.snapshot(programID: scenario.programID)
+        var document = try await scenario.repository.exportBackup()
+        let rules = try RulesetCatalog.fixedV1()
+        var config = try selectFixedProgram(goal: .size, programID: UUID())
+        config.programID = "synthetic-opaque-archived-root"
+        config.variants = [:]; config.activeVariantIDs = [:]
+        for movement in config.movements {
+            let id = try defaultVariantID(programID: config.programID, baseMovementID: movement.id)
+            config.variants![id] = MovementVariant(id: id, baseMovementID: movement.id, modifications: "")
+            config.activeVariantIDs![movement.id] = id
+        }
+        let slot = WorkoutSlot(date: scenario.firstEvent.date, slotID: config.weeklySlots[0].id)
+        let initialized = try initializeProgram(config: config, rules: rules, firstWorkout: slot)
+        func envelope(_ command: JournalCommand, parent: JournalEnvelope?, result: ConfigurationResult) throws -> JournalEnvelope {
+            var value = JournalEnvelope(schemaVersion: result.state.schemaVersion, datasetID: document.datasetID,
+                programID: config.programID, eventID: UUID().uuidString.lowercased(), eventHash: try BackupService.eventHash(command),
+                parentEnvelopeHash: parent?.envelopeHash, inputRevision: parent?.returnedState.revision ?? -1,
+                inputStateHash: try parent.map { try BackupService.hash($0.returnedState) },
+                rulesetVersion: rules.version, rulesetHash: rules.hash, profileID: config.profileID!, profileHash: config.profileHash!,
+                sourceProfileID: config.sourceProfileID!, sourceProfileHash: config.sourceProfileHash!, command: command,
+                returnedState: result.state, returnedPrescription: result.workout, decisions: result.decisions, envelopeHash: "")
+            value.envelopeHash = try BackupService.envelopeHash(value)
+            return value
+        }
+        let root = try envelope(.initialize(config: config, firstWorkout: slot), parent: nil,
+            result: ConfigurationResult(state: initialized.state, workout: initialized.workout, decisions: []))
+        let base = config.movements[0].id
+        let command = JournalCommand.reconfigure(change: .minimumRir(baseMovementID: base, value: 4), next: slot)
+        let changed = try BackupService.transition(state: initialized.state, command: command, rules: rules)
+        let head = try envelope(command, parent: root, result: changed)
+        let objects = try [root, head].map { try BackupService.object($0, id: $0.eventID) }
+        document.journal += objects
+        document.heads[config.programID] = head.envelopeHash
+        _ = try await scenario.repository.importBackup(document)
+        let admission = try await scenario.repository.workingAdmission(for: selected.state)
+        #expect(admission.roots.contains { $0.state.config.programID == config.programID })
+        let model = WorkoutViewModel(repository: scenario.repository, snapshot: selected, timeZoneID: "Pacific/Honolulu")
+        try await model.operations.perform { operation in
+            try await model.refreshWorkingAdmission(operation: operation)
+        }
+        let row = try #require(selected.state.activePrescription.exercises.first { $0.baseMovementID == base })
+        #expect(model.blockedWorkingMovementIDs.contains(row.movementID))
+        let exported = try await scenario.repository.exportBackup()
+        for object in objects { #expect(exported.journal.first { $0.id == object.id }?.bytes == object.bytes) }
+        await scenario.repository.close()
+    }
+}

@@ -149,8 +149,16 @@ import TrainingCore
                 }
                 #endif
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let repository = try TrainingRepository.open(at: directory.appendingPathComponent("training.store"))
+                let repository = try await TrainingRepository.openInBackground(at: directory.appendingPathComponent("training.store"))
                 self.repository = repository
+                #if DEBUG
+                if uiTesting, ProcessInfo.processInfo.arguments.contains("-ui-slow-save") {
+                    // Synthetic deterministic disk latency for visible busy-state UI tests.
+                    await repository.observeCommits { stage in
+                        if stage == "before_save" { Thread.sleep(forTimeInterval: 1) }
+                    }
+                }
+                #endif
                 let backup = try await repository.exportBackup()
                 preferencesURL = directory.appendingPathComponent("recovery-preferences.json")
                 if let url = preferencesURL, FileManager.default.fileExists(atPath: url.path) { preferences = (try? JSONDecoder().decode(CloudRecoveryPreferences.self, from: Data(contentsOf: url))) ?? .init() }
@@ -358,17 +366,19 @@ import TrainingCore
             try await operations.perform { operation in
                 #if DEBUG
                 let legacyRepairFixture = uiTesting && ProcessInfo.processInfo.arguments.contains("-ui-fixture-malformed-completion")
-                let config = try legacyRepairFixture ? selectFixedProgram(goal: goal, programID: UUID()) : selectStarterProgram(choice: choice, goal: goal, programID: UUID())
+                let config = try await Task.detached(priority: .userInitiated) {
+                    try legacyRepairFixture ? selectFixedProgram(goal: goal, programID: UUID()) : selectStarterProgram(choice: choice, goal: goal, programID: UUID())
+                }.value
                 #else
-                let config = try selectStarterProgram(choice: choice, goal: goal, programID: UUID())
+                let config = try await Task.detached(priority: .userInitiated) { try selectStarterProgram(choice: choice, goal: goal, programID: UUID()) }.value
                 #endif
                 try await requireSafeNewProgram(config, repository: repository)
                 let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
                 let first = try WorkoutScheduler.nextSlot(onOrAfter: today, config: config)
                 #if DEBUG
-                let initializationRules = try legacyRepairFixture ? RulesetCatalog.fixedV1() : RulesetCatalog.starter(choice)
+                let initializationRules = try await Task.detached(priority: .userInitiated) { try legacyRepairFixture ? RulesetCatalog.fixedV1() : RulesetCatalog.starter(choice) }.value
                 #else
-                let initializationRules = try RulesetCatalog.starter(choice)
+                let initializationRules = try await Task.detached(priority: .userInitiated) { try RulesetCatalog.starter(choice) }.value
                 #endif
                 let snapshot = try await repository.initialize(config: config, rules: initializationRules, firstWorkout: first)
                 #if DEBUG
@@ -692,6 +702,11 @@ extension AppComposition {
     // Historical restrictions that were actually cleared do not block creation.
     func requireSafeNewProgram(_ config: ProgramConfig, repository: TrainingRepository) async throws {
         guard workout?.hasAmbiguousFinish != true else { throw BackupUIError.retainedRestrictions }
+        try await Task.detached(priority: .userInitiated) {
+            try await Self.requireSafeNewProgramBody(config, repository: repository)
+        }.value
+    }
+    private nonisolated static func requireSafeNewProgramBody(_ config: ProgramConfig, repository: TrainingRepository) async throws {
         let document = try await repository.exportBackup()
         guard document.drafts.isEmpty else { throw BackupUIError.retainedRestrictions }
         let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))

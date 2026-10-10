@@ -22,6 +22,61 @@ import TrainingCore
         let lease = try StoreLease(url: url)
         return TrainingRepository(container: try TrainingMigrationPlan.open(at: url), lease: lease, archiveDirectory: archiveDirectory)
     }
+    /// DefaultSerialModelExecutor alone can execute synchronous work on the caller's
+    /// thread. Start heavy operations from an explicit detached caller; the model
+    /// executor still owns serialization, and transactions never suspend.
+    private nonisolated func offMain<T: Sendable>(_ operation: @escaping @Sendable (isolated TrainingRepository) throws -> T) async throws -> T {
+        try await Task.detached(priority: .userInitiated) { try await operation(self) }.value
+    }
+    static func openInBackground(at url: URL, archiveDirectory: URL? = nil) async throws -> TrainingRepository {
+        try await Task.detached(priority: .userInitiated) { try open(at: url, archiveDirectory: archiveDirectory) }.value
+    }
+    nonisolated func initialize(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot, datasetID: UUID? = nil) async throws -> StoreSnapshot {
+        try await offMain { try $0.initializeBody(config: config, rules: rules, firstWorkout: firstWorkout, datasetID: datasetID) }
+    }
+    nonisolated func exportBackup() async throws -> BackupDocument {
+        try await offMain { try $0.exportBackupBody() }
+    }
+    nonisolated func snapshot(programID: UUID) async throws -> StoreSnapshot {
+        try await offMain { try $0.snapshotBody(programID: programID) }
+    }
+    /// All roots are projected from one immutable admitted capture, including drafts
+    /// and graph health. Shared safety never depends on just the selected root.
+    nonisolated func snapshots() async throws -> [StoreSnapshot] {
+        try await offMain { repository in
+            let admitted = try repository.admittedBackup()
+            return try admitted.document.heads.keys.sorted().map { id in
+                try repository.projectSnapshot(programID: id, document: admitted.document, replay: admitted.replay)
+            }
+        }
+    }
+    nonisolated func workingAdmission(for state: ProgramState) async throws -> (roots: [StoreSnapshot], rules: Ruleset) {
+        try await offMain { repository in
+            let admitted = try repository.admittedBackup()
+            guard admitted.replay.heads[state.config.programID] != nil,
+                  let rules = admitted.replay.rulesByHash[state.rulesetHash], rules.version == state.rulesetVersion else { throw BackupService.invalid("state_rules") }
+            _ = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
+            let roots = try admitted.document.heads.keys.sorted().map { id in
+                try repository.projectSnapshot(programID: id, document: admitted.document, replay: admitted.replay)
+            }
+            return (roots, rules)
+        }
+    }
+    nonisolated func rules(for state: ProgramState) async throws -> Ruleset {
+        try await offMain { try $0.rulesBody(for: state) }
+    }
+    @discardableResult nonisolated func saveDraft(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) async throws -> StoreSnapshot {
+        try await offMain { try $0.saveDraftBody(draft, expectedExistingDraft: expectedExistingDraft) }
+    }
+    nonisolated func activateExactPolicy(programID: UUID, expectedRevision: Int, expectedHeadHash: String) async throws -> StoreSnapshot {
+        try await offMain { try $0.activateExactPolicyBody(programID: programID, expectedRevision: expectedRevision, expectedHeadHash: expectedHeadHash) }
+    }
+    nonisolated func activateFlexibleSchedule(programID: UUID, expectedRevision: Int) async throws -> StoreSnapshot {
+        try await offMain { try $0.activateFlexibleScheduleBody(programID: programID, expectedRevision: expectedRevision) }
+    }
+    nonisolated func prepareReturn(programID: UUID, expectedRevision: Int, asOf: LocalDate) async throws -> StoreSnapshot {
+        try await offMain { try $0.prepareReturnBody(programID: programID, expectedRevision: expectedRevision, asOf: asOf) }
+    }
     func close() { modelContext.rollback(); lease = nil }
     private func requireOpen() throws {
         guard lease != nil else { throw EngineError(code: "repository_closed", field: "store") }
@@ -176,7 +231,7 @@ import TrainingCore
         }
         modelContext.insert(pending)
     }
-    func initialize(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot, datasetID requestedDatasetID: UUID? = nil) throws -> StoreSnapshot {
+    private func initializeBody(config: ProgramConfig, rules: Ruleset, firstWorkout: WorkoutSlot, datasetID requestedDatasetID: UUID? = nil) throws -> StoreSnapshot {
         let programUUID: UUID = try transaction {
             guard (try? ProgramPolicy.resolve(schemaVersion: rules.contractVersion ?? 1, rules: rules))?.usesVariants == true, config.profileHash != nil, let programUUID = UUID(uuidString: config.programID) else { throw EngineError(code: "unsupported_version", field: "initialize") }
             guard config.programID == programUUID.uuidString.lowercased() else { throw BackupService.invalid("program_uuid_spelling") }
@@ -197,9 +252,10 @@ import TrainingCore
             try persist(envelope)
             return programUUID
         }
-        return try snapshot(programID: programUUID)
+        return try snapshotBody(programID: programUUID)
     }
-    private func rawBackup() throws -> BackupDocument {
+    private func rawBackup() throws -> BackupDocument { try capturedBackup().document }
+    private func capturedBackup() throws -> (document: BackupDocument, batch: VerifiedCloudBatch?) {
         let heads = try modelContext.fetch(FetchDescriptor<ProgramHeadRecord>())
         let datasets = Set(heads.map(\.datasetID))
         func object(_ id: String, _ data: Data) -> ArchivedObject { ArchivedObject(id: id, bytes: data, checksum: BackupService.hash(data)) }
@@ -210,7 +266,7 @@ import TrainingCore
             drafts: try modelContext.fetch(FetchDescriptor<DraftRecord>()).sorted { $0.id.uuidString < $1.id.uuidString }.map { object($0.id.uuidString.lowercased(), $0.bytes) })
         let recovery = try recoveryState()
         let quarantines = try modelContext.fetch(FetchDescriptor<QuarantineRecord>()).sorted { $0.id < $1.id }.map { PortableQuarantine(id: $0.id, bytes: $0.bytes, reason: $0.reason) }
-        if recovery.originals.isEmpty && quarantines.isEmpty && datasets.count <= 1 && recovery.graphRequired != true { return document }
+        if recovery.originals.isEmpty && quarantines.isEmpty && datasets.count <= 1 && recovery.graphRequired != true { return (document, nil) }
         let legacyOriginals = try quarantines.filter { $0.reason == "backup_branch_conflict" }.flatMap {
             try BackupService.recoveryRecords(JSONDecoder().decode(BackupDocument.self, from: $0.bytes))
         }
@@ -222,12 +278,13 @@ import TrainingCore
             document.formatVersion = 2
             document.recovery = BackupService.graphManifest(batch, originals: originals, quarantines: quarantines, resolved: recovery.resolvedQuarantineKeys)
         }
-        return document
+        return (document, document.formatVersion == 2 ? batch : nil)
     }
-    func exportBackup() throws -> BackupDocument {
+    private func admittedBackup() throws -> (document: BackupDocument, replay: BackupService.Replay) {
         try requireOpen()
-        let document = try rawBackup()
-        let replay = try BackupService.validate(document)
+        let captured = try capturedBackup()
+        let document = captured.document
+        let replay = try captured.batch.map { try BackupService.validateCapturedGraph(document, batch: $0) } ?? BackupService.validate(document)
         let heads = try modelContext.fetch(FetchDescriptor<ProgramHeadRecord>())
         guard heads.count == replay.heads.count else { throw BackupService.invalid("head_count") }
         for head in heads {
@@ -242,36 +299,43 @@ import TrainingCore
             guard record.contentHash == envelope.envelopeHash, record.programID == envelope.programID, record.revision == envelope.returnedState.revision,
                   (outbox.first(where: { $0.key == record.eventID }).map { $0.payloadHash == record.contentHash && $0.datasetID == envelope.datasetID } ?? true) else { throw BackupService.invalid("journal_projection") }
         }
-        return document
+        return (document, replay)
     }
-    func snapshot(programID: UUID) throws -> StoreSnapshot {
-        let document = try exportBackup()
-        let replay = try BackupService.validate(document)
-        let id = programID.uuidString.lowercased()
+    private func exportBackupBody() throws -> BackupDocument { try admittedBackup().document }
+    private func snapshotBody(programID: UUID) throws -> StoreSnapshot {
+        let admitted = try admittedBackup()
+        return try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
+    }
+    // Archived roots can retain opaque legacy IDs. Projection and shared safety
+    // use their exact IDs; only the selected training API requires a UUID.
+    private func projectSnapshot(programID id: String, document: BackupDocument, replay: BackupService.Replay) throws -> StoreSnapshot {
         guard let history = replay.histories[id], let head = replay.heads[id] else { throw EngineError(code: "program_not_found", field: "programID") }
         let draft = try document.drafts.map { try JSONDecoder().decode(WorkoutDraft.self, from: $0.bytes) }.first { $0.programID == id }
         let health: StoreHealth
         if document.formatVersion == 1 { health = .ready }
-        else { health = try recoveryHealth(programID: id, batch: RecoveryVerifier().verify(BackupService.recoveryRecords(document))) }
+        else {
+            guard let batch = replay.recoveryBatch else { throw BackupService.invalid("missing_recovery_admission") }
+            health = try recoveryHealth(programID: id, batch: batch)
+        }
         return StoreSnapshot(state: head.returnedState, draft: draft, history: history, decisions: history.flatMap(\.decisions), health: health)
     }
     /// Exact archive lookup; original drafts and repair commands use their own policy.
-    func rules(for state: ProgramState) throws -> Ruleset {
+    private func rulesBody(for state: ProgramState) throws -> Ruleset {
         try requireOpen()
         let rules = try rule(state.rulesetHash)
         guard state.rulesetVersion == rules.version else { throw BackupService.invalid("state_rules") }
         _ = try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules)
         return rules
     }
-    func activateExactPolicy(programID: UUID, expectedRevision: Int, expectedHeadHash: String) throws -> StoreSnapshot {
+    private func activateExactPolicyBody(programID: UUID, expectedRevision: Int, expectedHeadHash: String) throws -> StoreSnapshot {
         try transaction {
-            let current = try snapshot(programID: programID)
+            let current = try snapshotBody(programID: programID)
             guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
             let parent = try projectedEnvelope(current.state.config.programID)
             guard current.state.revision == expectedRevision else { throw EngineError(code: "stale_revision", field: "expectedRevision") }
             guard parent.envelopeHash == expectedHeadHash else { throw EngineError(code: "stale_head", field: "expectedHeadHash") }
             guard current.draft == nil else { throw EngineError(code: "policy_activation_draft_locked", field: "draft") }
-            let source = try rules(for: current.state)
+            let source = try rulesBody(for: current.state)
             let destination = try RulesetCatalog.exactV1()
             if current.state.schemaVersion == 3, source == destination { return }
             let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(rawBackup()))
@@ -289,14 +353,14 @@ import TrainingCore
             let accepted = try envelope(programID: current.state.config.programID, eventID: UUID().uuidString.lowercased(),
                 datasetID: parent.datasetID, command: command, parent: parent, result: result, rules: destination)
             try persist(accepted)
-            _ = try exportBackup()
+            _ = try exportBackupBody()
         }
-        return try snapshot(programID: programID)
+        return try snapshotBody(programID: programID)
     }
     func changeStarterProgram(programID: UUID, expectedRevision: Int, expectedHeadHash: String,
                               choice: StarterProgramChoice, goal: Goal, next: WorkoutSlot) throws -> StoreSnapshot {
         try transaction {
-            let current = try snapshot(programID: programID)
+            let current = try snapshotBody(programID: programID)
             guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
             let parent = try projectedEnvelope(current.state.config.programID)
             guard current.state.revision == expectedRevision else { throw EngineError(code: "stale_revision", field: "expectedRevision") }
@@ -316,13 +380,13 @@ import TrainingCore
             let accepted = try envelope(programID: current.state.config.programID, eventID: UUID().uuidString.lowercased(),
                 datasetID: parent.datasetID, command: command, parent: parent, result: result, rules: destination)
             try persist(accepted)
-            _ = try exportBackup()
+            _ = try exportBackupBody()
         }
-        return try snapshot(programID: programID)
+        return try snapshotBody(programID: programID)
     }
     func finalize(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
         let result: AdvanceResult = try transaction {
-            let current = try snapshot(programID: programID)
+            let current = try snapshotBody(programID: programID)
             let command = JournalCommand.workout(completedWorkout: event, next: next)
             let originals = current.history.filter { $0.eventID == event.eventID }
             if !originals.isEmpty {
@@ -355,16 +419,16 @@ import TrainingCore
             for draft in try modelContext.fetch(FetchDescriptor<DraftRecord>()) where draft.programID == accepted.programID { modelContext.delete(draft) }
             return .applied(nextState: result.state, nextWorkout: result.workout, decisions: result.decisions)
         }
-        return FinalizationReceipt(result: result, snapshot: try snapshot(programID: programID))
+        return FinalizationReceipt(result: result, snapshot: try snapshotBody(programID: programID))
     }
     private func apply(programID: UUID, expectedRevision: Int, command: JournalCommand, invalidateEmptyDraft: Bool) throws -> StoreSnapshot {
-        try transaction {
-            let current = try snapshot(programID: programID)
+        let unchanged: StoreSnapshot? = try transaction {
+            let current = try snapshotBody(programID: programID)
             guard current.health == .ready else { throw EngineError(code: "store_" + current.health.rawValue, field: "health") }
             guard expectedRevision == current.state.revision else { throw EngineError(code: "stale_revision", field: "expectedRevision") }
             let rules = try rule(current.state.rulesetHash)
             let result = try BackupService.transition(state: current.state, command: command, rules: rules)
-            guard result.state.revision != current.state.revision else { return }
+            guard result.state.revision != current.state.revision else { return current }
             if let draft = current.draft {
                 guard !draft.hasObservations else { throw EngineError(code: "working_draft_locked", field: "draft") }
                 guard invalidateEmptyDraft else { throw EngineError(code: "draft_requires_explicit_invalidation", field: "draft") }
@@ -373,8 +437,9 @@ import TrainingCore
                 datasetID: current.history[0].datasetID, command: command, parent: try projectedEnvelope(current.state.config.programID), result: result, rules: rules)
             try persist(accepted)
             for draft in try modelContext.fetch(FetchDescriptor<DraftRecord>()) where draft.programID == accepted.programID { modelContext.delete(draft) }
+            return nil
         }
-        return try snapshot(programID: programID)
+        return try unchanged ?? snapshotBody(programID: programID)
     }
     func applyConfiguration(programID: UUID, expectedRevision: Int, change: ConfigurationChange, next: WorkoutSlot, invalidateEmptyDraft: Bool = false) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .reconfigure(change: change, next: next), invalidateEmptyDraft: invalidateEmptyDraft)
@@ -385,17 +450,19 @@ import TrainingCore
     func reschedule(programID: UUID, expectedRevision: Int, slot: WorkoutSlot, invalidateEmptyDraft: Bool = false) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .reschedule(slot: slot), invalidateEmptyDraft: invalidateEmptyDraft)
     }
-    func activateFlexibleSchedule(programID: UUID, expectedRevision: Int) throws -> StoreSnapshot {
+    private func activateFlexibleScheduleBody(programID: UUID, expectedRevision: Int) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .activateFlexibleScheduling, invalidateEmptyDraft: false)
     }
-    func prepareReturn(programID: UUID, expectedRevision: Int, asOf: LocalDate) throws -> StoreSnapshot {
+    private func prepareReturnBody(programID: UUID, expectedRevision: Int, asOf: LocalDate) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .interruption(asOf: asOf), invalidateEmptyDraft: false)
     }
-    func saveDraft(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) throws {
+    private func saveDraftBody(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) throws -> StoreSnapshot {
         try transaction {
             guard let id = UUID(uuidString: draft.programID) else { throw BackupService.invalid("draft_program") }
-            let current = try snapshot(programID: id)
-            try BackupService.validateDraft(draft, state: current.state, rules: rule(current.state.rulesetHash))
+            let admitted = try admittedBackup()
+            var current = try projectSnapshot(programID: id.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
+            guard let rules = admitted.replay.rulesByHash[current.state.rulesetHash] else { throw BackupService.invalid("missing_rules") }
+            try BackupService.validateDraft(draft, state: current.state, rules: rules)
             if let expected = expectedExistingDraft {
                 // Explicit unaccepted-completion repair proof: canonical exact draft,
                 // unchanged revision and globally absent event, checked atomically.
@@ -448,6 +515,8 @@ import TrainingCore
                     record.bytes = try BackupService.bytes(draft)
                 } else { modelContext.insert(DraftRecord(id: draft.id, programID: draft.programID, bytes: try BackupService.bytes(draft))) }
             }
+            current.draft = draft
+            return current
         }
     }
     func discardDraft(id: UUID) throws {
@@ -459,7 +528,7 @@ import TrainingCore
         return try transaction {
             if document.formatVersion == 2 { return try importGraph(document) }
             let incoming = try BackupService.validate(document)
-            let original = try exportBackup()
+            let original = try exportBackupBody()
             let local = try BackupService.validate(original)
             let sameDataset = original.journal.isEmpty || original.datasetID == document.datasetID
             let localObjects = Dictionary(uniqueKeysWithValues: original.journal.map { ($0.id, $0) })
@@ -885,9 +954,9 @@ extension TrainingRepository {
             try saveRecoveryState(state)
             // Verify the assembled resolution and its exact portable sources
             // before save. Unrepresentable reviewed originals must roll back.
-            _ = try exportBackup()
+            _ = try exportBackupBody()
         }
-        return try snapshot(programID: programID)
+        return try snapshotBody(programID: programID)
     }
 }
 private extension Array {
@@ -960,7 +1029,7 @@ extension TrainingRepository {
         try saveRecoveryState(state)
         // Incoming validity does not imply validity of the assembled union.
         // Keep this check inside the writer transaction so failure rolls back.
-        _ = try exportBackup()
+        _ = try exportBackupBody()
         return ImportReceipt(accepted: accepted, identical: identical, conflicted: conflicted)
     }
 }
