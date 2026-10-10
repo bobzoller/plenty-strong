@@ -203,6 +203,11 @@ enum BackupService {
         case .activateFlexibleScheduling: return try activateFlexibleScheduling(state: state, rules: rules)
         case let .workout(event, next):
             guard rawVariantSnapshotsMatch(state: state, event: event) else { throw invalid("raw_observation_snapshot") }
+            if event.observationAudit != nil {
+                let displayed = try prepareWorkout(state: state, rules: rules, easierToday: event.sessionMode == .easier)
+                _ = try ObservationAuditValidator.originalLogs(effective: event.exercises, audit: event.observationAudit,
+                    prescription: displayed, config: state.config, schemaVersion: state.schemaVersion)
+            }
             switch advanceProgram(AdvanceInput(state: state, event: event, rules: rules, nextSlotID: next.slotID, nextWorkoutDate: next.date)) {
             case let .applied(state, workout, decisions): return ConfigurationResult(state: state, workout: workout, decisions: decisions)
             case let .rejected(_, errors): throw EngineError(code: errors.joined(separator: ","), field: "workout")

@@ -183,3 +183,50 @@ extension BackupTests {
         #expect(exact.history.last!.schemaVersion == 3)
     }
 }
+
+extension BackupTests {
+    @Test func correctionAuditBindsHashesAndReplaysBothBackupFormats() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        var event = s.firstEvent
+        let after = event.exercises[0].actualSets[0]
+        var before = after; before.reps = 7
+        if before.leftReps != nil { before.leftReps = 7; before.rightReps = 7 }
+        let correction = SetCorrection(operationID: UUID(), movementID: event.exercises[0].movementID,
+            setIndex: 0, before: before, after: after, beforeStatus: .completed,
+            afterStatus: .completed, outcomeAcknowledged: true)
+        let plainCommand = JournalCommand.workout(completedWorkout: event, next: s.next)
+        let plainHash = try BackupService.eventHash(plainCommand)
+        guard case .object(let fields) = try JSONDecoder().decode(CanonicalValue.self, from: BackupService.bytes(event)) else {
+            Issue.record("Expected event object"); return
+        }
+        #expect(fields["observationAudit"] == nil)
+        event.observationAudit = ObservationAudit(corrections: [correction])
+        let auditedCommand = JournalCommand.workout(completedWorkout: event, next: s.next)
+        let auditedHash = try BackupService.eventHash(auditedCommand)
+        #expect(auditedHash != plainHash)
+        let finalized = try await s.repository.finalize(programID: s.programID, expectedRevision: 0, event: event, next: s.next)
+        #expect(finalized.snapshot.state.processedEvents[event.eventID] == auditedHash)
+        let v1 = try await s.repository.exportBackup()
+        let envelope = try JSONDecoder().decode(JournalEnvelope.self, from: v1.journal.last!.bytes)
+        var plainEnvelope = envelope; plainEnvelope.command = plainCommand
+        #expect(try BackupService.envelopeHash(plainEnvelope) != envelope.envelopeHash)
+        var v2 = v1; v2.formatVersion = 2
+        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(v1))
+        v2.recovery = BackupService.graphManifest(batch, originals: [], quarantines: [], resolved: [])
+        for document in [v1, v2] {
+            let destination = try empty()
+            _ = try await destination.importBackup(document)
+            #expect(try await destination.snapshot(programID: s.programID).state == finalized.snapshot.state)
+            #expect(try await destination.exportBackup().journal == document.journal)
+        }
+        var forged = event; forged.observationAudit!.corrections[0].before.reps = -1
+        let initial = try await RepositoryTestHarness.make(goal: .size)
+        let state = try await initial.repository.snapshot(programID: initial.programID).state
+        var commandEvent = initial.firstEvent
+        commandEvent.observationAudit = ObservationAudit(corrections: [SetCorrection(operationID: UUID(),
+            movementID: commandEvent.exercises[0].movementID, setIndex: 0, before: forged.observationAudit!.corrections[0].before,
+            after: commandEvent.exercises[0].actualSets[0], beforeStatus: .completed, afterStatus: .completed, outcomeAcknowledged: true)])
+        #expect(throws: EngineError.self) { try BackupService.transition(state: state,
+            command: .workout(completedWorkout: commandEvent, next: initial.next), rules: RulesetCatalog.fixedV1()) }
+    }
+}

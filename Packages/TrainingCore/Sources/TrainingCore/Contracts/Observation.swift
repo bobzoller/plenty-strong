@@ -154,8 +154,9 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
     public var sessionMode: SessionMode
     public var exercises: [ExerciseLog]
     public var timing: SessionTiming? = nil
+    public var observationAudit: ObservationAudit? = nil
 
-    public init(eventID: String, date: LocalDate, slotID: String, prescriptionID: String, plannedPrescriptionID: String, sessionMode: SessionMode, exercises: [ExerciseLog]) {
+    public init(eventID: String, date: LocalDate, slotID: String, prescriptionID: String, plannedPrescriptionID: String, sessionMode: SessionMode, exercises: [ExerciseLog], observationAudit: ObservationAudit? = nil) {
         self.eventID = eventID
         self.date = date
         self.slotID = slotID
@@ -163,6 +164,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
         self.plannedPrescriptionID = plannedPrescriptionID
         self.sessionMode = sessionMode
         self.exercises = exercises
+        self.observationAudit = observationAudit
     }
 
     enum CodingKeys: String, CodingKey {
@@ -174,6 +176,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
         case sessionMode
         case exercises
         case timing
+        case observationAudit
     }
 
 }
