@@ -12,6 +12,9 @@ struct OnboardingView<Restore: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
         Form {
+            #if DEBUG
+            DeveloperModeSection()
+            #endif
             Section { NavigationLink("Restore an existing JSON backup", destination: restore).disabled(operationInProgress).accessibilityIdentifier("onboarding.restore") }
             Section { NavigationLink("Optional iCloud recovery") { CloudRecoveryView(composition: composition) }.accessibilityIdentifier("onboarding.cloud-recovery") }
             Section("Your emphasis") { ProgramChoiceView(selection: $emphasis) }
