@@ -214,11 +214,8 @@ private func validateStarterAdvance(_ input: AdvanceInput) throws -> WorkoutPres
     let state = input.state
     let planned = state.activePrescription
     let event = input.event
-    guard !event.eventID.isEmpty, event.date == planned.date,
-          state.lastSessionDate == nil || event.date > state.lastSessionDate!, input.nextWorkoutDate > event.date else {
-        throw EngineError(code: "invalid_date", field: "date")
-    }
-    try WorkoutScheduler.validate(slot: WorkoutSlot(date: input.nextWorkoutDate, slotID: input.nextSlotID), config: state.config)
+    try validateCompletionDates(input)
+    try WorkoutScheduler.validate(slot: WorkoutSlot(date: input.nextWorkoutDate, slotID: input.nextSlotID), config: state.config, schedulingPolicy: state.schedulingPolicy)
     let displayed = try prepareStarterWorkout(state: state, rules: input.rules, easierToday: event.sessionMode == .easier)
     guard event.slotID == planned.slotID, event.plannedPrescriptionID == planned.id, event.prescriptionID == displayed.id else {
         throw EngineError(code: "stale_prescription", field: "prescriptionId")

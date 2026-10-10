@@ -340,6 +340,10 @@ public struct ExerciseState: Codable, Equatable, Sendable {
     }
 }
 
+public enum SchedulingPolicy: String, Codable, Equatable, Sendable {
+    case flexibleV1 = "flexible_v1"
+}
+
 public struct ProgramState: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var rulesetVersion: String
@@ -352,6 +356,8 @@ public struct ProgramState: Codable, Equatable, Sendable {
     public var processedEvents: [String: String]
     public var baseSafety: [String: MovementSafetyState]?
     public var retainedSafety: [String: MovementSafetyState]?
+    // Nil is the archived weekday-bound scheduling contract.
+    public var schedulingPolicy: SchedulingPolicy? = nil
 
     public init(schemaVersion: Int, rulesetVersion: String, rulesetHash: String, config: ProgramConfig, revision: Int, exercises: [String: ExerciseState], lastSessionDate: LocalDate?, activePrescription: WorkoutPrescription, processedEvents: [String: String], baseSafety: [String: MovementSafetyState]? = nil, retainedSafety: [String: MovementSafetyState]? = nil) {
         self.schemaVersion = schemaVersion
@@ -379,6 +385,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         case processedEvents
         case baseSafety
         case retainedSafety
+        case schedulingPolicy
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -393,6 +400,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         processedEvents = try c.decode([String: String].self, forKey: .processedEvents)
         baseSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .baseSafety)
         retainedSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .retainedSafety)
+        schedulingPolicy = try c.decodeIfPresent(SchedulingPolicy.self, forKey: .schedulingPolicy)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -407,6 +415,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         try c.encode(processedEvents, forKey: .processedEvents)
         try c.encodeIfPresent(baseSafety, forKey: .baseSafety)
         try c.encodeIfPresent(retainedSafety, forKey: .retainedSafety)
+        try c.encodeIfPresent(schedulingPolicy, forKey: .schedulingPolicy)
     }
 }
 

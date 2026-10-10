@@ -189,9 +189,7 @@ private func validateAdvance(_ input: AdvanceInput) throws -> WorkoutPrescriptio
             slot: WorkoutSlot(date: planned.date, slotID: planned.slotID))) else {
         throw EngineError(code: "invalid_prescription", field: "activePrescription")
     }
-    guard !event.eventID.isEmpty, event.date == planned.date,
-          state.lastSessionDate == nil || event.date > state.lastSessionDate!,
-          input.nextWorkoutDate > event.date else { throw EngineError(code: "invalid_date", field: "date") }
+    try validateCompletionDates(input)
     guard state.config.weeklySlots.contains(where: { $0.id == input.nextSlotID }) else {
         throw EngineError(code: "invalid_slot", field: "nextSlotId")
     }

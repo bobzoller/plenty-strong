@@ -86,7 +86,7 @@ struct RecoveryVerifier {
                     // type-invalid fields of a known format are corrupt originals.
                     let command = fields?["command"] as? [String: Any]
                     if let kind = command?["kind"] as? String {
-                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy", "changeStarterProgram"].contains(kind) else {
+                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy", "activateFlexibleScheduling", "changeStarterProgram"].contains(kind) else {
                             throw EngineError(code: "unsupported_version", field: "command.kind")
                         }
                         if let change = command?["change"] as? [String: Any], let changeKind = change["kind"] as? String {

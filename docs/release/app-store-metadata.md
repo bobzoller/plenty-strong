@@ -39,6 +39,8 @@ Proposed description:
 >
 > No app account, subscription, ads or app telemetry. Apple processes optional iCloud and StoreKit services under its policies. User-selected sharing destinations may store exported data. Read the published privacy policy before enabling recovery or sharing a backup.
 
+Current development scheduling: Sunday, Tuesday and Thursday are suggested dates. Workouts follow a fixed rotation; a missed date leaves the same workout pending, and an early workout consumes it once. New history records the actual session date separately from its original planned date.
+
 These describe implemented flows, not demonstrated training efficacy or guaranteed cloud availability. Trainer/human policy review and live recovery proof are required before external beta. Public source availability refers only to the audited repository snapshot; App Store/download/support/privacy destinations and distribution remain unverified.
 
 Name13/30 and subtitle26/30 characters; keywords63/100 UTF-8 bytes; promotional text151/170 and description1204/4000 characters. These fit the refreshed [app fields](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information) and [version fields](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information). First-version What's New is not submitted; final contact/support, age/content/export/trader status and territory choices remain owner gates. No accessibility nutrition-label support claim is submitted before human evaluation.

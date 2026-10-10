@@ -73,7 +73,12 @@ public func resolveCloudBranches(_ input: BranchResolutionInput) throws -> Branc
         throw EngineError(code: "mixed_policy_conflict", field: "branches")
     }
     let policy = try ProgramPolicy.resolve(schemaVersion: original.schemaVersion, rules: input.rules)
-    try validateConfigurationInput(state: original, rules: input.rules, slot: input.next)
+    try validateConfigurationInput(state: original, rules: input.rules, slot: input.next, preservePendingSlot: false)
+    if original.schedulingPolicy == .flexibleV1 {
+        let latest = input.branches.compactMap { $0.state.lastSessionDate }.max()
+        let expected = try WorkoutScheduler.pendingAfterRecovery(state: original, latestSessionDate: latest)
+        guard input.next == expected else { try reject("pending_rotation") }
+    }
     guard input.commonAncestor.config.programID == original.config.programID, input.commonAncestor.schemaVersion == original.schemaVersion,
           input.commonAncestor.rulesetHash == original.rulesetHash else { try reject("commonAncestor") }
     try validateConfigurationState(state: input.commonAncestor, rules: input.rules)

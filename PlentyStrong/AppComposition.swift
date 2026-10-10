@@ -773,7 +773,13 @@ extension AppComposition {
             let proof = try await recoveryProof()
             guard let selected = proof.envelopes[selection.selectedHeadHash] else { throw BackupService.invalid("selection") }
             let date = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
-            let next = try WorkoutScheduler.nextSlot(onOrAfter: date, config: selected.returnedState.config)
+            let next: WorkoutSlot
+            if selected.returnedState.schedulingPolicy == .flexibleV1 {
+                let latest = heads.compactMap { proof.envelopes[$0]?.returnedState.lastSessionDate }.max()
+                next = try WorkoutScheduler.pendingAfterRecovery(state: selected.returnedState, latestSessionDate: latest)
+            } else {
+                next = try WorkoutScheduler.nextSlot(onOrAfter: date, config: selected.returnedState.config)
+            }
             let snapshot = try await repository.resolveConflict(programID: uuid, expectedHeadHashes: heads, selection: selection, next: next)
             if workout?.programID == uuid || readOnlyProgram?.state.config.programID == programID {
                 try await installSelectedSnapshot(snapshot, repository: repository, operation: operation)

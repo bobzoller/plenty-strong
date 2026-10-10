@@ -262,14 +262,16 @@ extension WorkoutViewModelTests {
         XCTAssertEqual(event.eventID, old.id.uuidString.lowercased())
         await repository.close()
     }
-    func testMissedSlotAndInterruptionAreExplicitCommandsWithoutInventedHistory() async throws {
+    func testMissedSuggestionRetainsRotationAndInterruptionIsExplicitWithoutInventedHistory() async throws {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false); try await fill(model)
         let receipt = try await model.finish()
         let later = WorkoutViewModel(repository: repository, snapshot: receipt.snapshot, timeZoneID: "Pacific/Honolulu", now: { Date(timeIntervalSince1970: 1793736000) })
         try await later.prepareToday()
         XCTAssertEqual(later.snapshot.history.filter { if case .workout = $0.command { true } else { false } }.count, 1)
-        XCTAssertTrue(later.snapshot.history.contains { if case .reschedule = $0.command { true } else { false } })
+        XCTAssertFalse(later.snapshot.history.contains { if case .reschedule = $0.command { true } else { false } })
+        XCTAssertEqual(later.snapshot.state.activePrescription.slotID, receipt.snapshot.state.activePrescription.slotID)
+        XCTAssertEqual(later.snapshot.state.activePrescription.date, receipt.snapshot.state.activePrescription.date)
         XCTAssertTrue(later.snapshot.history.contains { if case .interruption = $0.command { true } else { false } })
         XCTAssertTrue(later.snapshot.state.exercises.values.contains { $0.interruptedReturn })
         await repository.close()

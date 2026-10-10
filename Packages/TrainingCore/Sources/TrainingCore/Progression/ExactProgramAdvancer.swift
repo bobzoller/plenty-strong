@@ -209,10 +209,8 @@ func advanceExactProgram(_ input: AdvanceInput) -> AdvanceResult {
 private func validateExactAdvance(_ input: AdvanceInput) throws -> WorkoutPrescription {
     let planned = try prepareExactWorkout(state: input.state, rules: input.rules, easierToday: false)
     let event = input.event
-    guard !event.eventID.isEmpty, event.date == planned.date,
-          input.state.lastSessionDate == nil || event.date > input.state.lastSessionDate!,
-          input.nextWorkoutDate > event.date else { throw EngineError(code: "invalid_date", field: "date") }
-    try WorkoutScheduler.validate(slot: WorkoutSlot(date: input.nextWorkoutDate, slotID: input.nextSlotID), config: input.state.config)
+    try validateCompletionDates(input)
+    try WorkoutScheduler.validate(slot: WorkoutSlot(date: input.nextWorkoutDate, slotID: input.nextSlotID), config: input.state.config, schedulingPolicy: input.state.schedulingPolicy)
     let displayed = try prepareExactWorkout(state: input.state, rules: input.rules, easierToday: event.sessionMode == .easier)
     guard event.slotID == planned.slotID, event.plannedPrescriptionID == planned.id,
           event.prescriptionID == displayed.id else { throw EngineError(code: "stale_prescription", field: "prescriptionId") }

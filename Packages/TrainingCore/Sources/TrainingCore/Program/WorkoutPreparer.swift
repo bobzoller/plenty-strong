@@ -1,6 +1,7 @@
 import Foundation
 
 public func prepareWorkout(state: ProgramState, rules: Ruleset, easierToday: Bool = false) throws -> WorkoutPrescription {
+    guard state.schedulingPolicy == nil || [2, 3, 4].contains(state.schemaVersion) else { throw EngineError(code: "unsupported_scheduling", field: "schemaVersion") }
     try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
     case .starterExactV1: return try prepareStarterWorkout(state: state, rules: rules, easierToday: easierToday)
@@ -17,7 +18,7 @@ public func prepareWorkout(state: ProgramState, rules: Ruleset, easierToday: Boo
     }
     try validate(config: state.config, rules: rules)
     let planned = state.activePrescription
-    if app { try WorkoutScheduler.validate(slot: WorkoutSlot(date: planned.date, slotID: planned.slotID), config: state.config) }
+    if app { try WorkoutScheduler.validate(slot: WorkoutSlot(date: planned.date, slotID: planned.slotID), config: state.config, schedulingPolicy: state.schedulingPolicy) }
     guard planned.id == (try CanonicalJSON.sha256(prescriptionContent(planned))),
           let slot = state.config.weeklySlots.first(where: { $0.id == planned.slotID }) else {
         throw EngineError(code: "stale_prescription", field: "activePrescription")

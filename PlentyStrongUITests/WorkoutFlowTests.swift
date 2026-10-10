@@ -60,7 +60,7 @@ extension WorkoutFlowTests {
             XCTAssertTrue(app.staticTexts["onboarding.equipment"].label.contains("5–80 lb per dumbbell"))
             app.buttons["onboarding.confirm"].tap()
             XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15))
-            XCTAssertEqual(app.staticTexts["today.schedule"].label, "Sunday · Tuesday · Thursday")
+            XCTAssertEqual(app.staticTexts["today.schedule"].label, "Sunday · Tuesday · Thursday · suggested cadence")
             app.terminate()
         }
     }

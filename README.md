@@ -19,6 +19,8 @@ Commands: `make test-core`, `make test-app`, `make build-app`, `make crash-proof
 
 Choose a routine and enter your equipment loads and setup. Today prepares the workout; record actual sets and effort, or choose “I need an easier workout today.” History preserves recorded observations and explanations. Settings provides JSON backup/restore, optional recovery, voluntary tips and About/privacy. Your backup contains training data, so choose its sharing destination carefully.
 
+Sunday, Tuesday and Thursday are suggested dates. Workouts follow a fixed rotation; a missed date leaves the same workout pending, and an early workout consumes it once. New history records the actual session date separately from its original planned date.
+
 Optional iCloud uses your private CloudKit database after explicit consent and reviewed provisioning. This candidate's provisioning gate defaults to NO. Tips use Apple's StoreKit; product names and prices come from Apple when available. Neither service is needed for local logging, history or export.
 
 ## Contributing and privacy

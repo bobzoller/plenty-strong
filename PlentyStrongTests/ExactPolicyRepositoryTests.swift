@@ -211,8 +211,12 @@ extension ExactPolicyRepositoryTests {
         try await model.start(easierToday: false)
         #expect(model.snapshot.state.schemaVersion == 3)
         #expect(model.snapshot.draft?.displayed.exercises.allSatisfy { $0.sets.allSatisfy { $0.targetReps != nil } } == true)
-        #expect(model.snapshot.history.count == 5)
+        #expect(model.snapshot.history.count == 6)
+        #expect(model.snapshot.history.filter { if case .activatePolicy = $0.command { true } else { false } }.count == 1)
+        #expect(model.snapshot.history.filter { if case .activateFlexibleScheduling = $0.command { true } else { false } }.count == 1)
+        let activatedHistory = model.snapshot.history
         try await model.start(easierToday: false)
+        #expect(model.snapshot.history == activatedHistory)
         #expect(model.snapshot.history.filter { if case .activatePolicy = $0.command { true } else { false } }.count == 1)
         await repository.close()
     }
@@ -235,7 +239,12 @@ extension ExactPolicyRepositoryTests {
         try await model.start(easierToday: false)
         #expect(model.snapshot.state.schemaVersion == 3)
         #expect(model.snapshot.draft?.displayed.exercises.allSatisfy { $0.sets.allSatisfy { $0.targetReps != nil } } == true)
-        #expect(model.snapshot.history.count == 2)
+        #expect(model.snapshot.history.count == 3)
+        #expect(model.snapshot.history.filter { if case .activatePolicy = $0.command { true } else { false } }.count == 1)
+        #expect(model.snapshot.history.filter { if case .activateFlexibleScheduling = $0.command { true } else { false } }.count == 1)
+        let activatedHistory = model.snapshot.history
+        try await model.start(easierToday: false)
+        #expect(model.snapshot.history == activatedHistory)
     }
     @MainActor @Test func exactStartBindsOrdinarySetIndexWithoutChangingRawValues() async throws {
         let s = try await RepositoryTestHarness.make(goal: .size)
@@ -255,5 +264,64 @@ extension ExactPolicyRepositoryTests {
         #expect(try await s.repository.exportBackup() == saved)
         try await model.recordSet(movementID: row.movementID, index: 0, actual: raw)
         #expect(try await s.repository.exportBackup() == saved)
+    }
+}
+
+
+@Suite(.serialized) struct FlexibleMigrationAdmissionTests {
+    @MainActor @Test(arguments: [false, true])
+    func firstDraftFreeStartUsesActualDateForLegacyExactMigration(retryExactAdoption: Bool) async throws {
+        let scenario = try await RepositoryTestHarness.make(goal: .size)
+        _ = try await scenario.repository.finalize(programID: scenario.programID, expectedRevision: scenario.initialRevision,
+            event: scenario.firstEvent, next: scenario.next)
+        let completed = try await scenario.repository.snapshot(programID: scenario.programID)
+        let originalSuggestion = WorkoutSlot(date: try LocalDate(iso8601: "2026-11-03"), slotID: "TUE")
+        var before = try await scenario.repository.reschedule(programID: scenario.programID,
+            expectedRevision: completed.state.revision, slot: originalSuggestion)
+        let legacyPrefix = before.history
+        let recentID = scenario.firstEvent.exercises[0].movementID
+        #expect(before.state.schemaVersion == 2 && before.state.schedulingPolicy == nil)
+        #expect(before.state.exercises[recentID]?.interruptedReturn == false)
+        let actualStart = try #require(ISO8601DateFormatter().date(from: "2026-10-05T20:00:00Z"))
+        let actualDate = try LocalDate(iso8601: "2026-10-05")
+        if retryExactAdoption {
+            // The first activation is durable; inject failure only in the subsequent exact adoption.
+            before = try await scenario.repository.activateFlexibleSchedule(programID: scenario.programID,
+                expectedRevision: before.state.revision)
+            await scenario.repository.failNextSave()
+        }
+        let model = WorkoutViewModel(repository: scenario.repository, snapshot: before,
+            timeZoneID: "Pacific/Honolulu", now: { actualStart }, activatesExactPolicy: true)
+        if retryExactAdoption {
+            await #expect(throws: (any Error).self) { try await model.start(easierToday: false) }
+            let failed = try await scenario.repository.snapshot(programID: scenario.programID)
+            #expect(failed == before)
+            #expect(failed.draft == nil && failed.state.schemaVersion == 2)
+        }
+        try await model.start(easierToday: false)
+        let started = model.snapshot
+        let draft = try #require(started.draft)
+        #expect(started.state.schemaVersion == 3 && started.state.schedulingPolicy == .flexibleV1)
+        #expect(started.state.lastSessionDate == scenario.firstEvent.date)
+        #expect(started.state.activePrescription.slotID == originalSuggestion.slotID)
+        #expect(started.state.activePrescription.date == originalSuggestion.date)
+        #expect(draft.planned == started.state.activePrescription)
+        #expect(draft.date == actualDate)
+        #expect(draft.startedAtMilliseconds == (try SessionTiming.milliseconds(at: actualStart)))
+        #expect(started.state.exercises[recentID]?.exactRepState?.lastSuitableNormalDate == scenario.firstEvent.date)
+        #expect(started.state.exercises[recentID]?.interruptedReturn == false)
+        let activations = started.history.compactMap { envelope -> String? in
+            switch envelope.command {
+            case .activateFlexibleScheduling: return "flexible"
+            case .activatePolicy: return "exact"
+            default: return nil
+            }
+        }
+        #expect(activations == ["flexible", "exact"])
+        #expect(Array(started.history.prefix(legacyPrefix.count)) == legacyPrefix)
+        try await model.start(easierToday: false)
+        #expect(model.snapshot == started)
+        #expect(try await scenario.repository.snapshot(programID: scenario.programID) == started)
+        await scenario.repository.close()
     }
 }

@@ -76,9 +76,13 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
     return try finishConfiguration(original: state, updated: updated, rules: rules, slot: nextWorkout, decisions: decisions)
 }
 
-func validateConfigurationInput(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws {
+func validateConfigurationInput(state: ProgramState, rules: Ruleset, slot: WorkoutSlot, preservePendingSlot: Bool = true) throws {
+    if preservePendingSlot, state.schedulingPolicy == .flexibleV1,
+       slot != WorkoutSlot(date: state.activePrescription.date, slotID: state.activePrescription.slotID) {
+        throw EngineError(code: "pending_rotation_locked", field: "slot")
+    }
     try validateConfigurationState(state: state, rules: rules)
-    if try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants { try WorkoutScheduler.validate(slot: slot, config: state.config) }
+    if try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules).usesVariants { try WorkoutScheduler.validate(slot: slot, config: state.config, schedulingPolicy: state.schedulingPolicy) }
     if let last = state.lastSessionDate, slot.date <= last {
         throw EngineError(code: "non_future_workout", field: "slot.date")
     }

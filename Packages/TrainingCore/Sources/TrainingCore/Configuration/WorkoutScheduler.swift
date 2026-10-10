@@ -25,12 +25,51 @@ public enum WorkoutScheduler {
         try nextSlot(onOrAfter: date.adding(days: 1), config: config)
     }
 
-    public static func validate(slot: WorkoutSlot, config: ProgramConfig) throws {
+    public static func validate(slot: WorkoutSlot, config: ProgramConfig, schedulingPolicy: SchedulingPolicy? = nil) throws {
+        if schedulingPolicy == .flexibleV1 {
+            guard config.weeklySlots.contains(where: { $0.id == slot.slotID }),
+                  config.weeklySlots.contains(where: { $0.weekday == (try? weekday(on: slot.date)) }) else {
+                throw EngineError(code: "invalid_slot_date", field: "slot.date")
+            }
+            return
+        }
         guard let weekly = config.weeklySlots.first(where: { $0.id == slot.slotID }),
               let weekday = weekly.weekday, (0...6).contains(weekday),
               try self.weekday(on: slot.date) == weekday else {
             throw EngineError(code: "invalid_slot_date", field: "slot.date")
         }
+    }
+
+    /// Cadence provides the date; program order provides the rotation identity.
+    public static func nextRotation(after date: LocalDate, consumedSlotID: String, config: ProgramConfig) throws -> WorkoutSlot {
+        let cadence = try nextSlot(after: date, config: config)
+        guard let index = config.weeklySlots.firstIndex(where: { $0.id == consumedSlotID }) else {
+            throw EngineError(code: "invalid_slot", field: "slotId")
+        }
+        return WorkoutSlot(date: cadence.date, slotID: config.weeklySlots[(index + 1) % config.weeklySlots.count].id)
+    }
+
+    /// Recovery retains the selected pending group. Only merged actual-history
+    /// ordering may move its suggestion forward; opening/reviewing has no clock.
+    public static func pendingAfterRecovery(state: ProgramState, latestSessionDate: LocalDate?) throws -> WorkoutSlot {
+        let pending = WorkoutSlot(date: state.activePrescription.date, slotID: state.activePrescription.slotID)
+        guard state.schedulingPolicy == .flexibleV1 else {
+            throw EngineError(code: "unsupported_scheduling", field: "schedulingPolicy")
+        }
+        try validate(slot: pending, config: state.config, schedulingPolicy: state.schedulingPolicy)
+        if let last = latestSessionDate, pending.date <= last {
+            let cadence = try nextSlot(after: last, config: state.config)
+            return WorkoutSlot(date: cadence.date, slotID: pending.slotID)
+        }
+        return pending
+    }
+
+    static func validateExposure(slot: WorkoutSlot, state: ProgramState) throws {
+        if state.schedulingPolicy == .flexibleV1 {
+            guard state.config.weeklySlots.contains(where: { $0.id == slot.slotID }) else {
+                throw EngineError(code: "invalid_slot", field: "slotId")
+            }
+        } else { try validate(slot: slot, config: state.config) }
     }
 
     private static func weekday(on date: LocalDate) throws -> Int {
@@ -133,4 +172,40 @@ func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDat
     beginInterruptedReturn(&after)
     state.exercises[id] = after
     return try configurationDecision(id: id, action: .recover, ruleIDs: ["R05"], key: "interruption_return", before: before, after: after)
+}
+
+/// Journaled activation changes scheduling only. Never reconstruct missed slots
+/// or replace the pending issued prescription; the repository disallows drafts.
+public func activateFlexibleScheduling(state: ProgramState, rules: Ruleset) throws -> ConfigurationResult {
+    try validateConfigurationState(state: state, rules: rules)
+    guard [2, 3, 4].contains(state.schemaVersion) else {
+        throw EngineError(code: "unsupported_scheduling", field: "schemaVersion")
+    }
+    guard state.schedulingPolicy == nil else { return unchangedConfiguration(state) }
+    var updated = state
+    updated.schedulingPolicy = .flexibleV1
+    let (revision, overflow) = state.revision.addingReportingOverflow(1)
+    guard !overflow else { throw EngineError(code: "invalid_state", field: "revision") }
+    updated.revision = revision
+    return ConfigurationResult(state: updated, workout: updated.activePrescription, decisions: [])
+}
+
+
+/// Shared scheduling admission preserves archived date guards verbatim. Flexible
+/// inputs must bind real timing and the exact next cadence/rotation deterministically.
+func validateCompletionDates(_ input: AdvanceInput) throws {
+    let state = input.state, event = input.event, planned = state.activePrescription
+    guard !event.eventID.isEmpty,
+          state.lastSessionDate == nil || event.date > state.lastSessionDate!,
+          input.nextWorkoutDate > event.date else { throw EngineError(code: "invalid_date", field: "date") }
+    if state.schedulingPolicy == .flexibleV1 {
+        guard let timing = event.timing else { throw EngineError(code: "invalid_session_timing", field: "timing") }
+        let finishedDate = try timing.validate(sessionDate: event.date, plannedDate: planned.date)
+        let next = try WorkoutScheduler.nextRotation(after: max(planned.date, finishedDate), consumedSlotID: planned.slotID, config: state.config)
+        guard next.date == input.nextWorkoutDate, next.slotID == input.nextSlotID else {
+            throw EngineError(code: "invalid_rotation", field: "next")
+        }
+    } else {
+        guard event.date == planned.date, event.timing == nil else { throw EngineError(code: "invalid_date", field: "date") }
+    }
 }

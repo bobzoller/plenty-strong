@@ -45,7 +45,7 @@ public func plannedStarterWorkout(state: ProgramState, rules: Ruleset, slot: Wor
 
 /// Called only after complete operation-local starter admission.
 func makeValidatedStarterWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) throws -> WorkoutPrescription {
-    try WorkoutScheduler.validate(slot: slot, config: state.config)
+    try WorkoutScheduler.validate(slot: slot, config: state.config, schedulingPolicy: state.schedulingPolicy)
     guard let weekly = state.config.weeklySlots.first(where: { $0.id == slot.slotID }) else {
         throw EngineError(code: "invalid_slot", field: "slotId")
     }

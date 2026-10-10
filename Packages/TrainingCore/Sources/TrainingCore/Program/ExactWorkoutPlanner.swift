@@ -9,7 +9,7 @@ func plannedExactWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot)
     guard let weekly = state.config.weeklySlots.first(where: { $0.id == slot.slotID }) else {
         throw EngineError(code: "invalid_slot", field: "slotId")
     }
-    try WorkoutScheduler.validate(slot: slot, config: state.config)
+    try WorkoutScheduler.validate(slot: slot, config: state.config, schedulingPolicy: state.schedulingPolicy)
     let preset = try rules.preset(goal: state.config.goal, daysPerWeek: state.config.daysPerWeek)
     let parameters = try rules.resolvedParameters
     var workout = WorkoutPrescription(id: "", date: slot.date, slotID: slot.slotID, exercises: [])

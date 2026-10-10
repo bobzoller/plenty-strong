@@ -61,7 +61,7 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
     try validate(config: updated.config, rules: rules)
     var decisions = [try configurationDecision(id: id, action: .notice, ruleIDs: policy.usesExactTargets ? ["X12"] : [], key: key,
         before: state.config, after: updated.config, ruleset: policy.usesExactTargets ? rules : nil)]
-    if checkGap, let gap = try markInterruptedReturn(state: &updated, id: id, asOf: nextWorkout.date, rules: rules) {
+    if checkGap, state.schedulingPolicy == nil, let gap = try markInterruptedReturn(state: &updated, id: id, asOf: nextWorkout.date, rules: rules) {
         decisions.append(gap)
     }
     return try finishConfiguration(original: state, updated: updated, rules: rules, slot: nextWorkout, decisions: decisions)

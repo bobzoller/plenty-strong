@@ -206,7 +206,14 @@ import TrainingCore
             try await initial.recordEffort(movementID: first.movementID, effort: .onTarget)
             let baseline = try await finishRemaining(initial, firstStatus: .completed)
             XCTAssertEqual(baseline.snapshot.state.exercises[first.movementID]?.exactRepState?.normalTargets, [10,10,10])
-            let model = WorkoutViewModel(repository: repository, snapshot: baseline.snapshot, timeZoneID: initial.timeZoneID, now: { ISO8601DateFormatter().date(from: "2026-10-15T20:00:00Z")! })
+            // Consume the intervening rotation before revisiting Thursday's movement.
+            let tuesday = WorkoutViewModel(repository: repository, snapshot: baseline.snapshot, timeZoneID: initial.timeZoneID, now: { ISO8601DateFormatter().date(from: "2026-10-13T20:00:00Z")! })
+            try await tuesday.start(easierToday: false)
+            XCTAssertEqual(tuesday.snapshot.draft?.planned.slotID, "TUE")
+            for row in tuesday.snapshot.draft!.displayed.exercises { try await tuesday.recordStatus(movementID: row.movementID, status: .skipped) }
+            let handledTuesday = try await tuesday.finish()
+            XCTAssertEqual(handledTuesday.snapshot.state.activePrescription.slotID, "THU")
+            let model = WorkoutViewModel(repository: repository, snapshot: handledTuesday.snapshot, timeZoneID: initial.timeZoneID, now: { ISO8601DateFormatter().date(from: "2026-10-15T20:00:00Z")! })
             try await model.start(easierToday: false)
             try await confirm(model.snapshot.draft!.displayed.exercises[0], model: model)
             for i in 0..<3 { try await model.recordSet(movementID: first.movementID, index: i, actual: ActualSet(reps: i == 2 ? 9 : 10, missedGoalReason: i == 2 ? reason : nil)) }

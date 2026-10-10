@@ -89,6 +89,7 @@ public enum ConfigurationChange: Codable, Equatable, Sendable {
 /// Repository guards, started-draft invalidation and atomic persistence belong to
 /// the adapter; replay must never substitute current dates, variants or labels.
 public enum JournalCommand: Codable, Equatable, Sendable {
+    case activateFlexibleScheduling
     case changeStarterProgram(choice: StarterProgramChoice, goal: Goal, next: WorkoutSlot)
     case activatePolicy(sourceRulesetHash: String, destinationRulesetHash: String, normalEvidenceEventIDs: [String], next: WorkoutSlot)
     case initialize(config: ProgramConfig, firstWorkout: WorkoutSlot)
@@ -102,6 +103,7 @@ public enum JournalCommand: Codable, Equatable, Sendable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .kind) {
+        case "activateFlexibleScheduling": self = .activateFlexibleScheduling
         case "changeStarterProgram": self = .changeStarterProgram(choice: try c.decode(StarterProgramChoice.self, forKey: .choice), goal: try c.decode(Goal.self, forKey: .goal), next: try c.decode(WorkoutSlot.self, forKey: .next))
         case "activatePolicy": self = .activatePolicy(sourceRulesetHash: try c.decode(String.self, forKey: .sourceRulesetHash), destinationRulesetHash: try c.decode(String.self, forKey: .destinationRulesetHash), normalEvidenceEventIDs: try c.decode([String].self, forKey: .normalEvidenceEventIDs), next: try c.decode(WorkoutSlot.self, forKey: .next))
         case "initialize": self = .initialize(config: try c.decode(ProgramConfig.self, forKey: .config), firstWorkout: try c.decode(WorkoutSlot.self, forKey: .firstWorkout))
@@ -117,6 +119,8 @@ public enum JournalCommand: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .activateFlexibleScheduling:
+            try c.encode("activateFlexibleScheduling", forKey: .kind)
         case let .changeStarterProgram(choice, goal, next):
             try c.encode("changeStarterProgram", forKey: .kind)
             try c.encode(choice, forKey: .choice)

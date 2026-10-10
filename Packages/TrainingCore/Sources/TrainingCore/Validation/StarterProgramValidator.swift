@@ -139,7 +139,7 @@ private func validateStarterWindow(_ window: StarterComparisonWindow, key: Strin
     var priorDate: LocalDate?
     var lastClassification: ExactExposureClassification?
     for exposure in window.exposures {
-        try WorkoutScheduler.validate(slot: WorkoutSlot(date: exposure.date, slotID: window.slotID), config: state.config)
+        try WorkoutScheduler.validateExposure(slot: WorkoutSlot(date: exposure.date, slotID: window.slotID), state: state)
         try validateExactComparable(exposure, variant: state.config.variants![id]!, movement: movement, rules: rules)
         guard exposure.exactRepContext == context,
               exposure.effortInstruction == exactEffortInstruction(minimumRir: context.minimumRir, parameters: parameters),

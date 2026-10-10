@@ -153,6 +153,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
     public var plannedPrescriptionID: String
     public var sessionMode: SessionMode
     public var exercises: [ExerciseLog]
+    public var timing: SessionTiming? = nil
 
     public init(eventID: String, date: LocalDate, slotID: String, prescriptionID: String, plannedPrescriptionID: String, sessionMode: SessionMode, exercises: [ExerciseLog]) {
         self.eventID = eventID
@@ -172,6 +173,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
         case plannedPrescriptionID = "plannedPrescriptionId"
         case sessionMode
         case exercises
+        case timing
     }
 
 }

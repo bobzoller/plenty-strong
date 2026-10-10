@@ -31,6 +31,15 @@ struct WorkoutDetailView: View {
                 let savedRules = try? RulesetCatalog.resolve(version: envelope.rulesetVersion, hash: envelope.rulesetHash)
                 let savedPolicy = savedRules.flatMap { try? ProgramPolicy.resolve(schemaVersion: envelope.schemaVersion, rules: $0) }
                 Section("Recorded workout · \(event.date.iso8601)") {
+                    Text("\(event.timing == nil ? "Recorded date" : "Session date"): \(event.date.iso8601)").accessibilityIdentifier("history.session-date")
+                    if let timing = event.timing {
+                        if timing.plannedDate != event.date {
+                            Text("Originally planned: \(timing.plannedDate.iso8601)").accessibilityIdentifier("history.planned-date")
+                        }
+                        if let finishedDate = try? SessionTiming.localDate(milliseconds: timing.finishedAtMilliseconds, timeZoneID: timing.timeZoneID), finishedDate != event.date {
+                            Text("Finished: \(finishedDate.iso8601) · \(timing.timeZoneID)").accessibilityIdentifier("history.finished-date")
+                        }
+                    }
                     if envelope.returnedState.config.goal == .maintenance { Text("Stable good reps at the right effort support maintenance. An increase is not required.").accessibilityIdentifier("history.maintenance") }
                     Text(Self.coverage(event)).accessibilityIdentifier("history.coverage")
                     Text(event.sessionMode == .easier ? "Easier work is recorded without progression qualification." : "Actuals below are what was recorded, independent of future targets.")

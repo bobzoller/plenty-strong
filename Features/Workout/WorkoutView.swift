@@ -44,6 +44,7 @@ struct WorkoutView: View {
                             }
                         }
                         Text("Next saved prescription").font(.headline)
+                        Text("Its calendar date is a suggestion. This workout stays next until completed.")
                         Text("Next: \(envelope.returnedPrescription.slotID), \(envelope.returnedPrescription.date.iso8601)").accessibilityIdentifier("workout.next-prescription")
                         ForEach(envelope.returnedPrescription.exercises, id: \.movementID) { row in
                             VStack(alignment: .leading) {
@@ -62,7 +63,7 @@ struct WorkoutView: View {
                     Button("Back to Today", action: close)
                 } else if model.needsDateChoice {
                     Text("This workout belongs to \(model.snapshot.draft!.date.iso8601) in \(model.snapshot.draft!.timeZoneID).")
-                    Text("Keep the original date and observations as history, or explicitly discard this draft and restart at the next scheduled slot.")
+                    Text("Keep the original date and observations as history, or explicitly discard this draft and restart the same next workout with a new session date.")
                     if movementIndex < rows.count {
                         let row = rows[movementIndex]
                         Text(model.movement(for: row).name ?? "Movement").font(.headline)

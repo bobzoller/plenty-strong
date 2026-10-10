@@ -191,6 +191,7 @@ enum BackupService {
         switch command {
         case .activatePolicy, .changeStarterProgram: throw invalid("activation")
         case .initialize: throw invalid("nonroot_initialize")
+        case .activateFlexibleScheduling: return try activateFlexibleScheduling(state: state, rules: rules)
         case let .workout(event, next):
             guard rawVariantSnapshotsMatch(state: state, event: event) else { throw invalid("raw_observation_snapshot") }
             switch advanceProgram(AdvanceInput(state: state, event: event, rules: rules, nextSlotID: next.slotID, nextWorkoutDate: next.date)) {
@@ -227,9 +228,16 @@ enum BackupService {
         guard Set(acknowledged).count == acknowledged.count,
               Set(acknowledged).isSubset(of: Set(displayed.exercises.map(\.movementID))),
               draft.restDeadline.map({ $0.timeIntervalSince1970.isFinite && WorkoutDraft.supportedRestDeadlineRange.contains($0) }) ?? true else { throw invalid("draft_ui_metadata") }
+        if state.schedulingPolicy == .flexibleV1 {
+            guard let start = draft.startedAtMilliseconds,
+                  try SessionTiming.localDate(milliseconds: start, timeZoneID: draft.timeZoneID) == draft.date,
+                  state.lastSessionDate == nil || draft.date > state.lastSessionDate! else { throw invalid("draft_timing") }
+        } else {
+            guard draft.startedAtMilliseconds == nil, draft.date == displayed.date else { throw invalid("draft_timing") }
+        }
         guard draft.programID == state.config.programID, draft.expectedRevision == state.revision,
               try bytes(draft.planned) == bytes(state.activePrescription), try bytes(draft.displayed) == bytes(displayed),
-              draft.date == displayed.date, TimeZone(identifier: draft.timeZoneID) != nil,
+              TimeZone(identifier: draft.timeZoneID) != nil,
               Set(draft.logs.map(\.movementID)).count == draft.logs.count,
               draft.logs.map(\.movementID) == displayed.exercises.map(\.movementID),
               draft.logs.allSatisfy({ log in

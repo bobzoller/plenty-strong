@@ -55,7 +55,7 @@ func plannedWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) thro
         throw EngineError(code: "invalid_slot", field: "slotId")
     }
     let app = state.schemaVersion == 2
-    if app { try WorkoutScheduler.validate(slot: slot, config: state.config) }
+    if app { try WorkoutScheduler.validate(slot: slot, config: state.config, schedulingPolicy: state.schedulingPolicy) }
     let preset = try rules.preset(goal: state.config.goal, daysPerWeek: state.config.daysPerWeek)
     let parameters = try rules.resolvedParameters
     var workout = WorkoutPrescription(id: "", date: slot.date, slotID: slot.slotID, exercises: [])

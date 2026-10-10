@@ -22,8 +22,11 @@ public func activateProgramPolicy(state: ProgramState, sourceRules: Ruleset, des
             normalTargets: Array(repeating: before.repFloor, count: before.normalSets), shortfallStreak: 0,
             lastSuitableNormalDate: evidence[id]?.date, setupReviewRequired: false)
         seedExactBaseline(&updated.exercises[id]!)
-        // Apply conservative return at the pending date, without an external clock.
-        _ = try markInterruptedReturn(state: &updated, id: id, asOf: nextWorkout.date, rules: destinationRules)
+        // Archived activation keeps its pending-date preparation. Flexible
+        // activation waits for the caller's explicit actual-date return command.
+        if state.schedulingPolicy == nil {
+            _ = try markInterruptedReturn(state: &updated, id: id, asOf: nextWorkout.date, rules: destinationRules)
+        }
     }
     return try finishConfiguration(original: state, updated: updated, rules: destinationRules, slot: nextWorkout, decisions: [])
 }
@@ -209,6 +212,7 @@ private func activationLegacyTransition(state: ProgramState, command: JournalCom
         let result = try resolveCloudBranches(BranchResolutionInput(commonAncestor: ancestor.returnedState,
             competingHeadHashes: heads, branches: branches, selection: selection, rules: rules, next: next))
         return ConfigurationResult(state: result.state, workout: result.workout, decisions: result.decisions)
+    case .activateFlexibleScheduling: return try activateFlexibleScheduling(state: state, rules: rules)
     case .initialize, .activatePolicy, .changeStarterProgram: throw activationInvalid("command")
     }
 }

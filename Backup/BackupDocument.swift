@@ -47,6 +47,8 @@ struct WorkoutDraft: Codable, Equatable, Sendable {
     // UI-only metadata. Nil preserves old draft encoding and compatibility.
     var acknowledgedMovementIDs: [String]? = nil
     var restDeadline: Date? = nil
+    // Nil retains pre-flexible drafts byte-for-byte and their original date policy.
+    var startedAtMilliseconds: Int64? = nil
     // Persisted UI deadlines use whole reference seconds; recording rounds up by <1s.
     // Supported bounds are Foundation's distantPast...distantFuture dates, inclusive.
     static var supportedRestDeadlineRange: ClosedRange<Date> { .distantPast ... .distantFuture }

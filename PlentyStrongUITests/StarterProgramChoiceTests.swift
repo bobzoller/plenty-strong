@@ -295,3 +295,29 @@ final class StarterProgramChoiceTests: XCTestCase {
         capture(app, "Frozen glute two-set actuals and three-set saved baseline after upper switch")
     }
 }
+
+extension StarterProgramChoiceTests {
+    @MainActor func testFutureSuggestionCanStartEarlyAndHistoryKeepsBothDates() {
+        for emphasis in ["upper_body", "whole_body_glutes"] {
+            let app = launch(["-ui-clock-offset", "-86400"])
+            choice(emphasis, in: app); app.buttons["onboarding.confirm"].tap()
+            XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
+            XCTAssertEqual(app.staticTexts["today.suggested-date"].label, "Suggested date: 2026-10-06")
+            XCTAssertTrue(app.staticTexts["today.schedule"].label.contains("suggested"))
+            XCTAssertTrue(app.buttons["today.start"].isEnabled)
+            app.buttons["today.start"].tap()
+            XCTAssertTrue(app.buttons["movement.skip"].waitForExistence(timeout: 15))
+            for _ in 0..<12 where !app.buttons["workout.finish"].exists {
+                app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next")
+            }
+            app.tapWorkoutControl("workout.finish")
+            XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 20))
+            app.selectNativeTab("History", identifier: "tab.history")
+            app.buttons["history.first-workout"].tap()
+            XCTAssertEqual(app.staticTexts["history.session-date"].label, "Session date: 2026-10-05")
+            XCTAssertEqual(app.staticTexts["history.planned-date"].label, "Originally planned: 2026-10-06")
+            capture(app, "Early workout keeps suggested and actual session dates \(emphasis)")
+            app.terminate()
+        }
+    }
+}

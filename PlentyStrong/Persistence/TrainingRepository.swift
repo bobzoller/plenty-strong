@@ -339,6 +339,8 @@ import TrainingCore
             if let draft = current.draft {
                 guard draft.id.uuidString.lowercased() == event.eventID.lowercased(), draft.planned.id == event.plannedPrescriptionID,
                       draft.displayed.id == event.prescriptionID, draft.date == event.date,
+                      draft.startedAtMilliseconds == event.timing?.startedAtMilliseconds,
+                      event.timing == nil || (event.timing?.plannedDate == draft.planned.date && event.timing?.timeZoneID == draft.timeZoneID),
                       try BackupService.bytes(draft.logs) == BackupService.bytes(event.exercises), draft.sessionMode == event.sessionMode else {
                     return .rejected(nextState: current.state, errors: ["draft_binding_conflict"])
                 }
@@ -383,6 +385,9 @@ import TrainingCore
     func reschedule(programID: UUID, expectedRevision: Int, slot: WorkoutSlot, invalidateEmptyDraft: Bool = false) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .reschedule(slot: slot), invalidateEmptyDraft: invalidateEmptyDraft)
     }
+    func activateFlexibleSchedule(programID: UUID, expectedRevision: Int) throws -> StoreSnapshot {
+        try apply(programID: programID, expectedRevision: expectedRevision, command: .activateFlexibleScheduling, invalidateEmptyDraft: false)
+    }
     func prepareReturn(programID: UUID, expectedRevision: Int, asOf: LocalDate) throws -> StoreSnapshot {
         try apply(programID: programID, expectedRevision: expectedRevision, command: .interruption(asOf: asOf), invalidateEmptyDraft: false)
     }
@@ -402,6 +407,7 @@ import TrainingCore
             }
             if let existing = current.draft {
                 guard existing.id == draft.id, existing.date == draft.date, existing.timeZoneID == draft.timeZoneID,
+                      existing.startedAtMilliseconds == draft.startedAtMilliseconds,
                       existing.planned == draft.planned, existing.displayed == draft.displayed,
                       (!existing.workingSetsStarted || draft.workingSetsStarted),
                       (!existing.hasObservations || draft.hasObservations) else { throw BackupService.invalid("draft_identity") }

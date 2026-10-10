@@ -14,7 +14,13 @@ struct HistoryView: View {
                 ForEach(Array(workouts.enumerated()), id: \.element.eventID) { index, envelope in
                     if case let .workout(event, _) = envelope.command {
                         NavigationLink { WorkoutDetailView(envelope: envelope, variantID: nil, history: snapshot.history) } label: {
-                            VStack(alignment: .leading) { Text(event.date.iso8601); Text(event.sessionMode == .easier ? "Easier workout" : "Recorded workout").font(.caption) }
+                            VStack(alignment: .leading) {
+                                Text(event.date.iso8601)
+                                if let planned = event.timing?.plannedDate, planned != event.date {
+                                    Text("Originally planned: \(planned.iso8601)").font(.caption)
+                                }
+                                Text(event.sessionMode == .easier ? "Easier workout" : "Recorded workout").font(.caption)
+                            }
                         }.accessibilityIdentifier(index == 0 ? "history.first-workout" : "history.workout.\(envelope.eventID)")
                     }
                 }

@@ -152,7 +152,7 @@ func changeStarterMovementVariant(state: ProgramState, change: VariantChange, ru
     try validate(config: updated.config, rules: rules)
     var decisions = [try configurationDecision(id: id, action: .notice, ruleIDs: key == "loading_variant_created" ? ["P06"] : ["X12"], key: key,
         before: state.config, after: updated.config, ruleset: rules)]
-    if checkGap, let decision = try markStarterInterruptedReturn(state: &updated, variantID: id, asOf: nextWorkout.date, rules: rules) {
+    if checkGap, state.schedulingPolicy == nil, let decision = try markStarterInterruptedReturn(state: &updated, variantID: id, asOf: nextWorkout.date, rules: rules) {
         decisions.append(decision)
     }
     return try finishConfiguration(original: state, updated: updated, rules: rules, slot: nextWorkout, decisions: decisions)

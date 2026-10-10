@@ -124,6 +124,7 @@ import TrainingCore
         case "load_correction_required": "Saved sets retain their original load. Use Correct load to keep observations and stop this movement."
         case "problem_requires_finalization": "Keep the original date and observations, handle the remaining movements, and finish so the safety stop is retained."
         case "date_choice_required": "Choose whether to keep the original workout date or discard and restart."
+        case "session_already_recorded": "A workout has already been recorded for this local date. Your next workout remains available on a later date."
         case "future_workout": "This workout is scheduled for a future day."
         case "movement_stopped", "working_draft_locked": "This movement is stopped, or working observations have locked preparation. Saved observations are retained."
         default: "Could not save (\(code)). Your last saved observations are retained."
@@ -151,14 +152,11 @@ import TrainingCore
         try operations.requireOwnership(operation)
         try await prepareTodayBody()
     }
-    private func prepareTodayBody() async throws {
+    private func prepareTodayBody(asOf: LocalDate? = nil) async throws {
         try requireReady()
         guard snapshot.draft == nil else { return }
-        let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
-        if snapshot.state.activePrescription.date < today {
-            let slot = try WorkoutScheduler.nextSlot(onOrAfter: today, config: snapshot.state.config)
-            snapshot = try await repository.reschedule(programID: programID, expectedRevision: snapshot.state.revision, slot: slot)
-        }
+        let today = try asOf ?? CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
+        // Suggested dates never consume or replace a pending rotation slot.
         snapshot = try await repository.prepareReturn(programID: programID, expectedRevision: snapshot.state.revision, asOf: today)
     }
     func start(easierToday: Bool) async throws {
@@ -170,7 +168,7 @@ import TrainingCore
     }
     private func startBody(easierToday: Bool, retainingLegacyDraftPolicy: Bool = false) async throws {
         try requireReady()
-        let startedWithLegacyDraft = retainingLegacyDraftPolicy || (snapshot.state.schemaVersion == 2 && snapshot.draft != nil)
+        let startedWithLegacyDraft = retainingLegacyDraftPolicy || (snapshot.draft != nil && snapshot.draft?.startedAtMilliseconds == nil)
         if let existing = snapshot.draft {
             if (existing.sessionMode == .easier) == easierToday { try await refreshWorkingAdmissionBody(); return }
             guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "draft") }
@@ -179,6 +177,9 @@ import TrainingCore
             snapshot = try await repository.snapshot(programID: programID)
         }
         guard !hasAmbiguousFinish, finishOperation == nil else { throw EngineError(code: "finish_in_flight", field: "policy") }
+        if !startedWithLegacyDraft, snapshot.state.schedulingPolicy == nil {
+            snapshot = try await repository.activateFlexibleSchedule(programID: programID, expectedRevision: snapshot.state.revision)
+        }
         if activatesExactPolicy, !startedWithLegacyDraft, snapshot.state.schemaVersion == 2 {
             snapshot = try await repository.snapshot(programID: programID)
             guard snapshot.draft == nil else { throw EngineError(code: "policy_activation_draft_locked", field: "draft") }
@@ -187,9 +188,12 @@ import TrainingCore
             snapshot = try await repository.activateExactPolicy(programID: programID,
                 expectedRevision: snapshot.state.revision, expectedHeadHash: head)
         }
-        try await prepareTodayBody()
-        let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
-        guard snapshot.state.activePrescription.date <= today else { throw EngineError(code: "future_workout", field: "date") }
+        let start = try SessionTiming.milliseconds(at: now())
+        let today = try SessionTiming.localDate(milliseconds: start, timeZoneID: timeZoneID)
+        try await prepareTodayBody(asOf: today)
+        let flexible = snapshot.state.schedulingPolicy == .flexibleV1
+        guard flexible || snapshot.state.activePrescription.date <= today else { throw EngineError(code: "future_workout", field: "date") }
+        guard snapshot.state.lastSessionDate == nil || today > snapshot.state.lastSessionDate! else { throw EngineError(code: "session_already_recorded", field: "date") }
         let displayed = try prepareWorkout(state: snapshot.state, rules: RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash), easierToday: easierToday)
         let logs = displayed.exercises.map {
             ExerciseLog(movementID: $0.movementID, prescriptionID: displayed.id, status: .partial, actualLoad: nil,
@@ -199,8 +203,9 @@ import TrainingCore
                 mixedLoads: [3, 4].contains(snapshot.state.schemaVersion) ? false : nil)
         }
         try await save(WorkoutDraft(id: UUID(), programID: snapshot.state.config.programID, expectedRevision: snapshot.state.revision,
-            planned: snapshot.state.activePrescription, displayed: displayed, date: displayed.date, timeZoneID: timeZoneID,
-            sessionMode: easierToday ? .easier : .normal, logs: logs, workingSetsStarted: false, acknowledgedMovementIDs: []))
+            planned: snapshot.state.activePrescription, displayed: displayed, date: flexible ? today : displayed.date, timeZoneID: timeZoneID,
+            sessionMode: easierToday ? .easier : .normal, logs: logs, workingSetsStarted: false, acknowledgedMovementIDs: [],
+            startedAtMilliseconds: flexible ? start : nil))
         submitted = nil; finished = false
         try await refreshWorkingAdmissionBody()
     }
@@ -436,7 +441,7 @@ import TrainingCore
         try requireReady()
         guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "setup") }
         // Setup invalidation and replacement remain within the retained draft's policy lifetime.
-        let startedWithLegacyDraft = snapshot.state.schemaVersion == 2 && snapshot.draft != nil
+        let startedWithLegacyDraft = snapshot.draft != nil && snapshot.draft?.startedAtMilliseconds == nil
         let mode = snapshot.draft?.sessionMode
         let slot = WorkoutSlot(date: snapshot.state.activePrescription.date, slotID: snapshot.state.activePrescription.slotID)
         snapshot = try await repository.applyVariantChange(programID: programID, expectedRevision: snapshot.state.revision, change: change, next: slot, invalidateEmptyDraft: true)
@@ -535,10 +540,18 @@ import TrainingCore
         if submitted == nil {
             let draft = try editableDraft()
             guard Set(draft.acknowledgedMovementIDs ?? []) == Set(draft.displayed.exercises.map(\.movementID)) else { throw EngineError(code: "incomplete_workout", field: "logs") }
-            let event = CompletedWorkout(eventID: draft.id.uuidString.lowercased(), date: draft.date, slotID: draft.displayed.slotID,
+            var event = CompletedWorkout(eventID: draft.id.uuidString.lowercased(), date: draft.date, slotID: draft.displayed.slotID,
                 prescriptionID: draft.displayed.id, plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode, exercises: draft.logs)
-            let today = try CalendarContext(timeZoneID: draft.timeZoneID).localDate(at: now())
-            let next = try WorkoutScheduler.nextSlot(after: max(today, draft.date), config: snapshot.state.config)
+            let finish = try SessionTiming.milliseconds(at: now())
+            let today = try SessionTiming.localDate(milliseconds: finish, timeZoneID: draft.timeZoneID)
+            let next: WorkoutSlot
+            if let start = draft.startedAtMilliseconds {
+                event.timing = SessionTiming(plannedDate: draft.planned.date, startedAtMilliseconds: start,
+                    finishedAtMilliseconds: finish, timeZoneID: draft.timeZoneID)
+                next = try WorkoutScheduler.nextRotation(after: max(today, draft.planned.date), consumedSlotID: draft.planned.slotID, config: snapshot.state.config)
+            } else {
+                next = try WorkoutScheduler.nextSlot(after: max(today, draft.date), config: snapshot.state.config)
+            }
             submitted = (event, next, draft.expectedRevision)
         }
         let (event, next, revision) = submitted!

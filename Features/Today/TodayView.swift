@@ -5,14 +5,26 @@ struct TodayView: View {
     let model: WorkoutViewModel
     let optionalServicesUnavailable: Bool
     let start: () -> Void
+    private var planned: WorkoutPrescription { model.snapshot.draft?.planned ?? model.snapshot.state.activePrescription }
+    private var rotationNumber: Int { (model.snapshot.state.config.weeklySlots.firstIndex { $0.id == planned.slotID } ?? 0) + 1 }
+    private var availability: String {
+        guard model.snapshot.draft == nil,
+              let today = try? CalendarContext(timeZoneID: model.timeZoneID).localDate(at: model.now()) else { return "Your saved workout keeps its original observations and session date." }
+        if planned.date > today { return "You can start this next workout today, before its suggested date." }
+        if planned.date < today { return "Ready now. This workout stays next even though its suggested date has passed." }
+        return "Ready today. Completing this workout advances the rotation once."
+    }
     var body: some View {
         List {
             Section("\(model.snapshot.state.config.goal.title) routine") {
-                Text("Sunday · Tuesday · Thursday").accessibilityIdentifier("today.schedule")
-                Text("Next workout: \(model.snapshot.draft?.date.iso8601 ?? model.snapshot.state.activePrescription.date.iso8601)")
+                Text("Sunday · Tuesday · Thursday · suggested cadence").accessibilityIdentifier("today.schedule")
+                Text("Next workout: \(rotationNumber) of \(model.snapshot.state.config.weeklySlots.count)")
+                Text("Suggested date: \(planned.date.iso8601)").accessibilityIdentifier("today.suggested-date")
+                Text(availability).accessibilityIdentifier("today.availability")
+                Text("The workout order stays fixed. Calendar dates are suggestions.")
                 if optionalServicesUnavailable { Text("Optional services unavailable. Local training is available.").accessibilityIdentifier("today.offline") }
                 if model.snapshot.draft != nil { Text("Your saved workout can be resumed with its original observations and date.") }
-                if model.snapshot.decisions.contains(where: { $0.explanationKey == "workout_rescheduled" }) { Text("Missed slots were rescheduled without recording a completed workout.") }
+
             }
             if model.snapshot.health != .ready { Text("Local store requires attention: \(model.snapshot.health.rawValue)").accessibilityIdentifier("store.health") }
             if model.snapshot.health == .mixedPolicyConflict { Text("Recovery histories use different training policies. All original branches are retained and working admission is blocked. Export originals for review; choosing or dropping a branch is currently unsupported.").accessibilityIdentifier("store.mixed-policy-conflict") }

@@ -206,3 +206,258 @@ extension StarterProgramRepositoryTests {
         #expect(restored.heads[revisited.state.config.programID]?.returnedState == revisited.state)
     }
 }
+
+@Suite(.serialized) struct FlexibleSchedulingRepositoryTests {}
+
+@Suite(.serialized) struct FlexibleTimingAdmissionTests {
+    @MainActor @Test(arguments: StarterProgramChoice.allCases, [false, true])
+    func midnightPreparationUsesFrozenStartDate(choice: StarterProgramChoice, startsAfterMidnight: Bool) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        var snapshot = s.initial
+        // Establish real suitable evidence through the existing legacy journal.
+        for _ in 0..<3 {
+            let event = starterRepositoryEvent(snapshot.state)
+            let next = try WorkoutScheduler.nextSlot(after: event.date, config: snapshot.state.config)
+            snapshot = try await s.repository.finalize(programID: s.programID, expectedRevision: snapshot.state.revision,
+                event: event, next: next).snapshot
+        }
+        let row = try #require(snapshot.state.activePrescription.exercises.first {
+            snapshot.state.exercises[$0.movementID]?.exactRepState?.lastSuitableNormalDate != nil
+        })
+        let last = try #require(snapshot.state.exercises[row.movementID]?.exactRepState?.lastSuitableNormalDate)
+        let threshold = try RulesetCatalog.starter(choice).parameters!.interruptionDays
+        let beforeDate = try last.adding(days: threshold - 1)
+        let before = ISO8601DateFormatter().date(from: "\(beforeDate.iso8601)T23:59:59-10:00")!
+        let first = startsAfterMidnight ? before.addingTimeInterval(2) : before
+        let later = before.addingTimeInterval(3)
+        var reads = 0
+        let model = WorkoutViewModel(repository: s.repository, snapshot: snapshot, timeZoneID: "Pacific/Honolulu", now: {
+            reads += 1
+            return reads == 1 ? first : later
+        })
+        try await model.start(easierToday: false)
+        let draft = try #require(model.snapshot.draft)
+        let frozenDate = try CalendarContext(timeZoneID: "Pacific/Honolulu").localDate(at: first)
+        #expect(draft.date == frozenDate)
+        #expect(draft.startedAtMilliseconds == (try SessionTiming.milliseconds(at: first)))
+        #expect(draft.planned.date == snapshot.state.activePrescription.date)
+        #expect(draft.planned.slotID == snapshot.state.activePrescription.slotID)
+        #expect(model.snapshot.state.exercises[row.movementID]!.interruptedReturn == startsAfterMidnight)
+        #expect(model.snapshot.state.exercises[row.movementID]!.interruptedReturn == (last.days(until: draft.date) >= threshold))
+        for envelope in model.snapshot.history {
+            if case let .interruption(asOf) = envelope.command { #expect(asOf == draft.date) }
+        }
+        #expect(model.needsDateChoice == !startsAfterMidnight)
+        await s.repository.close()
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    // Removing flexible Start admission or restoring weekday-driven overdue
+    // replacement must fail these observable app/repository scenarios.
+    @MainActor @Test(arguments: [StarterProgramChoice.upperBody, .wholeBodyGlutes])
+    func flexibleFutureStartRetainsIssuedSunday(choice: StarterProgramChoice) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        #expect(model.snapshot.draft?.planned == s.initial.state.activePrescription)
+        #expect(model.snapshot.draft?.date == (try LocalDate(iso8601: "2026-10-09")))
+    }
+    @MainActor @Test(arguments: [StarterProgramChoice.upperBody, .wholeBodyGlutes])
+    func flexibleOverdueOpeningKeepsPendingRotation(choice: StarterProgramChoice) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-14T20:00:00Z")! })
+        try await model.prepareToday()
+        #expect(model.snapshot.state.activePrescription == s.initial.state.activePrescription)
+        #expect(model.snapshot.history.filter { if case .workout = $0.command { return true }; return false }.isEmpty)
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    @MainActor @Test(arguments: [StarterProgramChoice.upperBody, .wholeBodyGlutes])
+    func flexibleEarlyCompletionsConsumeEachRotationOnce(choice: StarterProgramChoice) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        let first = try await model.finish()
+        #expect(first.snapshot.state.activePrescription.slotID == "TUE")
+        #expect(first.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-13")))
+        #expect(first.snapshot.state.lastSessionDate == (try LocalDate(iso8601: "2026-10-09")))
+        #expect(try await model.finish().snapshot == first.snapshot)
+        let monday = WorkoutViewModel(repository: s.repository, snapshot: first.snapshot, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-12T20:00:00Z")! })
+        try await monday.start(easierToday: true)
+        for row in monday.snapshot.draft!.displayed.exercises { try await monday.recordStatus(movementID: row.movementID, status: .skipped) }
+        let second = try await monday.finish()
+        #expect(second.snapshot.state.activePrescription.slotID == "THU")
+        #expect(second.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-15")))
+        #expect(second.snapshot.state.lastSessionDate == (try LocalDate(iso8601: "2026-10-12")))
+        #expect(second.snapshot.history.filter { if case .workout = $0.command { return true }; return false }.count == 2)
+    }
+    @MainActor @Test(arguments: [StarterProgramChoice.upperBody, .wholeBodyGlutes])
+    func flexibleLateCompletionKeepsGroupAndSettingsAcceptDecoupledDate(choice: StarterProgramChoice) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-14T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        #expect(model.snapshot.draft?.planned.slotID == "SUN")
+        for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        _ = try await model.finish()
+        #expect(model.snapshot.state.activePrescription.slotID == "TUE")
+        #expect(model.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-15")))
+        let pendingBases = model.snapshot.state.activePrescription.exercises.map(\.baseMovementID)
+        try await model.changeProgram(.goal(.maintenance))
+        #expect(model.snapshot.state.activePrescription.slotID == "TUE")
+        #expect(model.snapshot.state.activePrescription.exercises.map(\.baseMovementID) == pendingBases)
+        try await model.prepareToday()
+        #expect(model.snapshot.state.activePrescription.slotID == "TUE")
+        let restored = try BackupService.validate(await s.repository.exportBackup())
+        #expect(restored.heads[model.snapshot.state.config.programID]?.returnedState == model.snapshot.state)
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    @MainActor @Test func cancelFailedSaveAndFrozenRetryNeverSkipRotation() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .upperBody, goal: .size)
+        var instant = ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")!
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu", now: { instant })
+        try await model.start(easierToday: false)
+        let issued = model.snapshot.draft!.planned
+        try await model.resolveDateChange(keepOriginal: false)
+        #expect(model.snapshot.draft == nil && model.snapshot.state.activePrescription == issued)
+        try await model.start(easierToday: false)
+        for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        let before = try await s.repository.exportBackup()
+        let frozenFinish = try SessionTiming.milliseconds(at: instant)
+        await s.repository.failNextSave()
+        await #expect(throws: (any Error).self) { try await model.finish() }
+        #expect(try await s.repository.exportBackup() == before)
+        #expect(model.snapshot.state.activePrescription == issued)
+        instant = instant.addingTimeInterval(5 * 86_400)
+        let receipt = try await model.finish()
+        #expect(receipt.snapshot.state.activePrescription.slotID == "TUE")
+        #expect(receipt.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-13")))
+        guard case let .workout(event, next) = receipt.snapshot.history.last!.command else { Issue.record("Workout journal missing"); return }
+        #expect(event.timing?.finishedAtMilliseconds == frozenFinish)
+        #expect(event.timing?.plannedDate == issued.date)
+        #expect(event.date == (try LocalDate(iso8601: "2026-10-09")))
+        let replay = try await s.repository.finalize(programID: s.programID, expectedRevision: 0, event: event, next: next)
+        #expect(replay.snapshot == receipt.snapshot)
+        #expect(replay.snapshot.history.filter { if case .workout = $0.command { return true }; return false }.count == 1)
+    }
+    @MainActor @Test func oldObservedDraftFinishesUnderRetainedSemanticsThenActivates() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .wholeBodyGlutes, goal: .size)
+        var old = starterRepositoryDraft(s.initial.state, kind: 3)
+        old.logs = starterRepositoryEvent(s.initial.state).exercises
+        #expect(old.logs.contains { !$0.actualSets.isEmpty })
+        try await s.repository.saveDraft(old)
+        let oldBytes = try BackupService.bytes(old)
+        let snapshot = try await s.repository.snapshot(programID: s.programID)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: snapshot, timeZoneID: "Pacific/Auckland",
+            now: { ISO8601DateFormatter().date(from: "2026-10-11T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        #expect(try BackupService.bytes(model.snapshot.draft!) == oldBytes)
+        #expect(model.snapshot.state.schedulingPolicy == nil)
+        let receipt = try await model.finish()
+        guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { Issue.record("Missing old workout"); return }
+        #expect(event.timing == nil && event.date == old.date)
+        let nextModel = WorkoutViewModel(repository: s.repository, snapshot: receipt.snapshot, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-12T20:00:00Z")! })
+        try await nextModel.start(easierToday: false)
+        #expect(nextModel.snapshot.state.schedulingPolicy == .flexibleV1)
+        #expect(nextModel.snapshot.draft?.planned.slotID == "TUE")
+        #expect(nextModel.snapshot.draft?.date == (try LocalDate(iso8601: "2026-10-12")))
+    }
+    @MainActor @Test func midnightAndTravelRetainRealStartDateTimezoneAndFinishBoundary() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .upperBody, goal: .size)
+        let start = ISO8601DateFormatter().date(from: "2026-10-10T09:59:00Z")!
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu", now: { start })
+        try await model.start(easierToday: false)
+        let draft = model.snapshot.draft!
+        let finish = ISO8601DateFormatter().date(from: "2026-10-14T20:00:00Z")!
+        let traveler = WorkoutViewModel(repository: s.repository, snapshot: model.snapshot, timeZoneID: "Pacific/Auckland", now: { finish })
+        #expect(traveler.needsDateChoice)
+        await #expect(throws: (any Error).self) { try await traveler.recordStatus(movementID: draft.logs[0].movementID, status: .skipped) }
+        try await traveler.resolveDateChange(keepOriginal: true)
+        for row in draft.displayed.exercises { try await traveler.recordStatus(movementID: row.movementID, status: .skipped) }
+        let receipt = try await traveler.finish()
+        guard case let .workout(event, next) = receipt.snapshot.history.last!.command else { Issue.record("Missing timing"); return }
+        #expect(event.date == (try LocalDate(iso8601: "2026-10-09")))
+        #expect(event.timing?.startedAtMilliseconds == (try SessionTiming.milliseconds(at: start)))
+        #expect(event.timing?.finishedAtMilliseconds == (try SessionTiming.milliseconds(at: finish)))
+        #expect(event.timing?.timeZoneID == "Pacific/Honolulu")
+        let expectedNextDate = try LocalDate(iso8601: "2026-10-15")
+        #expect(next.slotID == "TUE" && next.date == expectedNextDate)
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    @MainActor @Test(arguments: [StarterProgramChoice.upperBody, .wholeBodyGlutes])
+    func flexibleBackupsDraftsAndCloudGraphReplayExactlyWithoutAccount(choice: StarterProgramChoice) async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: choice, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        let pending = try await s.repository.exportBackup()
+        let (draftClone, _) = try recoveryEmpty()
+        _ = try await draftClone.importBackup(pending)
+        #expect(try await draftClone.snapshot(programID: s.programID) == model.snapshot)
+        for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        _ = try await model.finish()
+        let ordinary = try await s.repository.exportBackup()
+        let before = model.snapshot
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(ordinary))
+        #expect(proof.quarantined.isEmpty && proof.waiting.isEmpty)
+        #expect(proof.envelopes[ordinary.heads[before.state.config.programID]!]?.returnedState == before.state)
+        let (clone, _) = try recoveryEmpty()
+        _ = try await clone.importBackup(ordinary)
+        #expect(try await clone.snapshot(programID: s.programID) == before)
+        _ = try await CloudIngestor(repository: s.repository).ingest(recoveryRecords(s.repository), scope: recoveryScope)
+        let graph = try await s.repository.exportBackup()
+        #expect(graph.formatVersion == 2)
+        let (restored, _) = try recoveryEmpty()
+        _ = try await restored.importBackup(graph)
+        let readback = try await restored.snapshot(programID: s.programID)
+        #expect(readback.state == before.state && readback.history == before.history && readback.health == .ready)
+        #expect(ordinary.journal.allSatisfy { graph.journal.contains($0) })
+        #expect(try await restored.exportBackup().recovery?.originals == graph.recovery?.originals)
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    @MainActor @Test func activationIsAdmittedByCausalRecoveryBeforeAnyCompletion() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .upperBody, goal: .size)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        let backup = try await s.repository.exportBackup()
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(backup))
+        #expect(proof.quarantined.isEmpty && proof.waiting.isEmpty && proof.envelopes.count == 2)
+        #expect(proof.envelopes[backup.heads[model.snapshot.state.config.programID]!]?.returnedState == model.snapshot.state)
+    }
+}
+
+extension FlexibleSchedulingRepositoryTests {
+    @MainActor @Test func schemaTwoFlexibleHistoryCanActivateExactPolicyWithoutLosingTiming() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        let initial = try await s.repository.snapshot(programID: s.programID)
+        let model = WorkoutViewModel(repository: s.repository, snapshot: initial, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-06T20:00:00Z")! })
+        try await model.start(easierToday: false)
+        for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        _ = try await model.finish()
+        let original = try await s.repository.exportBackup()
+        let exact = WorkoutViewModel(repository: s.repository, snapshot: model.snapshot, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-07T20:00:00Z")! }, activatesExactPolicy: true)
+        try await exact.start(easierToday: false)
+        #expect(exact.snapshot.state.schemaVersion == 3 && exact.snapshot.state.schedulingPolicy == .flexibleV1)
+        #expect(exact.snapshot.draft?.date == (try LocalDate(iso8601: "2026-10-07")))
+        #expect(original.journal.allSatisfy { item in exact.snapshot.history.contains { $0.eventID == item.id } })
+        let verified = try RecoveryVerifier().verify(BackupService.recoveryRecords(await s.repository.exportBackup()))
+        #expect(verified.quarantined.isEmpty && verified.waiting.isEmpty)
+    }
+}

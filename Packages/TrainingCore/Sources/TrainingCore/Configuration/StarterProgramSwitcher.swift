@@ -7,7 +7,7 @@ public func changeStarterProgram(state: ProgramState, sourceRules: Ruleset, dest
                                  choice: StarterProgramChoice, goal: Goal,
                                  verifiedHistory: [JournalEnvelope], nextWorkout: WorkoutSlot) throws -> ConfigurationResult {
     guard nextWorkout.date >= state.activePrescription.date else { throw EngineError(code: "backdated_date", field: "next") }
-    try validateConfigurationInput(state: state, rules: sourceRules, slot: nextWorkout)
+    try validateConfigurationInput(state: state, rules: sourceRules, slot: nextWorkout, preservePendingSlot: false)
     guard [2, 3, 4].contains(state.schemaVersion), destinationDefinition.choice == choice,
           let uuid = UUID(uuidString: state.config.programID), state.config.programID == uuid.uuidString.lowercased() else {
         throw EngineError(code: "unsupported_starter_transition", field: "state")
