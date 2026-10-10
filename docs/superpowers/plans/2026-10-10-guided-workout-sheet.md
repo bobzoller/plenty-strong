@@ -54,7 +54,8 @@ The short snippets below are representative assertions inside each named test, a
 ```swift
 #expect(originals[0].actualSets[0].reps == 7)
 #expect(effective[0].actualSets[0].reps == 8)
-#expect(try JSONEncoder().encode(legacyEvent) == originalLegacyBytes)
+let value = try JSONDecoder().decode(CanonicalValue.self, from: JSONEncoder().encode(legacyEvent))
+#expect(try CanonicalJSON.encode(value) == originalLegacyBytes) // Frozen canonical legacy fixture.
 ```
 - [ ] **Step 2: Run red.** `xcrun swift test --package-path Packages/TrainingCore --filter ObservationAuditTests`; expected missing types/validator failures.
 - [ ] **Step 3: Implement the interfaces.** Use nil omission; explicit version admission. Reverse corrections then replay forward; validate original structural values/outcome restrictions. Schema3/4 bind explicit setIndex; legacy logs use stable array position while preserving nil setIndex and their original admission/effort semantics. Unsupported archives stay read-only in the app. Audit cannot change load/setup/skips/safety. `BackupService.transition(state:command:rules:legacyHistory:archivedRules:archivedProfiles:)` passes pinned prescription/config/schema to audit validation before existing workout transition. Do not alter progression or expose audit as comparison evidence.
