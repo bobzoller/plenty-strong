@@ -102,7 +102,6 @@ struct WorkoutView: View {
     }
     private var path: [WorkoutReviewRoute] { navigation.path }
     @State private var showingSetup = false
-    @State private var correctingLoad = false
     @State private var discarding = false
     @State private var reviewingPending = false
     @State private var repairingCompletion = false
@@ -163,12 +162,6 @@ struct WorkoutView: View {
             }
         }
         .sheet(isPresented: $showingSetup) { if let row = currentRow { MovementSetupView(model: model, row: row) } }
-        .alert("Correct recorded load?", isPresented: $correctingLoad) {
-            Button("Cancel", role: .cancel) {}
-            Button("Keep observations; stop this movement") {
-                if let row = currentRow { Task { await model.run { try await model.stopForLoadCorrection(movementID: row.movementID, pendingActual: pendingActual); pendingActual = nil } } }
-            }
-        } message: { Text("The saved load and reps are retained as partial work. Choose the corrected load at this movement's next workout. A new attempt in this workout is unavailable.") }
         .alert("Keep entered reps before reviewing?", isPresented: $reviewingPending) {
             Button("Cancel", role: .cancel) {}
             Button("Keep entry as partial and review") {
@@ -204,17 +197,19 @@ struct WorkoutView: View {
                     introduction(row)
                 }.padding() }.disabled(model.busy || model.snapshot.health != .ready)
                     .safeAreaInset(edge: .bottom) {
-                        GuidedWorkoutFooter(model: model, row: row, pendingActual: $pendingActual) {
+                        GuidedWorkoutFooter(model: model) {
                         Button(row.sets.isEmpty ? (textSize.isAccessibilitySize ? "Review" : "Review outcome") : (textSize.isAccessibilitySize ? "Start" : "Start movement")) {
                             Task { await model.run { try await model.beginMovement(movementID: id) } }
                         }.buttonStyle(.borderedProminent).controlSize(.large).accessibilityLabel(row.sets.isEmpty ? "Review outcome" : "Start movement").accessibilityIdentifier("guided.next")
                             .disabled(model.busy || model.snapshot.health != .ready || (!row.sets.isEmpty && model.movement(for: row).loadingMode == .externalLoad && !preparationWeightIsConfirmed(for: row)))
+                        } secondary: {
+                            WorkoutSecondaryActions(model: model, step: .introduction(movementID: id), row: row, pendingActual: $pendingActual)
                         }
                     }
             }
         case let .set(id, _):
             if let row = rows.first(where: { $0.movementID == id }) {
-                SetEntryView(model: model, row: row, pendingActual: $pendingActual, correctLoad: { correctingLoad = true })
+                SetEntryView(model: model, row: row, pendingActual: $pendingActual)
             }
         case let .summary(id):
             if let row = rows.first(where: { $0.movementID == id }) { MovementSummaryView(model: model, row: row, reviewing: false, reviewCorrection: { index in pushCorrection(row.movementID, index: index) }) }
@@ -222,12 +217,13 @@ struct WorkoutView: View {
             if let step {
                 ScrollView { VStack(alignment: .leading, spacing: 16) {
                     GuidedRestView(model: model, step: step)
-                    if let row = currentRow { earlyActions(row); Button("Correct load") { correctingLoad = true }.accessibilityIdentifier("load.correct") }
                 }.padding() }
                 .safeAreaInset(edge: .bottom) {
-                    GuidedWorkoutFooter(model: model, row: currentRow) {
+                    GuidedWorkoutFooter(model: model) {
                     Button("Next") { Task { await model.run { try await model.advanceRest() } } }
                         .buttonStyle(.borderedProminent).controlSize(.large).accessibilityIdentifier("guided.next").disabled(model.busy || model.snapshot.health != .ready)
+                    } secondary: {
+                        if let row = currentRow { WorkoutSecondaryActions(model: model, step: step, row: row, pendingActual: $pendingActual) }
                     }
                 }
             }
@@ -244,7 +240,11 @@ struct WorkoutView: View {
             if !model.canDiscardDraft { Text("A safety stop or pending Finish must be retained and finalized. Keep the original date, then handle the remaining movements.") }
             Button("Discard draft and restart", role: .destructive) { discarding = true }.accessibilityIdentifier("workout.discard-restart").disabled(!model.canDiscardDraft)
         }.padding() }.disabled(model.busy)
-            .safeAreaInset(edge: .bottom) { GuidedWorkoutFooter(model: model, row: currentRow) {} }
+            .safeAreaInset(edge: .bottom) {
+                GuidedWorkoutFooter(model: model) {} secondary: {
+                    if let row = currentRow, let step = model.visibleStep { WorkoutSecondaryActions(model: model, step: step, row: row, pendingActual: $pendingActual) }
+                }
+            }
     }
     private var workoutReview: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
@@ -322,7 +322,6 @@ struct WorkoutView: View {
             Text("Choose a manageable saved setup or create a new setup. Existing history and safety remain.")
             if model.canChangePreparation { Button("Review movement setup") { showingSetup = true }.accessibilityIdentifier("movement.review-setup") }
         }
-        earlyActions(row)
     }
     private func preparationContext(for row: ExercisePrescription) -> String {
         "\(model.snapshot.draft?.displayed.id ?? ""):\(row.movementID)"
@@ -357,25 +356,6 @@ struct WorkoutView: View {
             try await model.confirmLoad(movementID: row.movementID, load: load)
             guard preparationContext(for: row) == context, selectedPreparationWeight(for: row) == load else { return }
             preparationWeight = load; preparationWeightContext = context; preparationWeightNeedsConfirmation = false
-        } }
-    }
-    @ViewBuilder private func earlyActions(_ row: ExercisePrescription) -> some View {
-        if !model.handled(row.movementID) {
-            Button("Keep as partial") { status(.partial, row: row) }.accessibilityIdentifier("movement.partial-action")
-            if model.log(for: row.movementID)?.actualSets.isEmpty == true, pendingActual == nil { Button("Skip movement") { status(.skipped, row: row) }.accessibilityIdentifier("movement.skip") }
-            Button("Stop movement") { status(.stopped, row: row) }.accessibilityIdentifier("movement.stop")
-        }
-    }
-    private func status(_ status: LogStatus, row: ExercisePrescription) {
-        dismissKeyboard()
-        Task { await model.run { try await model.recordStatus(movementID: row.movementID, status: status, pendingActual: pendingActual); pendingActual = nil } }
-    }
-    private func problem(_ problem: Problem, row: ExercisePrescription) {
-        dismissKeyboard()
-        Task { await model.run {
-            try await model.recordProblem(movementID: row.movementID, problem: problem, pendingActual: path.isEmpty ? pendingActual : nil)
-            pendingActual = nil
-            if !path.isEmpty { navigation.path.removeAll(); model.reviewStep = nil }
         } }
     }
     private func pushSummary(_ id: String) async throws {

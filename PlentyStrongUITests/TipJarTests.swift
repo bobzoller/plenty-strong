@@ -18,9 +18,12 @@ final class TipJarTests: XCTestCase {
         app.revealWorkoutControl(app.textFields["set.reps"])
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
         capture("Tip training entry fully revealed before purchase", app: app)
-        let capabilities = [app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists]
+        app.openWorkoutSkip()
+        XCTAssertTrue(app.buttons["movement.partial-action"].exists)
+        app.cancelWorkoutSkip()
+        let capabilities = [app.buttons["workout.skip"].exists, app.textFields["set.reps"].exists]
         XCTAssertEqual(capabilities, [true, true])
-        XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
+        XCTAssertFalse(app.staticTexts["workout.session-mode"].exists)
         let pendingEntry = app.textFields["set.reps"].value as? String
         app.selectNativeTab("Settings", identifier: "tab.settings"); app.buttons["settings.tips"].tap()
         XCTAssertTrue(app.staticTexts["tips.disclosure"].waitForExistence(timeout: 10))
@@ -38,8 +41,11 @@ final class TipJarTests: XCTestCase {
         XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 30))
         app.revealWorkoutControl(app.textFields["set.reps"])
         capture("Tip training entry fully revealed after purchase", app: app)
-        XCTAssertEqual([app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists], capabilities)
-        XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
+        app.openWorkoutSkip()
+        XCTAssertTrue(app.buttons["movement.partial-action"].exists)
+        app.cancelWorkoutSkip()
+        XCTAssertEqual([app.buttons["workout.skip"].exists, app.textFields["set.reps"].exists], capabilities)
+        XCTAssertFalse(app.staticTexts["workout.session-mode"].exists)
         XCTAssertEqual(app.textFields["set.reps"].value as? String, pendingEntry)
         app.selectNativeTab("Settings", identifier: "tab.settings")
         app.navigationBars.buttons.firstMatch.tap(); app.buttons["settings.backup"].tap(); app.buttons["backup.export"].tap()
@@ -101,6 +107,8 @@ final class TipJarTests: XCTestCase {
         app.beginGuidedMovement(weight: "5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
+        app.openWorkoutSkip()
         XCTAssertTrue(app.buttons["movement.partial-action"].exists)
+        app.cancelWorkoutSkip()
     }
 }

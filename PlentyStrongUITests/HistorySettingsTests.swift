@@ -126,8 +126,7 @@ final class HistorySettingsTests: XCTestCase {
         input.typeText(XCUIKeyboardKey.delete.rawValue + "abc")
         XCTAssertFalse(app.buttons["set.save"].isEnabled)
         XCTAssertTrue(app.buttons["keyboard.done"].exists); app.buttons["keyboard.done"].tap()
-        XCTAssertEqual(app.buttons["problem.pain"].label, "Pain — stop")
-        XCTAssertEqual(app.buttons["problem.control_lost"].label, "Loss of control — stop")
+        app.assertWorkoutSafetyActions()
     }
     @MainActor func testUnsupportedLocalFileShowsReadableErrorAndRetainsHistory() {
         let app = XCUIApplication()
@@ -286,11 +285,13 @@ extension XCUIApplication {
             let bounds = element.frame
             guard [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.width > 0, bounds.height > 0,
                   bounds.intersects(frame) else { return false }
-            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "BackButton"].contains(element.identifier) {
+            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "workout.skip", "set.skip", "movement.skip", "movement.partial-action", "movement.stop", "load.correct", "load.mixed", "BackButton"].contains(element.identifier) {
                 // AX can expose a cached offscreen frame before a valid hit point.
                 // Check the complete control inside content before hittability.
                 let bottom = footerFrame().map { $0.minY - 32 } ?? frame.maxY
-                guard bounds.minY >= navigationBottom(), bounds.maxY < bottom else { return false }
+                // The last input can land exactly at the 32-point content
+                // margin. Allow subpixel AX rounding while retaining full bounds.
+                guard bounds.minY >= navigationBottom(), bounds.maxY <= bottom + 0.5 else { return false }
             }
             return element.isHittable
         }
@@ -368,7 +369,10 @@ extension XCUIApplication {
         scrollViews.staticTexts[identifier]
     }
     @MainActor func tapWorkoutControl(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
-        let control = buttons[identifier]
+        if ["set.skip", "movement.skip", "movement.partial-action", "movement.stop", "problem.pain", "problem.control_lost", "load.correct", "load.mixed"].contains(identifier), !buttons[identifier].exists {
+            openWorkoutSkip(file: file, line: line)
+        }
+        let control = buttons[identifier].firstMatch
         // These List/Form descendants are lazy until their content is scrolled
         // into the viewport; waiting alone cannot make an absent row appear.
         if identifier == "today.start" || identifier == "settings.program-confirm" || identifier.hasPrefix("settings.setup.") {
@@ -387,6 +391,44 @@ extension XCUIApplication {
             let fields = textFields.matching(NSPredicate(format: "identifier IN %@", ["set.reps", "set.left-reps", "set.right-reps"]))
             let saved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: fields)
             XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 15), .completed, file: file, line: line)
+        }
+    }
+    @MainActor func openWorkoutSkip(file: StaticString = #filePath, line: UInt = #line) {
+        tapWorkoutControl("workout.skip", file: file, line: line)
+        XCTAssertTrue(sheets["Workout actions"].firstMatch.waitForExistence(timeout: 5), file: file, line: line)
+    }
+    @MainActor func cancelWorkoutSkip(file: StaticString = #filePath, line: UInt = #line) {
+        if buttons["Cancel"].exists { buttons["Cancel"].tap() }
+        else {
+            // Native adaptive popovers omit role-based Cancel and expose this
+            // supported outside-dismissal region instead.
+            let dismiss = otherElements["PopoverDismissRegion"]
+            XCTAssertTrue(dismiss.waitForExistence(timeout: 5), file: file, line: line)
+            dismiss.tap()
+        }
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheets["Workout actions"].firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed, file: file, line: line)
+    }
+    @MainActor func assertWorkoutSafetyActions(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(buttons["workout.skip"].isHittable, file: file, line: line)
+        openWorkoutSkip(file: file, line: line)
+        XCTAssertTrue(buttons["problem.pain"].firstMatch.isHittable, file: file, line: line)
+        XCTAssertTrue(buttons["problem.pain"].firstMatch.label.hasPrefix("Pain — stop"), file: file, line: line)
+        XCTAssertTrue(buttons["problem.control_lost"].firstMatch.isHittable, file: file, line: line)
+        XCTAssertTrue(buttons["problem.control_lost"].firstMatch.label.hasPrefix("Loss of control — stop"), file: file, line: line)
+        cancelWorkoutSkip(file: file, line: line)
+    }
+    /// Compact working pages keep persisted observations in backward Summary.
+    /// Native Back restores the same forward rest/deadline without confirming it.
+    @MainActor func assertGuidedActual(_ identifier: String, equals expected: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        let needsReview = !staticTexts[identifier].exists && (staticTexts["rest.remaining"].exists || textFields["set.reps"].exists || textFields["set.left-reps"].exists)
+        if needsReview { tapWorkoutControl("guided.back", file: file, line: line) }
+        XCTAssertTrue(staticTexts[identifier].waitForExistence(timeout: 15), file: file, line: line)
+        if let expected { XCTAssertEqual(staticTexts[identifier].label, expected, file: file, line: line) }
+        if needsReview {
+            navigationBars.buttons["BackButton"].tap()
+            let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: staticTexts["movement.summary"])
+            XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 15), .completed, file: file, line: line)
         }
     }
     @MainActor func enterPerformedReps(_ value: String, field: String = "set.reps", file: StaticString = #filePath, line: UInt = #line) {

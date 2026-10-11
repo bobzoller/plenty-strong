@@ -69,7 +69,7 @@ struct MovementSummaryView: View {
             }.padding()
         }
         .safeAreaInset(edge: .bottom) {
-            GuidedWorkoutFooter(model: model, row: row) {
+            GuidedWorkoutFooter(model: model) {
             Button(legacyReturn ? (textSize.isAccessibilitySize ? "Return" : "Return to review") : (textSize.isAccessibilitySize ? "Confirm" : (reviewing ? "Confirm and return" : "Confirm summary"))) {
                 Task { await model.run {
                     if legacyReturn {
@@ -84,6 +84,8 @@ struct MovementSummaryView: View {
                 } }
             }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.busy || (!legacyReturn && log?.actualSets.isEmpty == false && effort == nil))
                 .accessibilityLabel(legacyReturn ? "Return to review" : (reviewing ? "Confirm and return" : "Confirm summary")).accessibilityIdentifier("summary.confirm")
+            } secondary: {
+                WorkoutSecondaryActions(model: model, step: .summary(movementID: row.movementID), row: row, pendingActual: .constant(nil))
             }
         }
         .onAppear {

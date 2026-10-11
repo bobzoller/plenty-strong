@@ -7,7 +7,6 @@ struct SetEntryView: View {
     @Binding var pendingActual: ActualSet?
     var correctionIndex: Int? = nil
     var retainsOpenedEntry = false
-    var correctLoad: (() -> Void)? = nil
     var corrected: (() -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var textSize
     @State private var operationID = UUID()
@@ -40,7 +39,11 @@ struct SetEntryView: View {
                 Text(correctionIndex == nil ? "Set \(index + 1) of \(row.sets.count)" : "Correct Set \(index + 1)").font(.headline).accessibilityIdentifier("set.position")
                 if let goal = row.sets[index].targetReps {
                     Text("Set \(index + 1) goal: \(goal) reps\(movement.repCounting == .perSide ? " per side" : "")").accessibilityIdentifier("set.goal")
+                } else {
+                    Text("Set \(index + 1) goal: Up to \(row.sets[index].repCeiling) good reps\(movement.repCounting == .perSide ? " per side" : "")").accessibilityIdentifier("set.goal")
                 }
+                Text(model.log(for: row.movementID)?.actualLoad.map { "Weight: \(MovementPrescriptionSummary.load($0))" } ?? (movement.loadingMode == .externalLoad ? "Actual load unrecorded" : "Bodyweight / your setup"))
+                    .accessibilityIdentifier("set.weight")
                 if movement.repCounting == .perSide {
                     TextField("Left reps performed", text: entry.left).focused($focused, equals: .left).accessibilityLabel("Left reps performed").accessibilityIdentifier("set.left-reps")
                     TextField("Right reps performed", text: entry.right).focused($focused, equals: .right).accessibilityLabel("Right reps performed").accessibilityIdentifier("set.right-reps")
@@ -49,30 +52,6 @@ struct SetEntryView: View {
                     TextField("Reps performed", text: entry.reps).focused($focused, equals: .reps).accessibilityLabel("Reps performed").accessibilityIdentifier("set.reps")
                 }
                 if belowGoal { MissedGoalReasonPicker(selection: entry.reason, required: requiresReason) }
-            }
-            PrescriptionComparisonView(summary: .make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft), repCounting: movement.repCounting)
-            GuidedActualsView(model: model, movementID: row.movementID)
-            if correctionIndex == nil {
-                if movement.loadingMode == .externalLoad {
-                    Text(model.log(for: row.movementID)?.actualLoad.map { "Confirmed: \(MovementPrescriptionSummary.load($0))" } ?? "Actual load unrecorded")
-                    Button("Correct load") { focused = nil; correctLoad?() }.accessibilityIdentifier("load.correct")
-                    if model.log(for: row.movementID)?.actualSets.isEmpty == false {
-                        Button("Different loads used — keep as partial") { Task { await model.run { try await model.recordMixedLoads(movementID: row.movementID); pendingActual = nil } } }.disabled(observation != nil).accessibilityIdentifier("load.mixed")
-                    }
-                }
-            }
-                if exact, correctionIndex == nil {
-                    Button("Skip this set") {
-                        guard let index else { return }; focused = nil
-                        Task { await model.run { try await model.skipSet(movementID: row.movementID, index: index); pendingActual = nil } }
-                    }.disabled(observation != nil || model.busy).accessibilityIdentifier("set.skip")
-                }
-            if correctionIndex == nil {
-                Button("Keep as partial") { early(.partial) }.accessibilityIdentifier("movement.partial-action")
-                Button("Stop movement") { early(.stopped) }.accessibilityIdentifier("movement.stop")
-                if model.log(for: row.movementID)?.actualSets.isEmpty == true, observation == nil {
-                    Button("Skip movement") { early(.skipped) }.accessibilityIdentifier("movement.skip")
-                }
             }
         }.padding() }
         .disabled(model.busy || model.snapshot.health != .ready)
@@ -92,7 +71,7 @@ struct SetEntryView: View {
             pendingActual = observation
         }
         .safeAreaInset(edge: .bottom) {
-            GuidedWorkoutFooter(model: model, row: row, pendingActual: correctionIndex == nil ? $pendingActual : .constant(nil)) {
+            GuidedWorkoutFooter(model: model) {
                 HStack(spacing: 12) {
                 Button(correctionIndex == nil ? "Next" : (textSize.isAccessibilitySize ? "Save" : "Save correction")) {
                     guard let observation, let index else { return }
@@ -115,11 +94,9 @@ struct SetEntryView: View {
                         .accessibilityLabel("Done").accessibilityIdentifier("keyboard.done")
                 }
                 }
+            } secondary: {
+                WorkoutSecondaryActions(model: model, step: .set(movementID: row.movementID, index: index ?? 0), row: row, pendingActual: correctionIndex == nil ? $pendingActual : .constant(nil))
             }
         }
-    }
-    private func early(_ status: LogStatus) {
-        focused = nil
-        Task { await model.run { try await model.recordStatus(movementID: row.movementID, status: status, pendingActual: observation); pendingActual = nil } }
     }
 }

@@ -92,7 +92,7 @@ extension OfflineAcceptanceTests {
         app.beginGuidedMovement()
         let input = app.textFields["set.reps"]
         app.revealWorkoutControl(input)
-        XCTAssertTrue(input.isHittable); XCTAssertTrue(app.buttons["problem.pain"].isHittable); XCTAssertTrue(app.buttons["problem.control_lost"].isHittable)
+        XCTAssertTrue(input.isHittable); app.assertWorkoutSafetyActions()
         let entry = XCTAttachment(screenshot: app.screenshot()); entry.name = "Actual system Reduce Motion exact blank entry and pinned stops"; entry.lifetime = .keepAlways; add(entry)
         app.buttons["workout.close"].tap(); app.selectNativeTab("History", identifier: "tab.history")
         app.buttons["history.first-workout"].tap()

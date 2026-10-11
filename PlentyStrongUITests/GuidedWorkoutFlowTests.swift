@@ -1,6 +1,171 @@
 import XCTest
 
 final class GuidedWorkoutFlowTests: XCTestCase {
+    @MainActor func testStoppedCorrectionOmitsEmptySecondaryActions() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("9"); app.tapWorkoutControl("problem.control_lost")
+        XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
+        app.tapWorkoutControl("summary.correct.0")
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.buttons["correction.save"].exists && !app.buttons["summary.confirm"].exists &&
+                app.textFields["set.reps"].value as? String == "9"
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+        XCTAssertFalse(app.buttons["workout.skip"].exists, "No secondary entry when all contextual actions are unavailable")
+        XCTAssertTrue(app.buttons["correction.save"].isEnabled)
+    }
+    @MainActor func testMixedLoadsKeepSavedObservationsWithoutNewAttempt() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        app.enterPerformedReps("9")
+        app.openWorkoutSkip()
+        XCTAssertFalse(app.buttons["load.mixed"].exists, "Mixed-load command cannot atomically retain pending reps")
+        XCTAssertFalse(app.buttons["set.skip"].exists)
+        app.cancelWorkoutSkip()
+        XCTAssertEqual(app.textFields["set.reps"].value as? String, "9")
+        app.replacePerformedReps("abc")
+        app.openWorkoutSkip()
+        XCTAssertFalse(app.buttons["load.mixed"].exists)
+        XCTAssertFalse(app.buttons["set.skip"].exists)
+        app.cancelWorkoutSkip()
+        XCTAssertEqual(app.textFields["set.reps"].value as? String, "abc")
+        let input = app.textFields["set.reps"]
+        input.tap(); input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3))
+        if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
+        XCTAssertTrue(["", "Reps performed"].contains(input.value as? String ?? ""))
+        app.tapWorkoutControl("load.mixed")
+        XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 10 reps")
+        XCTAssertFalse(app.staticTexts["set.actual.1"].exists)
+        XCTAssertEqual(app.staticTexts["summary.outcome"].label, "Outcome: partial")
+        XCTAssertFalse(app.buttons["set.save"].exists)
+    }
+    @MainActor func testCorrectionSafetyKeepsOriginalObservationAndNoNewAttempt() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("guided.back"); app.tapWorkoutControl("summary.correct.0")
+        let correctionReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !app.buttons["summary.confirm"].exists && app.buttons["correction.save"].exists &&
+                app.textFields["set.reps"].value as? String == "10"
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [correctionReady], timeout: 15), .completed)
+        app.replacePerformedReps("9")
+        app.openWorkoutSkip()
+        XCTAssertFalse(app.buttons["set.skip"].exists)
+        XCTAssertFalse(app.buttons["movement.partial-action"].exists)
+        XCTAssertFalse(app.buttons["load.correct"].exists)
+        app.tapWorkoutControl("problem.pain")
+        app.navigationBars.buttons["BackButton"].tap(); waitForCorrectionReturn(app)
+        XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 10 reps")
+        XCTAssertFalse(app.staticTexts["set.actual.1"].exists)
+        XCTAssertFalse(app.buttons["set.save"].exists)
+    }
+    @MainActor func testSkipDialogPerSidePainRetainsMissingSideWithoutReason() {
+        let app = launch(mode: "per-side")
+        for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
+        app.beginGuidedMovement(weight: "5")
+        app.enterPerformedReps("7", field: "set.left-reps")
+        XCTAssertFalse(app.buttons["set.save"].isEnabled)
+        guard app.buttons["workout.skip"].waitForExistence(timeout: 5) else { XCTFail("Missing contextual Skip"); return }
+        app.tapWorkoutControl("workout.skip"); app.tapWorkoutControl("problem.pain")
+        XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: left 7, right unrecorded")
+        XCTAssertFalse(app.buttons["set.save"].exists)
+    }
+    @MainActor func testSkipDialogCancelRetainsInputAndPartialKeepsRawShortfall() {
+        let app = launch(); begin(app)
+        XCTAssertFalse(app.buttons["load.correct"].exists)
+        XCTAssertEqual(app.staticTexts["set.weight"].label, "Weight: 40 lb per hand")
+        app.enterPerformedReps("9")
+        XCTAssertFalse(app.buttons["set.save"].isEnabled)
+        XCTAssertTrue(app.buttons["reason.effort_limit"].exists)
+        guard app.buttons["workout.skip"].waitForExistence(timeout: 5) else { XCTFail("Missing contextual Skip"); return }
+        app.tapWorkoutControl("workout.skip")
+        XCTAssertFalse(app.buttons["set.skip"].exists, "Pending reps cannot silently become a skipped set")
+        capture(app, "Native contextual Skip cancellation with pending reps")
+        app.cancelWorkoutSkip()
+        XCTAssertEqual(app.textFields["set.reps"].value as? String, "9")
+        XCTAssertFalse(app.buttons["set.save"].isEnabled)
+        app.replacePerformedReps("abc")
+        app.tapWorkoutControl("workout.skip")
+        XCTAssertFalse(app.buttons["set.skip"].exists, "Invalid typed input cannot become a skipped slot")
+        app.buttons["movement.partial-action"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["save.error"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["set.reps"].value as? String, "abc")
+        app.replacePerformedReps("9")
+        app.tapWorkoutControl("workout.skip")
+        app.buttons["movement.partial-action"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 9 reps")
+        XCTAssertEqual(app.staticTexts["summary.outcome"].label, "Outcome: partial")
+        XCTAssertFalse(app.buttons["set.save"].exists)
+    }
+
+    @MainActor func testSkipEmptySetAndNextSetDuringRestKeepIndexedSlots() {
+        let app = launch(); begin(app)
+        guard app.buttons["workout.skip"].waitForExistence(timeout: 5) else { XCTFail("Missing contextual Skip"); return }
+        app.tapWorkoutControl("workout.skip"); app.buttons["set.skip"].firstMatch.tap()
+        let second = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Set 2 goal: 10 reps"), object: app.staticTexts["set.goal"])
+        XCTAssertEqual(XCTWaiter.wait(for: [second], timeout: 15), .completed)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["set.actual.1"].exists, "Rest shows a compact next preview")
+        app.tapWorkoutControl("workout.skip"); app.buttons["set.skip"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.skipped.0"].label, "Set 1: skipped")
+        XCTAssertEqual(app.staticTexts["set.actual.1"].label, "Set 2: 10 reps")
+        XCTAssertEqual(app.staticTexts["set.skipped.2"].label, "Set 3: skipped")
+    }
+
+    @MainActor func testBetweenRestSkipTargetsUpcomingMovementAndSafetyNamesSource() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save"); app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("effort.unknown"); app.tapWorkoutControl("summary.confirm")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+        guard app.buttons["workout.skip"].waitForExistence(timeout: 5) else { XCTFail("Missing contextual Skip"); return }
+        app.tapWorkoutControl("workout.skip")
+        XCTAssertFalse(app.buttons["load.correct"].exists, "Acknowledged source cannot accept load correction")
+        XCTAssertFalse(app.buttons["load.mixed"].exists)
+        XCTAssertEqual(app.buttons["movement.skip"].firstMatch.label, "Skip Chin-ups")
+        XCTAssertEqual(app.buttons["problem.pain"].firstMatch.label, "Pain — stop Incline DB Press")
+        app.buttons["movement.skip"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["summary.outcome"].label, "Outcome: skipped")
+        XCTAssertEqual(app.staticTexts["set.unrecorded.0"].label, "Set 1: unrecorded")
+    }
+
+    @MainActor func testBodyweightRestHasNoLoadCorrectionAndSourcePainStillWorks() {
+        let app = launch(mode: "per-side")
+        for _ in 0..<3 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
+        app.beginGuidedMovement(); app.enterPerformedReps("8"); app.tapWorkoutControl("set.save"); app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("effort.unknown"); app.tapWorkoutControl("summary.confirm")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+        guard app.buttons["workout.skip"].waitForExistence(timeout: 5) else { XCTFail("Missing contextual Skip"); return }
+        app.tapWorkoutControl("workout.skip")
+        XCTAssertFalse(app.buttons["load.correct"].exists)
+        XCTAssertFalse(app.buttons["load.mixed"].exists)
+        app.tapWorkoutControl("problem.pain")
+        XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 8 reps")
+        XCTAssertFalse(app.buttons["set.save"].exists)
+    }
+    @MainActor func testSetAndRestKeepOnlyCurrentContentAndHideNormalMode() {
+        let app = launch(); begin(app)
+        XCTAssertEqual(app.staticTexts["set.goal"].label, "Set 1 goal: 10 reps")
+        XCTAssertEqual(app.staticTexts["set.weight"].label, "Weight: 40 lb per hand")
+        XCTAssertFalse(app.staticTexts["workout.session-mode"].exists)
+        XCTAssertFalse(app.workoutText("movement.last-reps").exists)
+        XCTAssertFalse(app.workoutText("movement.goal-reps").exists)
+        XCTAssertFalse(app.staticTexts["set.actual.0"].exists)
+        capture(app, "Focused current set with goal and confirmed weight")
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["rest.remaining"].label, "Rest: 120 seconds remaining")
+        XCTAssertTrue(app.staticTexts["Next: Set 2"].exists)
+        XCTAssertFalse(app.staticTexts["workout.session-mode"].exists)
+        XCTAssertFalse(app.staticTexts["set.actual.0"].exists)
+        XCTAssertFalse(app.workoutText("movement.last-reps").exists)
+        capture(app, "Focused original rest deadline and compact next preview")
+    }
     override func setUp() { continueAfterFailure = false }
     @MainActor func testFirstPreparationHidesEmptyComparisonsAndNormalLabel() {
         let app = launch(mode: "no-history")
@@ -192,10 +357,12 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         next.doubleTap()
         XCTAssertTrue(app.descendants(matching: .any)["workout.busy"].waitForExistence(timeout: 5))
         XCTAssertFalse(next.isEnabled)
-        XCTAssertFalse(app.buttons["problem.pain"].isEnabled)
+        XCTAssertFalse(app.buttons["workout.skip"].isEnabled)
         XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
-        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 10 reps")
+        app.assertGuidedActual("set.actual.0", equals: "Set 1: 10 reps")
+        app.tapWorkoutControl("guided.back")
         XCTAssertFalse(app.staticTexts["set.actual.1"].exists)
+        app.navigationBars.buttons["BackButton"].tap()
         app.tapWorkoutControl("guided.next")
         XCTAssertEqual(app.staticTexts["set.goal"].label, "Set 2 goal: 10 reps")
         XCTAssertEqual(app.textFields["set.reps"].value as? String, "Reps performed")
@@ -237,14 +404,14 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         let app = launch(extra: ["-ui-large-text", "-ui-dark"]); begin(app)
         let input = app.textFields["set.reps"]; app.revealWorkoutControl(input); input.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["problem.pain"].isHittable)
-        XCTAssertTrue(app.buttons["problem.control_lost"].isHittable)
-        XCTAssertLessThan(app.buttons["problem.pain"].frame.minY, app.buttons["problem.control_lost"].frame.minY, "Accessibility size uses stacked full-width safety controls")
+        XCTAssertTrue(app.buttons["workout.skip"].isHittable)
+        app.assertWorkoutSafetyActions()
         XCTAssertTrue(app.buttons["set.save"].isHittable)
         capture(app, "Guided system Reduce Motion accessibility5 keyboard pinned actions and safety")
+        input.tap()
         input.typeText("9")
         app.buttons["keyboard.done"].tap()
-        app.buttons["problem.control_lost"].tap()
+        app.tapWorkoutControl("problem.control_lost")
         XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
         app.tapWorkoutControl("effort.unknown")
         app.revealWorkoutControl(app.staticTexts["summary.slot.0"])
@@ -258,7 +425,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         app.revealWorkoutControl(correctionInput); correctionInput.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["correction.save"].isHittable)
-        XCTAssertFalse(app.buttons["problem.pain"].isEnabled)
+        XCTAssertFalse(app.buttons["workout.skip"].exists, "Already-stopped correction has no admitted secondary actions")
         capture(app, "Guided accessibility5 correction keyboard original actual and pinned Save")
         app.buttons["keyboard.done"].tap()
         app.navigationBars.buttons["BackButton"].tap(); waitForCorrectionReturn(app)
@@ -280,7 +447,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
         app.beginGuidedMovement(weight: "5")
         app.enterPerformedReps("7", field: "set.left-reps")
-        app.buttons["problem.control_lost"].tap()
+        app.tapWorkoutControl("problem.control_lost")
         XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: left 7, right unrecorded")
         app.tapWorkoutControl("summary.correct.0")
