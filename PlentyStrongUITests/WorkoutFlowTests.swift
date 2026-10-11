@@ -275,7 +275,7 @@ extension WorkoutFlowTests {
         resumed.tapWorkoutControl("workout.review")
         resumed.assertGuidedActual("set.actual.0", equals: "Set 1: 4 reps")
         XCTAssertTrue(resumed.staticTexts["movement.stopped"].exists)
-        XCTAssertTrue(resumed.buttons["effort.too_hard"].isSelected, "Legacy effort edit survives force quit without changing the repaired outcome")
+        XCTAssertTrue(resumed.buttons["effort.picker"].label.hasSuffix("Too hard"), "Legacy effort edit survives force quit without changing the repaired outcome")
         XCTAssertEqual(resumed.buttons["summary.confirm"].label, "Return to review")
         resumed.navigationBars.buttons["BackButton"].tap()
         let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: resumed.buttons["summary.confirm"])

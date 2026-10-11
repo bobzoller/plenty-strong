@@ -509,7 +509,7 @@ import TrainingCore
             let original = try await editableDraft()
             var draft = original
             try await reconcileActionFlow(&draft)
-            let i = try index(movementID, draft: draft), row = draft.displayed.exercises[i]
+            let i = try index(movementID, draft: draft)
             let log = draft.logs[i]
             if draft.flow?.reviewedSummaryMovementIDs.contains(movementID) == true,
                log.status == status, effort == nil || effort == log.finalEffort {
@@ -518,14 +518,7 @@ import TrainingCore
             }
             guard reviewing ? reviewStep == .summary(movementID: movementID) :
                 (reviewStep == nil && draft.flow?.forward == .summary(movementID: movementID)) else { throw EngineError(code: "invalid_workout_step", field: "summary") }
-            guard !handled(movementID) || status == log.status,
-                  log.status != .stopped || status == .stopped, log.problem == .none || status == .stopped,
-                  !WorkoutFlowResolver.hasDemotedCompletion(log, draft: draft) || status == .partial else { throw EngineError(code: "movement_stopped", field: "status") }
-            if status == .completed, !(await validCompletion(log, row: row)) { throw EngineError(code: "incomplete_sets", field: "status") }
-            guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
-            if [3, 4].contains(snapshot.state.schemaVersion), log.effortScope == .allWorkingSets, !log.actualSets.isEmpty, effort == nil {
-                throw EngineError(code: "effort_required", field: "finalEffort")
-            }
+            try await validateSummary(movementID: movementID, effort: effort, status: status, draft: draft)
             if reviewing, !handled(movementID), log.status == .partial, log.problem == .none,
                !WorkoutFlowResolver.hasDemotedCompletion(log, draft: draft) {
                 guard status == log.status else { throw EngineError(code: "movement_stopped", field: "status") }
@@ -550,6 +543,53 @@ import TrainingCore
             reviewStep = nil
         }
     }
+    /// Terminates only the admitted forward summary. Outcomes and review cursor
+    /// commit together; event finalization and rotation still belong to Finish.
+    func stopWorkout(movementID: String, effort: Effort?, status: LogStatus) async throws {
+        try await operations.perform { _ in
+            let original = try await editableDraft()
+            var draft = original
+            try await reconcileActionFlow(&draft)
+            guard reviewStep == nil, draft.flow?.forward == .summary(movementID: movementID) else {
+                throw EngineError(code: "invalid_workout_step", field: "summary")
+            }
+            let i = try index(movementID, draft: draft)
+            try await validateSummary(movementID: movementID, effort: effort, status: status, draft: draft, requiresExplicitEffort: true)
+            if let effort { draft.logs[i].finalEffort = effort }
+            draft.logs[i].status = status
+            acknowledge(movementID, draft: &draft)
+            if draft.flow?.reviewedSummaryMovementIDs.contains(movementID) != true { draft.flow?.reviewedSummaryMovementIDs.append(movementID) }
+            for other in draft.logs.indices where other != i {
+                let log = draft.logs[other], id = log.movementID
+                guard !(draft.acknowledgedMovementIDs ?? []).contains(id) else { continue }
+                if log.status == .partial, log.problem == .none, !WorkoutFlowResolver.hasDemotedCompletion(log, draft: draft) {
+                    draft.logs[other].status = log.actualSets.isEmpty ? .skipped : .partial
+                    // Stop is the explicit disposition for empty remaining work.
+                    // Performed work keeps its independent pending effort/review.
+                    if log.actualSets.isEmpty, draft.flow?.reviewedSummaryMovementIDs.contains(id) != true {
+                        draft.flow?.reviewedSummaryMovementIDs.append(id)
+                    }
+                }
+                acknowledge(id, draft: &draft)
+            }
+            draft.flow?.forward = .workoutReview
+            try await save(draft, expectedExistingDraft: original, authoritativeOutcome: true)
+        }
+    }
+
+    private func validateSummary(movementID: String, effort: Effort?, status: LogStatus, draft: WorkoutDraft, requiresExplicitEffort: Bool = false) async throws {
+        let i = try index(movementID, draft: draft), row = draft.displayed.exercises[i], log = draft.logs[i]
+        guard !(draft.acknowledgedMovementIDs ?? []).contains(movementID) || status == log.status,
+              log.status != .stopped || status == .stopped, log.problem == .none || status == .stopped,
+              !WorkoutFlowResolver.hasDemotedCompletion(log, draft: draft) || status == .partial else { throw EngineError(code: "movement_stopped", field: "status") }
+        if status == .completed, !(await validCompletion(log, row: row)) { throw EngineError(code: "incomplete_sets", field: "status") }
+        guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
+        if !log.actualSets.isEmpty, effort == nil,
+           requiresExplicitEffort || ([3, 4].contains(snapshot.state.schemaVersion) && log.effortScope == .allWorkingSets) {
+            throw EngineError(code: "effort_required", field: "finalEffort")
+        }
+    }
+
     /// Reconciliation is authorized by the explicit action, never by parked Resume.
     private func reconcileActionFlow(_ draft: inout WorkoutDraft) async throws {
         guard draft.flow == nil else { return }

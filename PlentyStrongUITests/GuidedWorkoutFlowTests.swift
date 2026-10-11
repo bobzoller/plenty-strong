@@ -1,6 +1,91 @@
 import XCTest
 
 final class GuidedWorkoutFlowTests: XCTestCase {
+    @MainActor func testSummaryRequiresNativeExplicitEffortAndAtomicStop() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("movement.partial-action")
+        XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["summary.confirm"].isEnabled)
+        XCTAssertTrue(app.buttons["effort.picker"].exists, "Summary requires a native explicit-selection menu")
+        XCTAssertFalse(app.buttons["workout.skip"].exists)
+        XCTAssertTrue(app.buttons["workout.stop"].exists)
+        XCTAssertEqual(app.staticTexts["summary.goal-weight"].label, "Goal weight: 40 lb per hand")
+        XCTAssertEqual(app.staticTexts["summary.actual-weight"].label, "Actual weight: 40 lb per hand")
+        XCTAssertLessThan(app.staticTexts["rest.remaining"].frame.minY, app.staticTexts["movement.summary"].frame.minY)
+        XCTAssertFalse(app.staticTexts["effort.meanings"].exists)
+        XCTAssertFalse(app.workoutText("movement.first-workout").exists)
+        app.tapWorkoutControl("effort.meanings-disclosure")
+        app.revealWorkoutControl(app.staticTexts["effort.meanings"])
+        XCTAssertTrue(app.staticTexts["effort.meanings"].label.contains("every set"))
+        for option in ["too_easy", "on_target", "too_hard", "unknown"] {
+            app.tapWorkoutControl("effort.picker")
+            app.buttons["effort.\(option)"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["summary.confirm"].isEnabled, "Each explicit option is a valid answer")
+        }
+        app.tapWorkoutControl("effort.placeholder")
+        XCTAssertFalse(app.buttons["summary.confirm"].isEnabled, "The nil placeholder remains distinct from explicit unknown")
+        app.tapWorkoutControl("effort.unknown")
+        XCTAssertTrue(app.buttons["effort.picker"].label.hasSuffix("I'm not sure"))
+        capture(app, "Compact summary with top deadline and explicit unknown effort")
+        app.tapWorkoutControl("workout.stop")
+        XCTAssertTrue(app.sheets["Stop workout?"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["problem.pain"].firstMatch.label.contains("Incline DB Press"))
+        capture(app, "Native Stop workout confirmation with named source safety")
+        app.cancelWorkoutDialog("Stop workout?")
+        XCTAssertTrue(app.buttons["summary.confirm"].exists)
+        XCTAssertTrue(app.buttons["effort.picker"].label.hasSuffix("I'm not sure"))
+        XCTAssertFalse(app.buttons["workout.finish"].exists)
+        app.tapWorkoutControl("workout.stop")
+        app.buttons["workout.stop-confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["summary.confirm"].exists)
+        capture(app, "Atomic Stop keeps results and opens explicit final review")
+        app.terminate()
+        let resumed = launch(reset: false)
+        XCTAssertTrue(resumed.buttons["workout.finish"].waitForExistence(timeout: 15))
+        let summary = resumed.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch
+        resumed.revealWorkoutControl(summary); summary.tap()
+        XCTAssertTrue(resumed.buttons["effort.picker"].waitForExistence(timeout: 15))
+        XCTAssertTrue(resumed.buttons["effort.picker"].label.hasSuffix("I'm not sure"))
+        XCTAssertTrue(resumed.buttons["summary.confirm"].isEnabled)
+        XCTAssertFalse(resumed.buttons["workout.stop"].exists, "Backward summary cannot terminate remaining work")
+    }
+
+    @MainActor func testSummaryStopSafetySavesWithoutInventedEffort() {
+        let app = launch(); begin(app)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("movement.partial-action")
+        let deadline = app.staticTexts["rest.remaining"].label
+        app.tapWorkoutControl("workout.stop")
+        XCTAssertFalse(app.buttons["workout.stop-confirm"].exists && app.buttons["workout.stop-confirm"].firstMatch.isEnabled)
+        XCTAssertTrue(app.buttons["problem.pain"].firstMatch.label.contains("Incline DB Press"))
+        app.buttons["problem.pain"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["summary.confirm"].isEnabled)
+        XCTAssertTrue(app.buttons["effort.picker"].label.hasSuffix("Choose effort…"))
+        XCTAssertFalse(app.buttons["workout.stop"].exists, "No tappable zero-action Stop dialog after safety with nil effort")
+        XCTAssertTrue(app.staticTexts["summary.effort-required"].exists)
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 10 reps")
+        XCTAssertEqual(app.staticTexts["rest.remaining"].label, deadline)
+        XCTAssertFalse(app.buttons["workout.finish"].exists)
+        capture(app, "Immediate safety retains original deadline and pending effort")
+    }
+    @MainActor func testEmptySummaryStopNeedsNoEffortAndRetainsSkippedSlots() {
+        let app = launch(); app.tapWorkoutControl("movement.skip")
+        XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["effort.picker"].exists)
+        XCTAssertTrue(app.buttons["summary.confirm"].isEnabled)
+        XCTAssertTrue(app.staticTexts["set.unrecorded.0"].exists)
+        capture(app, "Compact all-skipped summary without effort")
+        app.tapWorkoutControl("workout.stop")
+        XCTAssertTrue(app.buttons["workout.stop-confirm"].firstMatch.isEnabled)
+        app.buttons["workout.stop-confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["set.actual.0"].exists)
+        capture(app, "All-skipped atomic Stop without invented observations or effort")
+    }
+
     @MainActor func testStoppedCorrectionOmitsEmptySecondaryActions() {
         let app = launch(); begin(app)
         app.enterPerformedReps("9"); app.tapWorkoutControl("problem.control_lost")
@@ -146,6 +231,8 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         app.tapWorkoutControl("problem.pain")
         XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 8 reps")
+        XCTAssertEqual(app.staticTexts["summary.goal-weight"].label, "Goal weight: Bodyweight")
+        XCTAssertEqual(app.staticTexts["summary.actual-weight"].label, "Actual weight: Bodyweight")
         XCTAssertFalse(app.buttons["set.save"].exists)
     }
     @MainActor func testSetAndRestKeepOnlyCurrentContentAndHideNormalMode() {
@@ -321,9 +408,12 @@ final class GuidedWorkoutFlowTests: XCTestCase {
             app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
             if index < 2 { XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15)) }
         }
-        app.tapWorkoutControl("effort.unknown"); app.tapWorkoutControl("summary.confirm")
+        app.tapWorkoutControl("effort.too_hard"); app.tapWorkoutControl("summary.confirm")
         XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
-        app.buttons["guided.back"].tap(); app.tapWorkoutControl("summary.correct.0")
+        app.buttons["guided.back"].tap()
+        XCTAssertTrue(app.buttons["effort.picker"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["effort.picker"].label.hasSuffix("Too hard"), "Primary confirmation saves the local explicit selection for review")
+        app.tapWorkoutControl("summary.correct.0")
         app.replacePerformedReps("9")
         XCTAssertEqual(app.staticTexts["set.goal"].label, "Set 1 goal: 10 reps")
         XCTAssertFalse(app.buttons["correction.save"].isEnabled)

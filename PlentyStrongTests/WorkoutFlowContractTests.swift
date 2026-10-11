@@ -4,6 +4,25 @@ import TrainingCore
 @testable import PlentyStrong
 
 @MainActor @Suite(.serialized) struct WorkoutFlowContractTests {
+    @Test func stopCannotEditDurablyFrozenFinishAndExactRetryAdvancesOnce() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let draft = readyDraft(try #require(f.model.snapshot.draft))
+        let saved = try await f.repository.saveDraft(draft)
+        let submission = try pending(draft, state: saved.state)
+        let frozen = try await f.repository.freezeDraftFinish(programID: f.model.programID, expectedDraftHash: BackupService.hash(draft), submission: submission)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: frozen, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: draft.logs[0].movementID, effort: nil, status: .skipped) }
+        #expect(model.snapshot == frozen && frozen.state == saved.state && frozen.history == saved.history)
+        await f.repository.failNextSave()
+        await #expect(throws: EngineError.self) { _ = try await model.finish() }
+        #expect(try await f.repository.snapshot(programID: model.programID) == frozen)
+        _ = try await model.finish()
+        #expect(model.snapshot.state.revision == saved.state.revision + 1)
+        #expect(model.snapshot.history.filter { $0.eventID == submission.event.eventID }.count == 1)
+        #expect(model.snapshot.draft == nil)
+        await f.repository.close()
+    }
+
     @Test func nilMetadataPreservesCanonicalDraft() async throws {
         let f = try await GuidedWorkoutFixture.make()
         var draft = try #require(f.model.snapshot.draft)

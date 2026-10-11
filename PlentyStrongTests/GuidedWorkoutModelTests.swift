@@ -4,6 +4,178 @@ import TrainingCore
 @testable import PlentyStrong
 
 @MainActor @Suite(.serialized) struct GuidedWorkoutModelTests {
+    @Test func stopWorkoutSavesCurrentAndRemainingOutcomesAtomically() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+        try await confirmLoad(model, row: row)
+        try await model.beginMovement(movementID: row.movementID)
+        try await model.recordSet(movementID: row.movementID, index: 0, actual: actual(model, row: row, index: 0))
+        try await model.recordStatus(movementID: row.movementID, status: .partial)
+        let before = model.snapshot, stale = WorkoutViewModel(repository: f.repository, snapshot: before, timeZoneID: model.timeZoneID, now: model.now)
+        await f.repository.failNextSave()
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        #expect(model.snapshot == before)
+        #expect(try await f.repository.snapshot(programID: model.programID) == before)
+        let probe = GuidedCommitProbe()
+        await f.repository.observeCommits { probe.observe($0) }
+        let stopping = Task { @MainActor in try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(model.busy)
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        try await stopping.value
+        #expect(probe.saveCount == 1, "Current outcome, remaining handling, and cursor use one authoritative save")
+        await f.repository.observeCommits(nil)
+        let stopped = try #require(model.snapshot.draft)
+        #expect(stopped.flow?.forward == .workoutReview)
+        #expect(stopped.logs[0].actualSets == before.draft?.logs[0].actualSets)
+        #expect(stopped.logs[0].actualLoad == before.draft?.logs[0].actualLoad)
+        #expect(stopped.logs[0].status == .partial && stopped.logs[0].finalEffort == .unknown)
+        #expect(stopped.logs.dropFirst().allSatisfy { $0.status == .skipped && $0.actualSets.isEmpty && $0.skippedSetIndices == [] && $0.finalEffort == .unknown })
+        #expect(Set(stopped.acknowledgedMovementIDs ?? []) == Set(stopped.logs.map(\.movementID)))
+        #expect(Set(stopped.flow?.reviewedSummaryMovementIDs ?? []) == Set(stopped.logs.map(\.movementID)))
+        #expect(model.snapshot.state == before.state && model.snapshot.history == before.history)
+        await #expect(throws: EngineError.self) { try await stale.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        #expect(try await f.repository.snapshot(programID: model.programID) == model.snapshot)
+        await f.repository.close()
+        let reopened = try TrainingRepository.open(at: f.storeURL)
+        let loaded = try await reopened.snapshot(programID: model.programID)
+        let resumed = WorkoutViewModel(repository: reopened, snapshot: loaded, timeZoneID: model.timeZoneID, now: model.now)
+        #expect(resumed.visibleStep == .workoutReview && loaded.draft == stopped)
+        await #expect(throws: EngineError.self) { try await resumed.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial) }
+        _ = try await resumed.finish()
+        #expect(resumed.snapshot.state.revision == before.state.revision + 1)
+        #expect(resumed.snapshot.history.count == before.history.count + 1)
+        await reopened.close()
+    }
+
+    @Test func stopWorkoutRetainsOtherPerformedOutcomesAndPendingReview() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model
+        var draft = try #require(model.snapshot.draft)
+        #expect(draft.logs.count >= 5)
+        let rows = draft.displayed.exercises, first = rows[0]
+        for i in [0, 1, 2, 3] {
+            draft.logs[i].actualLoad = rows[i].load
+            draft.logs[i].actualSets = [ActualSet(reps: 8, setIndex: 0)]
+        }
+        draft.logs[0].status = .partial
+        draft.logs[1].status = .completed
+        draft.logs[1].actualSets = rows[1].sets.indices.map { ActualSet(reps: rows[1].sets[$0].targetReps!, setIndex: $0) }
+        draft.logs[1].finalEffort = .onTarget
+        draft.logs[2].status = .stopped; draft.logs[2].problem = .pain
+        draft.workingSetsStarted = true
+        draft.acknowledgedMovementIDs = rows.prefix(3).map(\.movementID)
+        draft.flow = WorkoutFlow(forward: .summary(movementID: first.movementID), reviewedSummaryMovementIDs: [rows[1].movementID])
+        let saved = try await f.repository.saveDraft(draft)
+        let resumed = WorkoutViewModel(repository: f.repository, snapshot: saved, timeZoneID: model.timeZoneID, now: model.now)
+        try await resumed.stopWorkout(movementID: first.movementID, effort: .tooHard, status: .partial)
+        let result = try #require(resumed.snapshot.draft)
+        #expect(result.logs[1] == draft.logs[1] && result.logs[2] == draft.logs[2] && result.logs[3] == draft.logs[3])
+        #expect(result.logs.dropFirst(4).allSatisfy { $0.status == .skipped && $0.actualSets.isEmpty && $0.skippedSetIndices == [] })
+        #expect(result.flow?.forward == .workoutReview)
+        #expect(result.flow?.reviewedSummaryMovementIDs.contains(rows[2].movementID) == false)
+        #expect(result.flow?.reviewedSummaryMovementIDs.contains(rows[3].movementID) == false)
+        #expect(result.logs[2].finalEffort == draft.logs[2].finalEffort && result.logs[3].finalEffort == draft.logs[3].finalEffort)
+        await #expect(throws: EngineError.self) { _ = try await resumed.finish() }
+        #expect(resumed.snapshot.draft?.pendingFinish == nil && resumed.snapshot.history == saved.history && resumed.snapshot.state == saved.state)
+        await f.repository.close()
+    }
+
+    @Test func stopWorkoutPreservesDemotionAuditAndRequiresExplicitSummaryEffort() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+        try await confirmLoad(model, row: row); try await model.beginMovement(movementID: row.movementID)
+        for i in row.sets.indices {
+            try await model.recordSet(movementID: row.movementID, index: i, actual: actual(model, row: row, index: i))
+            if i != row.sets.indices.last { try await model.advanceRest() }
+        }
+        try await model.recordStatus(movementID: row.movementID, status: .completed)
+        var replacement = actual(model, row: row, index: 0, reps: 0)
+        replacement.missedGoalReason = .effortLimit
+        try await model.correctSet(movementID: row.movementID, index: 0, replacement: replacement, operationID: UUID())
+        model.reviewStep = nil
+        let before = model.snapshot
+        #expect(WorkoutFlowResolver.hasDemotedCompletion(before.draft!.logs[0], draft: before.draft!))
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .partial) }
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .completed) }
+        #expect(model.snapshot == before)
+        try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial)
+        #expect(model.snapshot.draft?.observationAudit == before.draft?.observationAudit)
+        #expect(model.snapshot.draft?.logs[0].actualSets == before.draft?.logs[0].actualSets)
+        #expect(model.snapshot.draft?.logs[0].actualLoad == before.draft?.logs[0].actualLoad)
+        #expect(model.snapshot.draft?.logs[0].status == .partial)
+        await f.repository.close()
+    }
+
+    @Test func stopWorkoutRetainsStoppedRawSidesUnknownLoadAndAudit() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model
+        let row = try #require(model.snapshot.draft!.displayed.exercises.first { model.movement(for: $0).repCounting == .perSide })
+        try await skipBefore(model, movementID: row.movementID)
+        try await model.recordProblem(movementID: row.movementID, problem: .controlLost, pendingActual: ActualSet(reps: 7, leftReps: 7))
+        let stopped = model.snapshot
+        #expect(stopped.draft?.logs.first { $0.movementID == row.movementID }?.actualLoad == nil)
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .stopped) }
+        try await model.correctSet(movementID: row.movementID, index: 0, replacement: ActualSet(reps: 0, leftReps: 0), operationID: UUID())
+        model.reviewStep = nil
+        let corrected = try #require(model.snapshot.draft)
+        try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .stopped)
+        let log = try #require(model.log(for: row.movementID))
+        #expect(log.problem == .controlLost && log.status == .stopped && log.actualLoad == nil)
+        #expect(log.actualSets.count == 1 && log.actualSets[0].leftReps == 0 && log.actualSets[0].rightReps == nil && log.actualSets[0].missedGoalReason == nil)
+        #expect(model.snapshot.draft?.observationAudit == corrected.observationAudit)
+        #expect(model.snapshot.draft?.restDeadline == corrected.restDeadline)
+        #expect(model.snapshot.history == stopped.history && model.snapshot.state == stopped.state)
+        await f.repository.close()
+    }
+
+    @Test func stopWorkoutRequiresLegacyEffortWithoutRetrofittingScope() async throws {
+        let f = try await RepositoryTestHarness.make(goal: .size)
+        var draft = try await f.draft(empty: true)
+        let row = draft.displayed.exercises[0]
+        for i in draft.logs.indices { draft.logs[i].status = .partial; draft.logs[i].finalEffort = .unknown }
+        draft.logs[0].actualSets = row.sets.map { _ in ActualSet(reps: 6) }
+        draft.workingSetsStarted = true
+        draft.acknowledgedMovementIDs = []
+        draft.flow = WorkoutFlow(forward: .summary(movementID: row.movementID), reviewedSummaryMovementIDs: [])
+        let saved = try await f.repository.saveDraft(draft)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: saved, timeZoneID: "Pacific/Honolulu",
+            now: { ISO8601DateFormatter().date(from: "2026-10-04T20:00:00Z")! })
+        #expect(model.log(for: row.movementID)?.effortScope == nil)
+        do { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .partial); Issue.record("Legacy Stop inferred unknown effort") }
+        catch let error as EngineError { #expect(error.code == "effort_required") }
+        #expect(model.snapshot == saved)
+        try await model.stopWorkout(movementID: row.movementID, effort: .unknown, status: .partial)
+        #expect(model.snapshot.draft?.logs[0].actualSets == draft.logs[0].actualSets)
+        #expect(model.snapshot.draft?.logs[0].actualLoad == draft.logs[0].actualLoad)
+        #expect(model.snapshot.draft?.logs.allSatisfy { $0.effortScope == nil } == true)
+        #expect(model.snapshot.draft?.flow?.forward == .workoutReview)
+        #expect(model.snapshot.state == saved.state && model.snapshot.history == saved.history)
+        await f.repository.close()
+    }
+
+    @Test func stopWorkoutRejectsWrongStepReviewAndFrozenFinish() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+        let before = model.snapshot
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .skipped) }
+        #expect(model.snapshot == before)
+        try await model.recordStatus(movementID: row.movementID, status: .skipped)
+        model.reviewStep = .summary(movementID: row.movementID)
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .skipped) }
+        model.reviewStep = nil
+        try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .skipped)
+        let ready = try #require(model.snapshot.draft)
+        await f.repository.failNextSave()
+        await #expect(throws: EngineError.self) { _ = try await model.finish() }
+        await #expect(throws: EngineError.self) { try await model.stopWorkout(movementID: row.movementID, effort: nil, status: .skipped) }
+        #expect(model.snapshot.draft == ready)
+        _ = try await model.finish()
+        #expect(model.finished)
+        await f.repository.close()
+    }
+
     @Test func easierWorkoutIsHiddenWithoutPerformedHistory() async throws {
         let f = try await GuidedWorkoutFixture.make()
         #expect(f.model.canChangePreparation)

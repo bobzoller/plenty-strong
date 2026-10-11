@@ -14,6 +14,9 @@ struct MovementSummaryView: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.dismiss) private var dismiss
     @State private var effort: Effort?
+    @State private var showingStop = false
+    private var needsEffort: Bool { log?.actualSets.isEmpty == false && effort == nil }
+    private var canReportSafety: Bool { log?.problem == Problem.none }
     private var legacyReturn: Bool { reviewing && model.snapshot.draft?.flow == nil && model.handled(row.movementID) }
     private var log: ExerciseLog? { model.log(for: row.movementID) }
     private var status: LogStatus {
@@ -25,30 +28,29 @@ struct MovementSummaryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let deadline = model.snapshot.draft?.restDeadline {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text("Rest: \(RestTimer(deadline: deadline).remaining(at: model.now())) seconds remaining").accessibilityIdentifier("rest.remaining")
+                    }
+                }
                 WorkoutSessionModeLabel(model: model)
                 Text("Movement summary").font(.title2).accessibilityIdentifier("movement.summary")
                 Text(model.movement(for: row).name ?? "Movement").font(.headline)
-                ForEach(Array(row.sets.enumerated()), id: \.offset) { index, goal in
-                    let actual = log?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Set \(index + 1) · goal \(goal.targetReps.map(String.init) ?? "up to \(goal.repCeiling)") reps\(model.movement(for: row).repCounting == .perSide ? " per side" : "")").accessibilityIdentifier("summary.slot.\(index)")
-                        if let actual {
-                            Text(model.movement(for: row).repCounting == .perSide ? "Set \(index + 1): left \(actual.leftReps.map(String.init) ?? "unrecorded"), right \(actual.rightReps.map(String.init) ?? "unrecorded")" : "Set \(index + 1): \(actual.reps) reps").accessibilityIdentifier("set.actual.\(index)")
-                            let corrections = WorkoutDetailView.corrections(audit: model.snapshot.draft?.observationAudit, movementID: row.movementID, setIndex: index)
-                            if !corrections.isEmpty {
-                                Text("Corrected · \(corrections.count) \(corrections.count == 1 ? "correction" : "corrections")").accessibilityIdentifier("summary.corrected.\(index)")
-                                DisclosureGroup("Set \(index + 1) corrections") {
-                                    ForEach(Array(corrections.enumerated()), id: \.element.operationID) { order, correction in
-                                        Text("Correction \(order + 1). \(WorkoutDetailView.correctionDetail(correction, repCounting: model.movement(for: row).repCounting))")
-                                            .accessibilityIdentifier("summary.correction.detail.\(correction.operationID.uuidString)")
-                                    }
-                                }.accessibilityIdentifier("summary.corrections.\(index)")
-                            }
-                            Button("Correct Set \(index + 1)") { reviewCorrection?(index) }
-                                .accessibilityIdentifier("summary.correct.\(index)").disabled(model.busy || model.hasAmbiguousFinish)
-                        } else if log?.skippedSetIndices?.contains(index) == true {
-                            Text("Set \(index + 1): skipped").accessibilityIdentifier("set.skipped.\(index)")
-                        } else { Text("Set \(index + 1): unrecorded").accessibilityIdentifier("set.unrecorded.\(index)") }
+                WorkoutComparisonRows(row: row, log: log, repCounting: model.movement(for: row).repCounting, loadingMode: model.movement(for: row).loadingMode)
+                ForEach(Array(row.sets.enumerated()), id: \.offset) { index, _ in
+                    if log?.actualSets.enumerated().contains(where: { ($0.element.setIndex ?? $0.offset) == index }) == true {
+                        let corrections = WorkoutDetailView.corrections(audit: model.snapshot.draft?.observationAudit, movementID: row.movementID, setIndex: index)
+                        if !corrections.isEmpty {
+                            Text("Corrected · \(corrections.count) \(corrections.count == 1 ? "correction" : "corrections")").accessibilityIdentifier("summary.corrected.\(index)")
+                            DisclosureGroup("Set \(index + 1) corrections") {
+                                ForEach(Array(corrections.enumerated()), id: \.element.operationID) { order, correction in
+                                    Text("Correction \(order + 1). \(WorkoutDetailView.correctionDetail(correction, repCounting: model.movement(for: row).repCounting))")
+                                        .accessibilityIdentifier("summary.correction.detail.\(correction.operationID.uuidString)")
+                                }
+                            }.accessibilityIdentifier("summary.corrections.\(index)")
+                        }
+                        Button("Correct Set \(index + 1)") { reviewCorrection?(index) }
+                            .accessibilityIdentifier("summary.correct.\(index)").disabled(model.busy || model.hasAmbiguousFinish)
                     }
                 }
                 ForEach(Array((log?.actualSets ?? []).enumerated()).filter { !row.sets.indices.contains($0.element.setIndex ?? $0.offset) }, id: \.offset) { offset, actual in
@@ -60,12 +62,7 @@ struct MovementSummaryView: View {
                 } else if status == .partial { Text("Partial — saved observations retained").accessibilityIdentifier("movement.partial") }
                 if log?.actualSets.isEmpty == false { EffortPicker(model: model, movementID: row.movementID, selection: $effort) }
                 else { Text("No performed sets. No effort answer is required.") }
-                PrescriptionComparisonView(summary: .make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft), repCounting: model.movement(for: row).repCounting)
-                if let deadline = model.snapshot.draft?.restDeadline {
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text("Rest: \(RestTimer(deadline: deadline).remaining(at: model.now())) seconds remaining").accessibilityIdentifier("rest.remaining")
-                    }
-                }
+                if !reviewing, needsEffort, !canReportSafety { Text("Choose effort to confirm this summary or stop the workout.").font(.subheadline).accessibilityIdentifier("summary.effort-required") }
             }.padding()
         }
         .safeAreaInset(edge: .bottom) {
@@ -82,15 +79,35 @@ struct MovementSummaryView: View {
                         if reviewing { dismiss() }
                     }
                 } }
-            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.busy || (!legacyReturn && log?.actualSets.isEmpty == false && effort == nil))
+            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.busy || (!legacyReturn && needsEffort))
                 .accessibilityLabel(legacyReturn ? "Return to review" : (reviewing ? "Confirm and return" : "Confirm summary")).accessibilityIdentifier("summary.confirm")
             } secondary: {
-                WorkoutSecondaryActions(model: model, step: .summary(movementID: row.movementID), row: row, pendingActual: .constant(nil))
+                if reviewing {
+                    WorkoutSecondaryActions(model: model, step: .summary(movementID: row.movementID), row: row, pendingActual: .constant(nil))
+                } else if !needsEffort || canReportSafety {
+                    Button("Stop workout") { showingStop = true }
+                        .accessibilityIdentifier("workout.stop").frame(maxWidth: .infinity, minHeight: 44)
+                }
             }
+        }
+        .confirmationDialog("Stop workout?", isPresented: $showingStop, titleVisibility: .visible) {
+            Button("Keep results and stop workout") {
+                Task { await model.run { try await model.stopWorkout(movementID: row.movementID, effort: effort, status: status) } }
+            }.accessibilityIdentifier("workout.stop-confirm").disabled(needsEffort)
+            if canReportSafety {
+                Button("Pain — stop \(model.movement(for: row).name ?? "movement")") { safety(.pain) }.accessibilityIdentifier("problem.pain")
+                Button("Loss of control — stop \(model.movement(for: row).name ?? "movement")") { safety(.controlLost) }.accessibilityIdentifier("problem.control_lost")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(needsEffort ? "Choose effort to stop the workout. You can report pain or loss of control for this movement immediately; its summary stays pending confirmation." : "Keep recorded results, skip empty remaining work, and open workout review. Finish saves the workout. Safety reports stop only this movement.")
         }
         .onAppear {
             if legacyReturn || model.snapshot.draft?.flow?.reviewedSummaryMovementIDs.contains(row.movementID) == true { effort = log?.finalEffort }
         }
         .disabled(model.busy || model.snapshot.health != .ready || model.hasAmbiguousFinish)
+    }
+    private func safety(_ problem: Problem) {
+        Task { await model.run { try await model.recordProblem(movementID: row.movementID, problem: problem) } }
     }
 }

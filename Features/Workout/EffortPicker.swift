@@ -9,19 +9,20 @@ struct EffortPicker: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(exact ? "How hard were the working sets?" : "How hard was that?").font(.headline).accessibilityIdentifier("effort.question")
-            if exact {
-                Text("Too easy: every set left substantially more reserve than intended. About right: appropriately challenging, with no set too hard. Too hard: at least one set could not preserve the intended reserve. I'm not sure: you cannot judge.")
+            Picker(selection: $selection) {
+                Text("Choose effort…").tag(nil as Effort?).accessibilityIdentifier("effort.placeholder")
+                ForEach(Effort.allCases, id: \.self) { effort in
+                    Text(effort.title).tag(Optional(effort)).accessibilityIdentifier("effort.\(effort.rawValue)")
+                }
+            } label: { Text("Effort") }
+                .pickerStyle(.menu).labelsHidden().accessibilityIdentifier("effort.picker").disabled(model.busy)
+            DisclosureGroup {
+                Text(exact ?
+                     "Too easy: every set left substantially more reserve than intended. About right: appropriately challenging, with no set too hard. Too hard: at least one set could not preserve the intended reserve. I'm not sure: you cannot judge." :
+                     "For the final working set: Too easy means you could have done several more good reps. About right means challenging, with roughly two good reps left. Too hard means you reached your limit or could not leave a couple of good reps. I'm not sure means you cannot judge.")
                     .accessibilityIdentifier("effort.meanings")
-            }
-            ForEach(Effort.allCases, id: \.self) { effort in
-                Button {
-                    selection = effort
-                } label: {
-                    HStack {
-                        Text(effort.title)
-                        if selection == effort { Image(systemName: "checkmark") }
-                    }
-                }.accessibilityIdentifier("effort.\(effort.rawValue)").disabled(model.busy).accessibilityAddTraits(selection == effort ? .isSelected : [])
+            } label: {
+                Text("What do these mean?").accessibilityIdentifier("effort.meanings-disclosure")
             }
         }
     }

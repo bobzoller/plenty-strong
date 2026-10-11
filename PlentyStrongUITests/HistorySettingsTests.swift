@@ -161,7 +161,8 @@ final class HistorySettingsTests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-fixture-exact-mode", "normal", "-cloud-disabled", "-products-unavailable"]
         app.launch(); app.tapReadyWorkoutStart()
         if app.buttons["workout.keep-original-date"].exists { app.tapWorkoutControl("workout.keep-original-date") }
-        app.tapWorkoutControl("load.confirm"); app.beginGuidedMovement()
+        app.confirmGuidedWeight(); app.beginGuidedMovement()
+        XCTAssertEqual(app.staticTexts["set.weight"].label, "Weight: 40 lb per hand")
         app.enterPerformedReps("7"); app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("set.save")
         app.tapWorkoutControl("guided.back")
         app.tapWorkoutControl("summary.correct.0"); app.replacePerformedReps("8")
@@ -285,7 +286,7 @@ extension XCUIApplication {
             let bounds = element.frame
             guard [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.width > 0, bounds.height > 0,
                   bounds.intersects(frame) else { return false }
-            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "workout.skip", "set.skip", "movement.skip", "movement.partial-action", "movement.stop", "load.correct", "load.mixed", "BackButton"].contains(element.identifier) {
+            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !(element.identifier.hasPrefix("effort.") && !["effort.picker", "effort.meanings-disclosure"].contains(element.identifier)), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "workout.skip", "workout.stop", "workout.stop-confirm", "set.skip", "movement.skip", "movement.partial-action", "movement.stop", "load.correct", "load.mixed", "BackButton"].contains(element.identifier) {
                 // AX can expose a cached offscreen frame before a valid hit point.
                 // Check the complete control inside content before hittability.
                 let bottom = footerFrame().map { $0.minY - 32 } ?? frame.maxY
@@ -368,9 +369,22 @@ extension XCUIApplication {
     @MainActor func workoutText(_ identifier: String) -> XCUIElement {
         scrollViews.staticTexts[identifier]
     }
+    @MainActor func chooseGuidedEffort(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+        tapWorkoutControl("effort.picker", file: file, line: line)
+        let option = buttons[identifier].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), file: file, line: line)
+        option.tap()
+    }
     @MainActor func tapWorkoutControl(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+        if identifier.hasPrefix("effort."), !["effort.picker", "effort.meanings-disclosure"].contains(identifier) {
+            chooseGuidedEffort(identifier, file: file, line: line)
+            return
+        }
         if ["set.skip", "movement.skip", "movement.partial-action", "movement.stop", "problem.pain", "problem.control_lost", "load.correct", "load.mixed"].contains(identifier), !buttons[identifier].exists {
-            openWorkoutSkip(file: file, line: line)
+            if buttons["workout.stop"].exists {
+                tapWorkoutControl("workout.stop", file: file, line: line)
+                XCTAssertTrue(sheets["Stop workout?"].firstMatch.waitForExistence(timeout: 5), file: file, line: line)
+            } else { openWorkoutSkip(file: file, line: line) }
         }
         let control = buttons[identifier].firstMatch
         // These List/Form descendants are lazy until their content is scrolled
@@ -398,6 +412,9 @@ extension XCUIApplication {
         XCTAssertTrue(sheets["Workout actions"].firstMatch.waitForExistence(timeout: 5), file: file, line: line)
     }
     @MainActor func cancelWorkoutSkip(file: StaticString = #filePath, line: UInt = #line) {
+        cancelWorkoutDialog("Workout actions", file: file, line: line)
+    }
+    @MainActor func cancelWorkoutDialog(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
         if buttons["Cancel"].exists { buttons["Cancel"].tap() }
         else {
             // Native adaptive popovers omit role-based Cancel and expose this
@@ -406,7 +423,7 @@ extension XCUIApplication {
             XCTAssertTrue(dismiss.waitForExistence(timeout: 5), file: file, line: line)
             dismiss.tap()
         }
-        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheets["Workout actions"].firstMatch)
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheets[title].firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed, file: file, line: line)
     }
     @MainActor func assertWorkoutSafetyActions(file: StaticString = #filePath, line: UInt = #line) {
@@ -421,8 +438,12 @@ extension XCUIApplication {
     /// Compact working pages keep persisted observations in backward Summary.
     /// Native Back restores the same forward rest/deadline without confirming it.
     @MainActor func assertGuidedActual(_ identifier: String, equals expected: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
-        let needsReview = !staticTexts[identifier].exists && (staticTexts["rest.remaining"].exists || textFields["set.reps"].exists || textFields["set.left-reps"].exists)
+        // Summary also shows the original rest deadline. Its Back action opens
+        // correction, so classify the accepted Summary before working/rest pages.
+        let summaryVisible = buttons["summary.confirm"].exists
+        let needsReview = !summaryVisible && !staticTexts[identifier].exists && (staticTexts["rest.remaining"].exists || textFields["set.reps"].exists || textFields["set.left-reps"].exists)
         if needsReview { tapWorkoutControl("guided.back", file: file, line: line) }
+        if !staticTexts[identifier].exists, buttons["summary.confirm"].exists { revealWorkoutControl(staticTexts[identifier], file: file, line: line) }
         XCTAssertTrue(staticTexts[identifier].waitForExistence(timeout: 15), file: file, line: line)
         if let expected { XCTAssertEqual(staticTexts[identifier].label, expected, file: file, line: line) }
         if needsReview {
