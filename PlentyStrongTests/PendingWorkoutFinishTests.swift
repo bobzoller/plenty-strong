@@ -20,6 +20,7 @@ import TrainingCore
             draft.logs[0].actualSets = [ActualSet(reps: 8, leftReps: movement.repCounting == .perSide ? 8 : nil,
                 rightReps: movement.repCounting == .perSide ? 8 : nil, setIndex: 0)]
             draft.workingSetsStarted = true
+            draft.flow?.forward = .set(movementID: row.movementID, index: 1)
             _ = try await f.repository.saveDraft(draft)
             var actual = draft.logs[0].actualSets[0]; actual.reps = 9
             if actual.leftReps != nil { actual.leftReps = 9 }

@@ -8,6 +8,9 @@ import TrainingCore
         var draft = try #require(fixture.model.snapshot.draft)
         draft.logs[0].actualSets = [ActualSet(reps: reps, setIndex: 0, missedGoalReason: reps < 8 ? .effortLimit : nil)]
         draft.workingSetsStarted = true
+        // This repository fixture predates guided UI metadata; cursorSaveCAS
+        // exercises its explicit first cursor adoption. Flow-specific cases set it.
+        draft.flow = nil
         return try #require(await fixture.repository.saveDraft(draft).draft)
     }
     private func correct(_ fixture: GuidedWorkoutFixture, draft: WorkoutDraft, operationID: UUID = UUID(), replacement: ActualSet) async throws -> StoreSnapshot {

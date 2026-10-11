@@ -238,6 +238,7 @@ extension BackupTests {
             var draft = try #require(f.model.snapshot.draft)
             draft.logs[0].actualSets = [ActualSet(reps: 7, setIndex: 0, missedGoalReason: .effortLimit)]
             draft.workingSetsStarted = true
+            draft.flow?.forward = .set(movementID: draft.logs[0].movementID, index: 1)
             _ = try await f.repository.saveDraft(draft)
             let original = try await f.repository.exportBackup()
             let corrected = try await f.repository.correctDraftSet(programID: f.model.programID, expectedDraftHash: BackupService.hash(draft),

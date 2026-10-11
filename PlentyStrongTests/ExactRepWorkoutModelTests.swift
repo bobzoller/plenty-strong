@@ -44,6 +44,7 @@ import TrainingCore
         let rows = model.snapshot.draft!.displayed.exercises
         try await model.recordStatus(movementID: rows[0].movementID, status: firstStatus)
         for row in rows.dropFirst() { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         return try await model.finish()
     }
     func testSkippedMiddleSetSurvivesReopen() async throws {
@@ -103,6 +104,7 @@ import TrainingCore
         XCTAssertEqual(log.actualSets, [ActualSet(reps: 0, leftReps: 3, setIndex: 1)])
         XCTAssertNil(log.actualLoad); XCTAssertEqual(log.status, .stopped)
         for other in model.snapshot.draft!.displayed.exercises where other.movementID != row.movementID { try await model.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         XCTAssertEqual(receipt.snapshot.state.baseSafety?[row.baseMovementID!]?.paused, true)
         await repository.close()
@@ -167,7 +169,7 @@ import TrainingCore
         try await model.start(easierToday: false)
         let row = try XCTUnwrap(model.snapshot.draft!.displayed.exercises.first { model.movement(for: $0).repCounting == .perSide })
         try await confirm(row, model: model)
-        for i in 0..<3 { try await model.recordSet(movementID: row.movementID, index: i, actual: ActualSet(reps: 8, leftReps: 8, rightReps: 7)) }
+        for i in 0..<3 { try await model.recordSet(movementID: row.movementID, index: i, actual: ActualSet(reps: 8, leftReps: 8, rightReps: 7, missedGoalReason: .effortLimit)) }
         do { try await model.recordStatus(movementID: row.movementID, status: .completed); XCTFail("Unequal sides") } catch {}
         XCTAssertEqual(model.log(for: row.movementID)?.actualSets.last?.rightReps, 7)
         await repository.close()
@@ -211,6 +213,7 @@ import TrainingCore
             try await tuesday.start(easierToday: false)
             XCTAssertEqual(tuesday.snapshot.draft?.planned.slotID, "TUE")
             for row in tuesday.snapshot.draft!.displayed.exercises { try await tuesday.recordStatus(movementID: row.movementID, status: .skipped) }
+            try await tuesday.confirmHandledSummariesForTesting()
             let handledTuesday = try await tuesday.finish()
             XCTAssertEqual(handledTuesday.snapshot.state.activePrescription.slotID, "THU")
             let model = WorkoutViewModel(repository: repository, snapshot: handledTuesday.snapshot, timeZoneID: initial.timeZoneID, now: { ISO8601DateFormatter().date(from: "2026-10-15T20:00:00Z")! })
@@ -226,10 +229,12 @@ import TrainingCore
             XCTAssertEqual(resumed.log(for: first.movementID), raw)
             try await resumed.recordStatus(movementID: first.movementID, status: .completed)
             for row in saved.draft!.displayed.exercises.dropFirst() { try await resumed.recordStatus(movementID: row.movementID, status: .skipped) }
+            try await resumed.confirmHandledSummariesForTesting()
             await reopened.failNextSave()
             do { _ = try await resumed.finish(); XCTFail("Injected save failure") } catch {}
             XCTAssertTrue(resumed.hasAmbiguousFinish)
             do { try await resumed.recordEffort(movementID: first.movementID, effort: .tooEasy); XCTFail("Frozen finish") } catch {}
+            try await resumed.confirmHandledSummariesForTesting()
             let receipt = try await resumed.finish()
             _ = try await resumed.finish()
             guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
@@ -260,6 +265,7 @@ import TrainingCore
         XCTAssertEqual(legacy.snapshot.draft?.displayed, old.displayed)
         XCTAssertTrue(legacy.snapshot.draft!.displayed.exercises.allSatisfy { $0.sets.allSatisfy { $0.targetReps == nil } })
         for row in old.displayed.exercises { try await legacy.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await legacy.confirmHandledSummariesForTesting()
         let receipt = try await legacy.finish()
         XCTAssertEqual(receipt.snapshot.state.schemaVersion, 2)
         await reopened.close(); await repository.close()
@@ -297,7 +303,9 @@ import TrainingCore
             do { try await model.start(easierToday: true); XCTFail("Activation/preparation lease") } catch let error as EngineError { XCTAssertEqual(error.code, "operation_in_progress") }
         }
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let draft = model.snapshot.draft!
+        try await model.confirmHandledSummariesForTesting()
         let one = Task { try await model.finish() }
         let two = Task { try await model.finish() }
         let receipt = try await one.value

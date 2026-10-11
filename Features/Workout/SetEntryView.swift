@@ -5,34 +5,18 @@ struct SetEntryView: View {
     let model: WorkoutViewModel
     let row: ExercisePrescription
     @Binding var pendingActual: ActualSet?
-    @State private var reps = ""
-    @State private var left = ""
-    @State private var right = ""
-    @State private var missedReason: MissedGoalReason?
+    @State private var entry = SetEntryDraft()
     private enum Field: Hashable { case reps, left, right }
     @FocusState private var focused: Field?
     private var movement: Movement { model.movement(for: row) }
     private var nextIndex: Int? { model.nextSetIndex(for: row.movementID) }
     private var exact: Bool { (try? RulesetCatalog.resolve(version: model.snapshot.state.rulesetVersion, hash: model.snapshot.state.rulesetHash)).flatMap { try? ProgramPolicy.resolve(schemaVersion: model.snapshot.state.schemaVersion, rules: $0) }?.usesExactTargets == true }
-    private func number(_ text: String) -> Int? {
-        guard !text.isEmpty, text.allSatisfy(\.isNumber), let number = Int(text), number >= 0 else { return nil }
-        return number
+    private var target: Int? {
+        guard let index = nextIndex, row.sets.indices.contains(index) else { return nil }
+        return row.sets[index].targetReps
     }
-    private var observation: ActualSet? {
-        if movement.repCounting == .perSide {
-            // Missing sides remain missing; unequal originals are never summed or erased.
-            guard left.isEmpty || number(left) != nil, right.isEmpty || number(right) != nil else { return nil }
-            let l = number(left), r = number(right)
-            guard l != nil || r != nil else { return nil }
-            return ActualSet(reps: l ?? r ?? 0, leftReps: l, rightReps: r, missedGoalReason: belowGoal ? missedReason : nil)
-        }
-        return number(reps).map { ActualSet(reps: $0, missedGoalReason: belowGoal ? missedReason : nil) }
-    }
-    private var belowGoal: Bool {
-        guard exact, let index = nextIndex, row.sets.indices.contains(index), let goal = row.sets[index].targetReps else { return false }
-        if movement.repCounting == .perSide { return [number(left), number(right)].compactMap { $0 }.contains { $0 < goal } }
-        return number(reps).map { $0 < goal } ?? false
-    }
+    private var observation: ActualSet? { entry.observation(target: target, repCounting: movement.repCounting, exact: exact) }
+    private var belowGoal: Bool { exact && entry.requiresReason(target: target, repCounting: movement.repCounting) }
     private var actual: ActualSet? {
         guard let observed = observation, exact || observed.reps > 0 || (observed.leftReps ?? 0) > 0 || (observed.rightReps ?? 0) > 0 else { return nil }
         return observed
@@ -48,11 +32,11 @@ struct SetEntryView: View {
                 Text("Set \(index + 1) of \(row.sets.count)").font(.headline)
                 if exact, let goal = row.sets[index].targetReps { Text("Set \(index + 1) goal: \(goal) reps\(movement.repCounting == .perSide ? " per side" : "")").accessibilityIdentifier("set.goal") }
                 if movement.repCounting == .perSide {
-                    TextField("Left reps performed", text: $left).focused($focused, equals: .left).accessibilityLabel("Left reps performed").accessibilityIdentifier("set.left-reps")
-                    TextField("Right reps performed", text: $right).focused($focused, equals: .right).accessibilityLabel("Right reps performed").accessibilityIdentifier("set.right-reps")
+                    TextField("Left reps performed", text: $entry.left).focused($focused, equals: .left).accessibilityLabel("Left reps performed").accessibilityIdentifier("set.left-reps")
+                    TextField("Right reps performed", text: $entry.right).focused($focused, equals: .right).accessibilityLabel("Right reps performed").accessibilityIdentifier("set.right-reps")
                     Text("An unfinished or unequal side is kept as partial.").font(.caption)
-                } else { TextField("Reps performed", text: $reps).focused($focused, equals: .reps).accessibilityLabel("Reps performed").accessibilityIdentifier("set.reps") }
-                if belowGoal { MissedGoalReasonPicker(selection: $missedReason) }
+                } else { TextField("Reps performed", text: $entry.reps).focused($focused, equals: .reps).accessibilityLabel("Reps performed").accessibilityIdentifier("set.reps") }
+                if belowGoal { MissedGoalReasonPicker(selection: $entry.reason) }
                 Button("Save performed set") {
                     guard let actual else { return }
                     focused = nil
@@ -63,7 +47,7 @@ struct SetEntryView: View {
                         }
                     }
                 }
-                .disabled(model.blockedWorkingMovementIDs.contains(row.movementID) || actual == nil || (belowGoal && missedReason == nil) || model.busy || (movement.loadingMode == .externalLoad && model.log(for: row.movementID)?.actualLoad == nil))
+                .disabled(model.blockedWorkingMovementIDs.contains(row.movementID) || actual == nil || (belowGoal && entry.reason == nil) || model.busy || (movement.loadingMode == .externalLoad && model.log(for: row.movementID)?.actualLoad == nil))
                 .accessibilityIdentifier("set.save")
                 if exact {
                     Button("Skip this set") {
@@ -74,10 +58,13 @@ struct SetEntryView: View {
             }
         }
         .textFieldStyle(.roundedBorder).keyboardType(.numberPad)
-        .onChange(of: [reps, left, right]) { pendingActual = observation }
-        .onChange(of: missedReason) { pendingActual = observation }
+        .onChange(of: [entry.reps, entry.left, entry.right]) {
+            entry.update(reps: entry.reps, left: entry.left, right: entry.right, target: target, repCounting: movement.repCounting)
+            pendingActual = observation
+        }
+        .onChange(of: entry.reason) { pendingActual = observation }
         .onChange(of: nextIndex) { clearEntry() }
         .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { focused = nil }.accessibilityIdentifier("keyboard.done") } }
     }
-    private func clearEntry() { reps = ""; left = ""; right = ""; missedReason = nil; pendingActual = nil }
+    private func clearEntry() { entry = SetEntryDraft(); pendingActual = nil }
 }

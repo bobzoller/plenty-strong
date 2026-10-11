@@ -90,6 +90,7 @@ import TrainingCore
         try await model.recordProblem(movementID: row.movementID, problem: .pain)
         do { try await model.recordSet(movementID: row.movementID, index: 1, actual: raw); XCTFail("Stopped") } catch {}
         for other in model.snapshot.draft!.displayed.exercises.dropFirst() { try await model.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         XCTAssertEqual(receipt.snapshot.state.baseSafety?[row.baseMovementID!]?.paused, true)
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
@@ -138,6 +139,7 @@ import TrainingCore
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
         let eventID = model.snapshot.draft!.id.uuidString.lowercased()
+        try await model.confirmHandledSummariesForTesting()
         let first = try await model.finish()
         let second = try await model.finish()
         XCTAssertEqual(first.snapshot.history.count, second.snapshot.history.count)
@@ -182,6 +184,7 @@ extension WorkoutViewModelTests {
         try await model.start(easierToday: false)
         try await fill(model)
         let original = model.snapshot.draft!
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertEqual(event.exercises, original.logs)
@@ -195,6 +198,7 @@ extension WorkoutViewModelTests {
         try await model.start(easierToday: true)
         try await fill(model)
         let id = model.snapshot.draft!.logs[0].movementID
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         XCTAssertEqual(receipt.snapshot.state.exercises[id]?.mode, .baseline)
         XCTAssertEqual(receipt.snapshot.state.exercises[id]?.ceilingStreak, 0)
@@ -210,6 +214,7 @@ extension WorkoutViewModelTests {
         try await model.stopForLoadCorrection(movementID: row.movementID)
         do { try await model.recordStatus(movementID: row.movementID, status: .completed); XCTFail("Corrected work must remain partial") } catch {}
         for other in model.snapshot.draft!.displayed.exercises.dropFirst() { try await model.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         XCTAssertEqual(receipt.snapshot.state.exercises[row.movementID]?.mode, .baseline)
         XCTAssertEqual(receipt.snapshot.state.exercises[row.movementID]?.ceilingStreak, 0)
@@ -256,6 +261,7 @@ extension WorkoutViewModelTests {
         do { try await later.recordStatus(movementID: old.logs[0].movementID, status: .skipped); XCTFail("Must choose") } catch {}
         try await later.resolveDateChange(keepOriginal: true)
         for log in old.logs { try await later.recordStatus(movementID: log.movementID, status: .skipped) }
+        try await later.confirmHandledSummariesForTesting()
         let receipt = try await later.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertEqual(event.date, old.date)
@@ -265,6 +271,7 @@ extension WorkoutViewModelTests {
     func testMissedSuggestionRetainsRotationAndInterruptionIsExplicitWithoutInventedHistory() async throws {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false); try await fill(model)
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         let later = WorkoutViewModel(repository: repository, snapshot: receipt.snapshot, timeZoneID: "Pacific/Honolulu", now: { Date(timeIntervalSince1970: 1793736000) })
         try await later.prepareToday()
@@ -293,6 +300,7 @@ extension WorkoutViewModelTests {
         XCTAssertEqual(later.snapshot.draft, original)
         try await later.resolveDateChange(keepOriginal: true)
         for other in original.displayed.exercises.dropFirst() { try await later.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await later.confirmHandledSummariesForTesting()
         let receipt = try await later.finish()
         XCTAssertEqual(receipt.snapshot.state.baseSafety?[row.baseMovementID!]?.paused, true)
         let next = WorkoutViewModel(repository: reopened, snapshot: receipt.snapshot, timeZoneID: "Pacific/Honolulu")
@@ -351,6 +359,7 @@ extension WorkoutViewModelTests {
         let row = model.snapshot.draft!.displayed.exercises[0]
         try await model.changeSetup(.create(baseMovementID: row.baseMovementID!, variantID: "saved-setup", modifications: "Altered setup"))
         try await fill(model)
+        try await model.confirmHandledSummariesForTesting()
         _ = try await model.finish()
         let acceptedState = model.snapshot.state.exercises["saved-setup"]!
         let next = WorkoutViewModel(repository: repository, snapshot: model.snapshot, timeZoneID: "Pacific/Honolulu")
@@ -369,6 +378,7 @@ extension WorkoutViewModelTests {
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
         let identity = model.snapshot.draft!.id.uuidString.lowercased()
+        try await model.confirmHandledSummariesForTesting()
         async let first = model.finish()
         async let second = model.finish()
         let receipts = try await [first, second]
@@ -414,6 +424,7 @@ extension WorkoutViewModelTests {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false)
         var malformed = model.snapshot.draft!
+        malformed.flow = nil // Explicit synthetic legacy repair fixture.
         malformed.acknowledgedMovementIDs = malformed.logs.map(\.movementID)
         for i in malformed.logs.indices { malformed.logs[i].status = .completed }
         try await repository.saveDraft(malformed)
@@ -423,9 +434,25 @@ extension WorkoutViewModelTests {
         catch let error as EngineError { XCTAssertEqual(error.code, "invalid_sets") }
         XCTAssertFalse(restored.finished)
         let after = try await repository.snapshot(programID: UUID(uuidString: malformed.programID)!)
-        XCTAssertEqual(after, snapshot)
+        let pending = try XCTUnwrap(after.draft?.pendingFinish)
+        var retained = after; retained.draft?.pendingFinish = nil
+        XCTAssertEqual(retained, snapshot, "Only the durable Finish tuple may be added before rejection")
+        var expected = CompletedWorkout(eventID: malformed.id.uuidString.lowercased(), date: malformed.date,
+            slotID: malformed.displayed.slotID, prescriptionID: malformed.displayed.id,
+            plannedPrescriptionID: malformed.planned.id, sessionMode: malformed.sessionMode,
+            exercises: malformed.logs, observationAudit: malformed.observationAudit)
+        let finish = try SessionTiming.milliseconds(at: model.now())
+        if let start = malformed.startedAtMilliseconds {
+            expected.timing = SessionTiming(plannedDate: malformed.planned.date, startedAtMilliseconds: start,
+                finishedAtMilliseconds: finish, timeZoneID: malformed.timeZoneID)
+        }
+        let today = try SessionTiming.localDate(milliseconds: finish, timeZoneID: malformed.timeZoneID)
+        let next = try WorkoutScheduler.nextRotation(after: max(today, malformed.planned.date),
+            consumedSlotID: malformed.planned.slotID, config: snapshot.state.config)
+        XCTAssertEqual(pending, PendingWorkoutFinish(event: expected, next: next, expectedRevision: malformed.expectedRevision))
         try await restored.recoverRejectedCompletion()
         XCTAssertTrue(restored.snapshot.draft!.logs.allSatisfy { $0.status == .skipped && $0.actualSets.isEmpty })
+        try await restored.confirmHandledSummariesForTesting()
         let receipt = try await restored.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertTrue(event.exercises.allSatisfy { $0.status == .skipped && $0.actualSets.isEmpty })
@@ -452,6 +479,7 @@ extension WorkoutViewModelTests {
         XCTAssertEqual(resumed.log(for: row.movementID)?.actualLoad, load)
         do { try await resumed.recordStatus(movementID: row.movementID, status: .completed); XCTFail("Correction must remain partial") } catch {}
         for other in snapshot.draft!.logs.dropFirst() { try await resumed.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await resumed.confirmHandledSummariesForTesting()
         let receipt = try await resumed.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertEqual(event.exercises[0].actualSets, originals)
@@ -485,6 +513,7 @@ extension WorkoutViewModelTests {
         let (model, repository, url) = try await make()
         try await model.start(easierToday: false)
         var malformed = model.snapshot.draft!
+        malformed.flow = nil // Explicit synthetic legacy repair fixture.
         malformed.acknowledgedMovementIDs = malformed.logs.map(\.movementID)
         for i in malformed.logs.indices { malformed.logs[i].status = .completed }
         malformed.logs[0].actualLoad = model.movement(for: malformed.displayed.exercises[0]).availableLoads[0]
@@ -520,6 +549,7 @@ extension WorkoutViewModelTests {
         let snapshot = try await reopened.snapshot(programID: model.programID)
         XCTAssertEqual(snapshot.draft, repaired)
         let resumed = WorkoutViewModel(repository: reopened, snapshot: snapshot, timeZoneID: model.timeZoneID, now: model.now)
+        try await resumed.confirmHandledSummariesForTesting()
         let receipt = try await resumed.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertEqual(event.exercises, repaired.logs)
@@ -567,6 +597,7 @@ extension WorkoutViewModelTests {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let original = model.snapshot.draft!
         await repository.failNextSave()
         do { _ = try await model.finish(); XCTFail("Injected transient save failure") }
@@ -578,6 +609,7 @@ extension WorkoutViewModelTests {
         do { try await model.recordEffort(movementID: original.logs[0].movementID, effort: .tooHard); XCTFail("Payload frozen") } catch {}
         let unchanged = try await repository.snapshot(programID: model.programID)
         XCTAssertEqual(unchanged.draft, original)
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         guard case let .workout(event, _) = receipt.snapshot.history.last!.command else { return XCTFail("Workout") }
         XCTAssertEqual(event.exercises, original.logs)
@@ -589,6 +621,7 @@ extension WorkoutViewModelTests {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false)
         var malformed = model.snapshot.draft!
+        malformed.flow = nil // Explicit synthetic legacy repair fixture.
         malformed.acknowledgedMovementIDs = malformed.logs.map(\.movementID)
         for i in malformed.logs.indices { malformed.logs[i].status = .completed }
         try await repository.saveDraft(malformed)
@@ -614,7 +647,8 @@ extension WorkoutViewModelTests {
         let (model, repository, _) = try await make()
         try await model.start(easierToday: false)
         let original = model.snapshot.draft!
-        var repaired = original; repaired.logs[0].status = .skipped
+        var repaired = original; repaired.flow = nil // Explicit legacy CAS candidate.
+        repaired.logs[0].status = .skipped
         var changed = original; changed.logs[0].finalEffort = .tooHard
         try await repository.saveDraft(changed)
         do { try await repository.saveDraft(repaired, expectedExistingDraft: original); XCTFail("Stale proof") }
@@ -639,7 +673,8 @@ extension WorkoutViewModelTests {
         equivalent.logs[0].modificationsSnapshot = "Cafe\u{0301}"
         XCTAssertEqual(equivalent, original) // Swift String equality intentionally normalizes.
         XCTAssertNotEqual(try BackupService.bytes(equivalent), try BackupService.bytes(original))
-        var repaired = original; repaired.logs[0].status = .skipped
+        var repaired = original; repaired.flow = nil // Explicit legacy CAS candidate.
+        repaired.logs[0].status = .skipped
         do { try await repository.saveDraft(repaired, expectedExistingDraft: equivalent); XCTFail("Non-exact proof") }
         catch let error as EngineError { XCTAssertEqual(error.field, "draft_repair_proof_changed") }
         let after = try await repository.snapshot(programID: model.programID)
@@ -659,7 +694,8 @@ extension WorkoutViewModelTests {
         let next = try WorkoutScheduler.nextSlot(after: displayed.date, config: config)
         let receipt = try await repository.finalize(programID: UUID(uuidString: config.programID)!, expectedRevision: other.state.revision, event: event, next: next)
         if case .applied = receipt.result {} else { XCTFail("Synthetic other program should accept its own truthful skipped event") }
-        var repaired = original; repaired.logs[0].status = .skipped
+        var repaired = original; repaired.flow = nil // Explicit legacy CAS candidate.
+        repaired.logs[0].status = .skipped
         do { try await repository.saveDraft(repaired, expectedExistingDraft: original); XCTFail("Globally accepted ID") }
         catch let error as EngineError { XCTAssertEqual(error.field, "draft_repair_proof_changed") }
         let after = try await repository.snapshot(programID: model.programID)
@@ -815,6 +851,7 @@ extension WorkoutViewModelTests {
         let (scenario, snapshot) = try await accepted(); let vm = model(scenario, snapshot)
         try await vm.start(easierToday: false)
         for row in vm.snapshot.draft!.displayed.exercises { try await vm.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await vm.confirmHandledSummariesForTesting()
         _ = try await vm.finish()
         XCTAssertTrue(vm.canEditProgramSettings)
         _ = try await vm.finish()
@@ -897,6 +934,7 @@ extension WorkoutViewModelTests {
         let (scenario, snapshot) = try await accepted(); let vm = model(scenario, snapshot)
         try await vm.start(easierToday: false)
         for row in vm.snapshot.draft!.displayed.exercises { try await vm.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await vm.confirmHandledSummariesForTesting()
         let backup = try await scenario.repository.exportBackup(); let before = vm.snapshot
         await scenario.repository.failNextSave()
         do { _ = try await vm.finish(); XCTFail("Injected failure") } catch {}
@@ -904,6 +942,7 @@ extension WorkoutViewModelTests {
         do { try await vm.changeProgram(.goal(.maintenance)); XCTFail("Frozen Finish") } catch {}
         do { _ = try await vm.restoreBackup(backup); XCTFail("Frozen restore") } catch {}
         XCTAssertEqual(vm.snapshot, before)
+        try await vm.confirmHandledSummariesForTesting()
         _ = try await vm.finish()
         XCTAssertTrue(vm.finished); XCTAssertTrue(vm.canEditProgramSettings)
         await scenario.repository.close()

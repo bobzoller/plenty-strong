@@ -55,6 +55,20 @@ enum WorkoutFlowResolver {
         return WorkoutFlow(forward: step, reviewedSummaryMovementIDs: [])
     }
 
+    static func afterSummary(_ draft: WorkoutDraft, sourceIndex: Int) throws -> WorkoutStep {
+        var projection = draft; projection.flow = nil
+        let next = try WorkoutFlowResolver.reconciled(projection).forward
+        let row = draft.displayed.exercises[sourceIndex], log = draft.logs[sourceIndex]
+        if case let .introduction(nextID) = next, draft.displayed.exercises.indices.contains(sourceIndex + 1),
+           draft.displayed.exercises[sourceIndex + 1].movementID == nextID,
+           log.problem == .none, log.status != .stopped, log.status != .skipped, draft.restDeadline != nil,
+           let last = log.actualSets.enumerated().map({ $0.element.setIndex ?? $0.offset }).max(),
+           row.sets.indices.contains(last), last == (log.actualSets.enumerated().map({ $0.element.setIndex ?? $0.offset }) + (log.skippedSetIndices ?? [])).max() {
+            return .rest(sourceMovementID: row.movementID, sourceSetIndex: last, destination: .introduction(movementID: nextID))
+        }
+        return next
+    }
+
     static func validate(_ draft: WorkoutDraft) throws {
         let rows = draft.displayed.exercises
         let ids = rows.map(\.movementID)
