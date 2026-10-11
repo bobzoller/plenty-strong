@@ -42,7 +42,10 @@ public enum ObservationAuditValidator {
                 throw invalid("outcome")
             }
             if correction.outcomeAcknowledged { acknowledgedMovements.insert(log.movementID) }
-            if correction.afterStatus == .stopped || (correction.outcomeAcknowledged && correction.afterStatus == .partial) {
+            // Demotion closes a declared completion even in legacy nil-ack drafts.
+            // Only an initial unacknowledged partial remains eligible for its first outcome.
+            if correction.afterStatus == .stopped ||
+                (correction.afterStatus == .partial && (correction.outcomeAcknowledged || correction.beforeStatus == .completed)) {
                 protectedOutcomes[log.movementID] = correction.afterStatus
             }
             if let protected = protectedOutcomes[log.movementID], log.status != protected && !safetyStop { throw invalid("outcome") }

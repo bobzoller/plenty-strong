@@ -94,6 +94,10 @@ struct CorrectionHistoryFixture {
         #expect(WorkoutDetailView.corrections(event: event, movementID: f.movementID, setIndex: 2) == [first, second])
         #expect(WorkoutDetailView.correctionDetail(first).contains("right unrecorded"))
         #expect(WorkoutDetailView.correctionDetail(second).contains("right unrecorded"))
+        #expect(WorkoutDetailView.corrections(audit: event.observationAudit, movementID: f.movementID, setIndex: 2) == [first, second])
+        var absentSides = first; absentSides.before.leftReps = nil
+        #expect(WorkoutDetailView.correctionDetail(absentSides, repCounting: .perSide).contains("left unrecorded, right unrecorded"))
+        #expect(WorkoutDetailView.corrections(audit: event.observationAudit, movementID: f.movementID, setIndex: 0).isEmpty)
         event.observationAudit = nil
         #expect(WorkoutDetailView.corrections(event: event, movementID: f.movementID, setIndex: 2).isEmpty)
     }

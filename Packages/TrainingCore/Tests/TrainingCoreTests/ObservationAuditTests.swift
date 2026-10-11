@@ -143,6 +143,35 @@ struct ObservationAuditTests {
         #expect(throws: EngineError.self) { try validate(event, audit: ObservationAudit(corrections: [first, second]), state: state) }
     }
 
+    @Test(arguments: [2, 3, 4]) func everyUnacknowledgedDemotionIsPermanent(schema: Int) throws {
+        var (state, event) = try fixture()
+        state.schemaVersion = schema
+        if schema == 2 {
+            for i in event.exercises.indices {
+                for j in event.exercises[i].actualSets.indices {
+                    event.exercises[i].actualSets[j].setIndex = nil
+                    event.exercises[i].actualSets[j].missedGoalReason = nil
+                }
+                event.exercises[i].skippedSetIndices = nil
+            }
+        }
+        let good = event.exercises[0].actualSets[0]
+        var zero = good; zero.reps = 0
+        if schema >= 3 { zero.missedGoalReason = .effortLimit }
+        let first = SetCorrection(operationID: UUID(), movementID: event.exercises[0].movementID, setIndex: 0,
+            before: good, after: zero, beforeStatus: .completed, afterStatus: .partial, outcomeAcknowledged: false)
+        let second = SetCorrection(operationID: UUID(), movementID: event.exercises[0].movementID, setIndex: 0,
+            before: zero, after: good, beforeStatus: .partial, afterStatus: .partial, outcomeAcknowledged: false)
+        let audit = ObservationAudit(corrections: [first, second])
+        #expect(throws: EngineError.self) { try validate(event, audit: audit, state: state) }
+        event.exercises[0].status = .partial
+        #expect(try validate(event, audit: audit, state: state)[0].status == .completed)
+        for problem in [Problem.pain, .controlLost] {
+            event.exercises[0].status = .stopped; event.exercises[0].problem = problem
+            #expect(try validate(event, audit: audit, state: state)[0].actualSets[0] == good)
+        }
+    }
+
     private func fixture() throws -> (ProgramState, CompletedWorkout) {
         var state = try starterState()
         try starterSet(&state, base: "db_romanian_deadlift", targets: [8, 8])

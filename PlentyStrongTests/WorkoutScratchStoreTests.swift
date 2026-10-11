@@ -42,7 +42,8 @@ import TrainingCore
         let draft = try #require(model.snapshot.draft)
         let dataset = try #require(model.snapshot.history.first { $0.parentEnvelopeHash == nil }?.datasetID)
         return WorkoutScratchKey(storeID: path, datasetID: dataset, programID: draft.programID, draftID: draft.id,
-            prescriptionID: draft.displayed.id, step: .set(movementID: draft.logs[0].movementID, index: 0), expectedObservationHash: hash)
+            prescriptionID: draft.displayed.id, step: .set(movementID: draft.logs[0].movementID, index: 0), expectedObservationHash: hash,
+            expectedOutcome: "\(draft.logs[0].status.rawValue):\(draft.logs[0].problem.rawValue):\(model.handled(draft.logs[0].movementID))")
     }
     @Test func pendingFinishAndDiscardCleanScratch() async throws {
         let f = try await GuidedWorkoutFixture.make(), url = directory(), store = WorkoutScratchStore(directory: url)
@@ -618,4 +619,229 @@ private actor ScratchNavigationDelay {
         await withCheckedContinuation { entryWaiter = $0 }
     }
     func release() { releaseWaiter?.resume(); releaseWaiter = nil }
+}
+
+@MainActor extension WorkoutScratchStoreTests {
+    @Test(arguments: ["corrupt", "failed-write"], ["pain", "control-loss", "partial", "stop"])
+    func explicitOutcomeSurvivesScratchFailure(failure: String, outcome: String) async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        try await f.model.confirmLoad(movementID: row.movementID, load: #require(f.model.movement(for: row).availableLoads.first))
+        try await f.model.beginMovement(movementID: row.movementID)
+        let url = directory(), store = WorkoutScratchStore(directory: url)
+        if failure == "corrupt" {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try Data("corrupt sidecar".utf8).write(to: url.appendingPathComponent(f.model.snapshot.draft!.id.uuidString.lowercased() + ".json"))
+        } else { try Data("unwritable directory".utf8).write(to: url) }
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        try await model.resumeGuidedWorkout()
+        #expect(model.snapshot.health == .ready)
+        model.entryDraft.reps = "7"
+        do {
+            if outcome == "pain" || outcome == "control-loss" {
+                try await model.recordProblem(movementID: row.movementID, problem: outcome == "pain" ? .pain : .controlLost, pendingActual: ActualSet(reps: 7))
+            } else { try await model.recordStatus(movementID: row.movementID, status: outcome == "partial" ? .partial : .stopped, pendingActual: ActualSet(reps: 7)) }
+        } catch { print("EXPECTED_DURABLE_OUTCOME_BUT_ERROR \(error)") }
+        let saved = try await f.repository.snapshot(programID: model.programID)
+        #expect(saved.draft?.logs[0].actualSets.first?.reps == 7)
+        #expect(saved.draft?.logs[0].status == (outcome == "partial" ? .partial : .stopped))
+        #expect(saved.draft?.logs[0].problem == (outcome == "pain" ? .pain : outcome == "control-loss" ? .controlLost : Problem.none))
+        #expect(saved.draft?.acknowledgedMovementIDs?.contains(row.movementID) == true)
+        #expect(saved.draft?.flow?.forward == .summary(movementID: row.movementID))
+        #expect(model.errorText != nil)
+        await f.repository.close()
+        let reopened = try TrainingRepository.open(at: f.storeURL)
+        let authoritative = try await reopened.snapshot(programID: model.programID)
+        #expect(authoritative == saved)
+        let resumed = WorkoutViewModel(repository: reopened, snapshot: authoritative, timeZoneID: model.timeZoneID, now: model.now,
+            scratchStore: WorkoutScratchStore(directory: url), scratchStoreID: "real")
+        try await resumed.resumeGuidedWorkout()
+        #expect(resumed.entryDraft == SetEntryDraft())
+        await #expect(throws: EngineError.self) { try await resumed.recordSet(movementID: row.movementID, index: 1, actual: ActualSet(reps: 8)) }
+        if outcome == "pain" || outcome == "control-loss" {
+            await #expect(throws: EngineError.self) { try await resumed.recordStatus(movementID: row.movementID, status: .completed) }
+        }
+        await reopened.close()
+    }
+}
+
+@MainActor extension WorkoutScratchStoreTests {
+    @Test func outcomeOnlyStopInvalidatesUnchangedObservationWhenCleanupCannotWrite() async throws {
+        let f = try await GuidedWorkoutFixture.make(), url = directory(), store = WorkoutScratchStore(directory: url)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        try await model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 8))
+        let actual = try #require(model.log(for: row.movementID)?.actualSets.first)
+        model.reviewStep = .set(movementID: row.movementID, index: 0)
+        model.entryDraft.reps = "stale correction"; try await model.flushScratch()
+        let file = url.appendingPathComponent(model.snapshot.draft!.id.uuidString.lowercased() + ".json")
+        let preserved = try Data(contentsOf: file)
+        try FileManager.default.removeItem(at: url)
+        try Data("directory is unavailable".utf8).write(to: url)
+        try await model.recordProblem(movementID: row.movementID, problem: .pain)
+        #expect(model.log(for: row.movementID)?.actualSets == [actual])
+        #expect(model.log(for: row.movementID)?.problem == .pain && model.errorText?.contains("cleanup also failed") == true)
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try preserved.write(to: file)
+        await f.repository.close()
+        let reopened = try TrainingRepository.open(at: f.storeURL)
+        let stopped = WorkoutViewModel(repository: reopened, snapshot: try await reopened.snapshot(programID: model.programID),
+            timeZoneID: model.timeZoneID, now: model.now, scratchStore: WorkoutScratchStore(directory: url), scratchStoreID: "real")
+        stopped.reviewStep = .set(movementID: row.movementID, index: 0)
+        #expect(try await stopped.restoreScratch() == false)
+        #expect(stopped.entryDraft == SetEntryDraft())
+        #expect(try Data(contentsOf: file) == preserved)
+        await reopened.close()
+    }
+
+    @Test func retiredCorruptSidecarPreservesBytesAndRejectsDelayedPriorWrite() async throws {
+        let f = try await GuidedWorkoutFixture.make(), url = directory(), store = WorkoutScratchStore(directory: url)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        try await model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 8))
+        model.reviewStep = .set(movementID: row.movementID, index: 0)
+        let actual = try #require(model.log(for: row.movementID)?.actualSets.first)
+        let oldKey = try modelKey(model, path: "real", hash: BackupService.hash(actual))
+        model.entryDraft.reps = "old correction"; try await model.flushScratch()
+        let delay = ScratchNavigationDelay()
+        await store.setBeforeSaveForTesting { await delay.holdFirst() }
+        let late = Task { try await store.save(WorkoutScratch(generation: 999, key: oldKey, entry: SetEntryDraft(reps: "late old correction"))) }
+        await delay.waitUntilEntered()
+        let file = url.appendingPathComponent(oldKey.draftID.uuidString.lowercased() + ".json")
+        let corrupt = Data("preserved corrupt sidecar".utf8); try corrupt.write(to: file)
+        try await model.recordProblem(movementID: row.movementID, problem: .controlLost)
+        await delay.release(); try await late.value
+        #expect(model.log(for: row.movementID)?.actualSets == [actual])
+        #expect(model.log(for: row.movementID)?.problem == .controlLost)
+        let rejected = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.contains(".rejected.") }
+        #expect(try rejected.contains { try Data(contentsOf: $0) == corrupt })
+        #expect(try await WorkoutScratchStore(directory: url).load(key: oldKey) == nil)
+        let reopened = WorkoutViewModel(repository: f.repository, snapshot: try await f.repository.snapshot(programID: model.programID),
+            timeZoneID: model.timeZoneID, now: model.now, scratchStore: WorkoutScratchStore(directory: url), scratchStoreID: "real")
+        reopened.reviewStep = .set(movementID: row.movementID, index: 0)
+        #expect(try await reopened.restoreScratch() == false && reopened.entryDraft == SetEntryDraft())
+        await f.repository.close()
+    }
+
+    @Test func explicitOutcomeScratchToleranceRetainsCASAndRepositoryFailure() async throws {
+        let f = try await GuidedWorkoutFixture.make(), url = directory()
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        try await f.model.confirmLoad(movementID: row.movementID, load: #require(f.model.movement(for: row).availableLoads.first))
+        try await f.model.beginMovement(movementID: row.movementID)
+        try Data("unwritable directory".utf8).write(to: url)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: WorkoutScratchStore(directory: url), scratchStoreID: "real")
+        model.entryDraft.reps = "7"
+        let before = model.snapshot
+        await f.repository.failNextSave()
+        await #expect(throws: EngineError.self) { try await model.recordProblem(movementID: row.movementID, problem: .pain, pendingActual: ActualSet(reps: 7)) }
+        #expect(model.snapshot == before && model.entryDraft.reps == "7")
+        try await f.model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 8))
+        let authoritative = try await f.repository.snapshot(programID: model.programID)
+        await #expect(throws: EngineError.self) { try await model.recordProblem(movementID: row.movementID, problem: .pain, pendingActual: ActualSet(reps: 7)) }
+        #expect(try await f.repository.snapshot(programID: model.programID) == authoritative)
+        #expect(model.snapshot == before && model.entryDraft.reps == "7")
+        await f.repository.close()
+    }
+}
+
+@MainActor extension WorkoutScratchStoreTests {
+    @Test(arguments: [false, true]) func explicitOutcomeDoesNotIgnoreChangedScratchOwnership(inactive: Bool) async throws {
+        let f = try await GuidedWorkoutFixture.make(), url = directory()
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        try await f.model.confirmLoad(movementID: row.movementID, load: #require(f.model.movement(for: row).availableLoads.first))
+        try await f.model.beginMovement(movementID: row.movementID)
+        try Data("unwritable directory".utf8).write(to: url)
+        let store = WorkoutScratchStore(directory: url)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        model.entryDraft.reps = "7"
+        await #expect(throws: (any Error).self) { try await model.flushScratch() }
+        let before = model.snapshot, delay = ScratchNavigationDelay()
+        await store.setBeforeSaveForTesting { await delay.holdFirst() }
+        let outcome = Task { @MainActor in
+            do { try await model.recordProblem(movementID: row.movementID, problem: .pain, pendingActual: ActualSet(reps: 7)); Issue.record("Stale scratch owner committed") }
+            catch let error as EngineError { #expect(error.code == "inactive_context") }
+        }
+        await delay.waitUntilEntered()
+        if inactive { model.operations.contextEnabled = false }
+        else { model.entryDraft.reps = "newer input" }
+        await delay.release(); try await outcome.value
+        #expect(model.snapshot == before)
+        #expect(try await f.repository.snapshot(programID: model.programID) == before)
+        await f.repository.close()
+    }
+}
+
+@MainActor extension WorkoutScratchStoreTests {
+    @Test(arguments: ["corrupt", "failed-write"]) func explicitOutcomeCanContinueSameDraftWithLaterScratch(failure: String) async throws {
+        let f = try await GuidedWorkoutFixture.make(), url = directory(), store = WorkoutScratchStore(directory: url)
+        let first = f.model.snapshot.draft!.displayed.exercises[0]
+        try await f.model.confirmLoad(movementID: first.movementID, load: #require(f.model.movement(for: first).availableLoads.first))
+        try await f.model.beginMovement(movementID: first.movementID)
+        let draftID = f.model.snapshot.draft!.id
+        let oldKey = try modelKey(f.model, path: "real")
+        if failure == "corrupt" {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try Data("corrupt original".utf8).write(to: url.appendingPathComponent(draftID.uuidString.lowercased() + ".json"))
+        } else { try Data("unavailable directory".utf8).write(to: url) }
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        model.entryDraft.reps = "7"
+        try await model.recordProblem(movementID: first.movementID, problem: .pain, pendingActual: ActualSet(reps: 7))
+        #expect(model.log(for: first.movementID)?.problem == .pain)
+        if failure == "failed-write" {
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        try await model.confirmMovementSummary(movementID: first.movementID, effort: .unknown, status: .stopped, reviewing: false)
+        if case .rest = model.visibleStep { try await model.advanceRest() }
+        let later = model.snapshot.draft!.displayed.exercises[1]
+        if model.movement(for: later).loadingMode == .externalLoad {
+            try await model.confirmLoad(movementID: later.movementID, load: #require(model.movement(for: later).availableLoads.first))
+        }
+        try await model.beginMovement(movementID: later.movementID)
+        model.entryDraft.reps = "6"; model.entryDraft.reason = .effortLimit
+        try await model.flushScratch()
+        #expect(model.snapshot.draft?.id == draftID)
+        #expect(model.log(for: later.movementID)?.actualSets.isEmpty == true)
+        let saved = try await f.repository.snapshot(programID: model.programID)
+        await f.repository.close()
+        let reopened = try TrainingRepository.open(at: f.storeURL), nextStore = WorkoutScratchStore(directory: url)
+        let resumed = WorkoutViewModel(repository: reopened, snapshot: try await reopened.snapshot(programID: model.programID),
+            timeZoneID: model.timeZoneID, now: model.now, scratchStore: nextStore, scratchStoreID: "real")
+        #expect(resumed.snapshot == saved)
+        #expect(try await resumed.restoreScratch() == true)
+        #expect(resumed.entryDraft.reps == "6" && resumed.entryDraft.reason == .effortLimit)
+        try await nextStore.save(WorkoutScratch(generation: 999, key: oldKey, entry: SetEntryDraft(reps: "old delayed input")))
+        #expect(try await resumed.restoreScratch() == true && resumed.entryDraft.reps == "6")
+        await reopened.close()
+    }
+}
+
+@MainActor extension WorkoutScratchStoreTests {
+    @Test(arguments: [false, true]) func staleRetirementRecoveryPreservesNewerContextAndTerminalRemoval(removed: Bool) async throws {
+        let url = directory(), oldStore = WorkoutScratchStore(directory: url), old = key()
+        try Data("storage unavailable".utf8).write(to: url)
+        await #expect(throws: (any Error).self) { try await oldStore.retire(key: old, throughGeneration: 2) }
+        try FileManager.default.removeItem(at: url)
+        let currentStore = WorkoutScratchStore(directory: url)
+        var current = old; current.step = .set(movementID: "later", index: 0); current.expectedOutcome = "partial:none:false"
+        try await currentStore.save(WorkoutScratch(generation: 3, key: current, entry: SetEntryDraft(reps: "later input")))
+        if removed { try await currentStore.remove(draftID: current.draftID) }
+        #expect(try await oldStore.generation(draftID: old.draftID) >= 3)
+        try await oldStore.save(WorkoutScratch(generation: 999, key: old, entry: SetEntryDraft(reps: "old input")))
+        if removed {
+            try await currentStore.save(WorkoutScratch(generation: 5, key: current, entry: SetEntryDraft(reps: "resurrection")))
+            #expect(try await currentStore.load(key: current) == nil)
+        } else { #expect(try await currentStore.load(key: current)?.entry.reps == "later input") }
+    }
 }

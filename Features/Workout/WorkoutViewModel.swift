@@ -91,7 +91,8 @@ import TrainingCore
         guard roots.count == 1 else { return nil }
         return WorkoutScratchKey(storeID: storeID, datasetID: roots[0].datasetID, programID: draft.programID,
             draftID: draft.id, prescriptionID: draft.displayed.id, step: .set(movementID: id, index: index),
-            expectedObservationHash: actual.flatMap { try? BackupService.hash($0) })
+            expectedObservationHash: actual.flatMap { try? BackupService.hash($0) },
+            expectedOutcome: "\(log.status.rawValue):\(log.problem.rawValue):\(handled(id))")
     }
     private func scratchContextChanged() {
         guard scratchStore != nil else { return }
@@ -104,7 +105,7 @@ import TrainingCore
         scratchEpoch += 1; scratchGeneration += 1
         if let store = scratchStore, let old {
             let base = scratchBase, generation = scratchGeneration
-            let task = Task { try await store.invalidate(draftID: old.draftID, throughGeneration: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: generation)) }
+            let task = Task { try await store.invalidate(draftID: old.draftID, throughGeneration: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: generation), expectedKey: old) }
             scratchWrite = task
             surfaceScratchFailure(task, ownership: entryOwnership)
         }
@@ -277,11 +278,14 @@ import TrainingCore
         runningUIAction = true; errorText = nil
         defer { runningUIAction = false }
         do { try await action() }
-        catch let error as EngineError { errorText = message(for: error.code) }
+        catch let error as EngineError { errorText = message(for: error) }
         catch { errorText = "Could not save on this device. Your last saved observations are retained. \(error.localizedDescription)" }
     }
-    private func message(for code: String) -> String {
-        switch code {
+    private func message(for error: EngineError) -> String {
+        if error.code == "incomplete_workout", error.field == "review" {
+            return "Confirm the pending movement summaries in Workout review before finishing."
+        }
+        return switch error.code {
         case "retained_safety_restriction": "A saved program has a pause or stricter effort reserve for this movement. Additional working sets are unavailable. Keep recorded actuals and choose partial or stopped, then finish safely. Changing programs does not clear safety."
         case "unsupported_training": "This archived program is available for viewing and export. Training is unavailable in the fixed routine."
         case "incomplete_workout": "Choose performed, partial, skipped, or stopped for every movement before finishing."
@@ -294,7 +298,7 @@ import TrainingCore
         case "session_already_recorded": "A workout has already been recorded for this local date. Your next workout remains available on a later date."
         case "future_workout": "This workout is scheduled for a future day."
         case "movement_stopped", "working_draft_locked": "This movement is stopped, or working observations have locked preparation. Saved observations are retained."
-        default: "Could not save (\(code)). Your last saved observations are retained."
+        default: "Could not save (\(error.code)). Your last saved observations are retained."
         }
     }
     private func requireReady() async throws {
@@ -308,12 +312,35 @@ import TrainingCore
         guard allowDateChoice || !needsDateChoice else { throw EngineError(code: "date_choice_required", field: "date") }
         return draft
     }
-    private func save(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil) async throws {
+    private func save(_ draft: WorkoutDraft, expectedExistingDraft: WorkoutDraft? = nil, authoritativeOutcome: Bool = false) async throws {
         // A guided save binds the forward cursor/deadline to the captured draft,
         // including when another model has already committed this set.
         let expected = expectedExistingDraft ?? (draft.flow != nil ? snapshot.draft : nil)
-        if scratchContext != nil { try await flushScratch() }
+        let ownership = entryOwnership
+        var scratchFailure: (any Error)?
+        if scratchContext != nil {
+            do { try await flushScratch() }
+            catch {
+                guard authoritativeOutcome else { throw error }
+                guard !Task.isCancelled, operations.contextEnabled, entryOwnership == ownership else {
+                    throw EngineError(code: "inactive_context", field: "scratch")
+                }
+                scratchFailure = error
+            }
+        }
+        // Sidecar tolerance never bypasses repository admission, prefixes or CAS.
         snapshot = try await repository.saveDraft(draft, expectedExistingDraft: expected)
+        if let scratchFailure {
+            scratchEpoch += 1
+            var cleanupFailure = ""
+            let base = (try? await scratchBase?.value) ?? 0
+            let watermark = (try? Self.scratchSequence(base: base, ordinal: scratchGeneration)) ?? UInt64.max
+            do {
+                if let key = ownership.key { _ = try await scratchStore?.retire(key: key, throughGeneration: watermark) }
+            } catch { cleanupFailure = " Local cleanup also failed; unsaved input cannot be restored until local storage is available: \(error)" }
+            scratchBase = Task { watermark }; scratchGeneration = 0; scratchWrite = nil
+            errorText = "Your outcome and observations are saved. Workout input from that page could not be saved locally and will not be restored. \(scratchFailure)\(cleanupFailure)"
+        }
     }
     /// Missed scheduling and interrupted-return preparation are explicit journal commands.
     func prepareToday() async throws {
@@ -666,7 +693,7 @@ import TrainingCore
         draft.logs[i].problem = problem; draft.logs[i].status = .stopped; draft.workingSetsStarted = true
         acknowledge(movementID, draft: &draft)
         routeSummary(movementID, draft: &draft)
-        try await save(draft)
+        try await save(draft, authoritativeOutcome: true)
     }
     private func appendPending(_ actual: ActualSet?, at index: Int, to draft: inout WorkoutDraft) async throws {
         guard let actual else { return }
@@ -708,7 +735,7 @@ import TrainingCore
         guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
         draft.logs[i].status = status; acknowledge(movementID, draft: &draft)
         routeSummary(movementID, draft: &draft)
-        try await save(draft)
+        try await save(draft, authoritativeOutcome: status == .partial || status == .stopped)
     }
     func stopForLoadCorrection(movementID: String, pendingActual: ActualSet? = nil) async throws {
         try await operations.perform { _ in try await stopForLoadCorrectionBody(movementID: movementID, pendingActual: pendingActual) }

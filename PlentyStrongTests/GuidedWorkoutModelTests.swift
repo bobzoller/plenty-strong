@@ -528,3 +528,28 @@ private final class GuidedCommitProbe: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 0.15)
     }
 }
+
+@MainActor extension GuidedWorkoutModelTests {
+    @Test func pendingCorrectionSummaryFinishGuidanceIsActionable() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        var draft = try #require(f.model.snapshot.draft)
+        for i in draft.logs.indices { draft.logs[i].status = .skipped }
+        let id = draft.logs[0].movementID
+        draft.logs[0].status = .partial
+        draft.logs[0].actualSets = [ActualSet(reps: 7, setIndex: 0, missedGoalReason: .effortLimit)]
+        draft.logs[0].actualLoad = f.model.movement(for: draft.displayed.exercises[0]).availableLoads.first
+        draft.logs[0].finalEffort = .unknown
+        draft.workingSetsStarted = true
+        draft.acknowledgedMovementIDs = draft.logs.map(\.movementID)
+        draft.flow = WorkoutFlow(forward: .workoutReview, reviewedSummaryMovementIDs: draft.logs.map(\.movementID))
+        let saved = try await f.repository.saveDraft(draft)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: saved, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        try await model.correctSet(movementID: id, index: 0, replacement: ActualSet(reps: 8, setIndex: 0), operationID: UUID())
+        let before = model.snapshot
+        await model.run { _ = try await model.finish() }
+        #expect(model.errorText == "Confirm the pending movement summaries in Workout review before finishing.")
+        #expect(model.snapshot == before && model.snapshot.draft?.logs[0].status == .partial)
+        #expect(model.snapshot.draft?.pendingFinish == nil)
+        await f.repository.close()
+    }
+}

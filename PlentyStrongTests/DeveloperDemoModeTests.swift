@@ -104,7 +104,8 @@ import TrainingCore
         let draft = model.snapshot.draft!
         let root = try #require(model.snapshot.history.first { $0.parentEnvelopeHash == nil })
         let key = WorkoutScratchKey(storeID: path, datasetID: root.datasetID, programID: draft.programID,
-            draftID: draft.id, prescriptionID: draft.displayed.id, step: model.visibleStep!, expectedObservationHash: nil)
+            draftID: draft.id, prescriptionID: draft.displayed.id, step: model.visibleStep!, expectedObservationHash: nil,
+            expectedOutcome: "\(draft.logs[0].status.rawValue):\(draft.logs[0].problem.rawValue):\(model.handled(row.movementID))")
         let before = try await f.repository.exportBackup(), cursor = model.visibleStep
         let delay = DemoScratchDelay()
         await store.setBeforeSaveForTesting { await delay.holdFirst() }
@@ -125,7 +126,7 @@ import TrainingCore
         try await demo.beginMovement(movementID: demoRow.movementID)
         demo.entryDraft.reps = "demo unfinished"; try await demo.flushScratch()
         await delay.release(); try await late.value
-        await restoreDelay.release(); try await lateRestore.value
+        await restoreDelay.release(); _ = try await lateRestore.value
         #expect(try await store.load(key: key)?.entry.reps == "late restored real")
         #expect(model.entryDraft.reps == "real unfinished")
         #expect(demo.entryDraft.reps == "demo unfinished")

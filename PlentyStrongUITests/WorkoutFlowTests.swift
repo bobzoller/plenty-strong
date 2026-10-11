@@ -261,6 +261,8 @@ extension WorkoutFlowTests {
         app.buttons["workout.review"].tap()
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 4 reps")
         XCTAssertTrue(app.staticTexts["movement.stopped"].exists)
+        XCTAssertFalse(app.staticTexts["summary.corrected.0"].exists)
+        XCTAssertFalse(app.buttons["summary.corrections.0"].exists)
         XCTAssertEqual(app.buttons["summary.confirm"].label, "Return to review")
         app.tapWorkoutControl("effort.too_hard")
         app.tapWorkoutControl("summary.confirm")
@@ -277,7 +279,28 @@ extension WorkoutFlowTests {
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 15), .completed)
         let summaries = resumed.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).allElementsBoundByIndex.map(\.identifier)
         XCTAssertEqual(summaries.count, 5)
-        for identifier in summaries.dropFirst() { resumed.tapWorkoutControl(identifier); resumed.confirmGuidedSummary() }
+        XCTAssertEqual(resumed.scrollViews.count, 1, "The active Workout review owns the scroll viewport")
+        let reviewScroll = resumed.scrollViews.firstMatch
+        let finish = resumed.buttons["workout.finish"], navigation = resumed.navigationBars["Workout"]
+        func fullyVisible(_ control: XCUIElement) -> Bool {
+            let bounds = control.frame
+            return [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite) &&
+                bounds.width > 0 && bounds.height > 0 && reviewScroll.frame.contains(bounds) &&
+                bounds.minY >= navigation.frame.maxY && bounds.maxY < finish.frame.minY && control.isHittable
+        }
+        for identifier in summaries.dropFirst() {
+            let control = resumed.buttons[identifier]
+            for _ in 0..<24 {
+                if fullyVisible(control) { break }
+                if control.frame.minY < navigation.frame.maxY { reviewScroll.swipeDown() }
+                else { reviewScroll.swipeUp() }
+            }
+            XCTAssertTrue(control.isHittable)
+            XCTAssertTrue(reviewScroll.frame.contains(control.frame))
+            XCTAssertGreaterThanOrEqual(control.frame.minY, navigation.frame.maxY)
+            XCTAssertLessThan(control.frame.maxY, finish.frame.minY)
+            resumed.tapWorkoutControl(identifier); resumed.confirmGuidedSummary()
+        }
         resumed.tapWorkoutControl("workout.finish")
         XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         XCTAssertEqual(resumed.staticTexts["workout.next-prescription"].label, "Next: THU, 2026-10-08")

@@ -177,10 +177,35 @@ final class HistorySettingsTests: XCTestCase {
         for _ in 0..<4 {
             app.continueGuidedRest(); app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
         }
+        let review = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch
+        app.revealWorkoutControl(review); review.tap()
+        let summary = app.scrollViews.containing(.staticText, identifier: "movement.summary").firstMatch
+        XCTAssertEqual(summary.staticTexts["set.actual.0"].label, "Set 1: 8 reps")
+        XCTAssertTrue(app.staticTexts["summary.corrected.0"].exists)
+        app.tapWorkoutControl("summary.corrections.0")
+        let firstDetail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 1. Original:")).firstMatch
+        app.revealWorkoutControl(firstDetail)
+        XCTAssertTrue(firstDetail.label.contains("Original: 7"))
+        XCTAssertTrue(firstDetail.label.contains("Replacement: 8"))
+        XCTAssertTrue(firstDetail.label.contains("Time or interruption"))
+        app.tapWorkoutControl("summary.correct.0"); app.replacePerformedReps("9")
+        app.tapWorkoutControl("correction.save")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["correction.save"])], timeout: 15), .completed)
+        XCTAssertEqual(summary.staticTexts["set.actual.0"].label, "Set 1: 9 reps")
+        let secondDetail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 2. Original:")).firstMatch
+        app.revealWorkoutControl(secondDetail)
+        XCTAssertTrue(secondDetail.label.contains("Original: 8"))
+        XCTAssertTrue(secondDetail.label.contains("Replacement: 9"))
+        let beforeFinish = XCTAttachment(screenshot: app.screenshot()); beforeFinish.name = "Before Finish ordered corrections and primary effective actual"; beforeFinish.lifetime = .keepAlways; add(beforeFinish)
+        app.navigationBars.buttons["BackButton"].tap()
+        app.tapWorkoutControl("workout.finish")
+        XCTAssertTrue(app.staticTexts["Confirm the pending movement summaries in Workout review before finishing."].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["workout.saved"].exists)
+        app.revealWorkoutControl(review); review.tap(); app.confirmGuidedSummary()
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
-        XCTAssertTrue(app.staticTexts["history.actual-reps"].label.contains("8"))
+        XCTAssertTrue(app.staticTexts["history.actual-reps"].label.contains("9"))
         XCTAssertFalse(app.staticTexts["history.actual-reps"].label.contains("7"))
         let disclosure = app.buttons.matching(NSPredicate(format: "label == %@", "Set 1 corrections")).firstMatch
         app.revealWorkoutControl(disclosure); disclosure.tap()

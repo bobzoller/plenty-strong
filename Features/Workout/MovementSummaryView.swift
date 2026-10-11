@@ -34,6 +34,16 @@ struct MovementSummaryView: View {
                         Text("Set \(index + 1) · goal \(goal.targetReps.map(String.init) ?? "up to \(goal.repCeiling)") reps\(model.movement(for: row).repCounting == .perSide ? " per side" : "")").accessibilityIdentifier("summary.slot.\(index)")
                         if let actual {
                             Text(model.movement(for: row).repCounting == .perSide ? "Set \(index + 1): left \(actual.leftReps.map(String.init) ?? "unrecorded"), right \(actual.rightReps.map(String.init) ?? "unrecorded")" : "Set \(index + 1): \(actual.reps) reps").accessibilityIdentifier("set.actual.\(index)")
+                            let corrections = WorkoutDetailView.corrections(audit: model.snapshot.draft?.observationAudit, movementID: row.movementID, setIndex: index)
+                            if !corrections.isEmpty {
+                                Text("Corrected · \(corrections.count) \(corrections.count == 1 ? "correction" : "corrections")").accessibilityIdentifier("summary.corrected.\(index)")
+                                DisclosureGroup("Set \(index + 1) corrections") {
+                                    ForEach(Array(corrections.enumerated()), id: \.element.operationID) { order, correction in
+                                        Text("Correction \(order + 1). \(WorkoutDetailView.correctionDetail(correction, repCounting: model.movement(for: row).repCounting))")
+                                            .accessibilityIdentifier("summary.correction.detail.\(correction.operationID.uuidString)")
+                                    }
+                                }.accessibilityIdentifier("summary.corrections.\(index)")
+                            }
                             Button("Correct Set \(index + 1)") { reviewCorrection?(index) }
                                 .accessibilityIdentifier("summary.correct.\(index)").disabled(model.busy || model.hasAmbiguousFinish)
                         } else if log?.skippedSetIndices?.contains(index) == true {

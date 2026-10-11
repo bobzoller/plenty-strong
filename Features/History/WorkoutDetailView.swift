@@ -16,11 +16,14 @@ struct WorkoutDetailView: View {
     }
     /// Preserve journal order; a later edit may correct the same slot again.
     static func corrections(event: CompletedWorkout, movementID: String, setIndex: Int) -> [SetCorrection] {
-        event.observationAudit?.corrections.filter { $0.movementID == movementID && $0.setIndex == setIndex } ?? []
+        corrections(audit: event.observationAudit, movementID: movementID, setIndex: setIndex)
     }
-    static func correctionDetail(_ correction: SetCorrection) -> String {
+    static func corrections(audit: ObservationAudit?, movementID: String, setIndex: Int) -> [SetCorrection] {
+        audit?.corrections.filter { $0.movementID == movementID && $0.setIndex == setIndex } ?? []
+    }
+    static func correctionDetail(_ correction: SetCorrection, repCounting: RepCounting? = nil) -> String {
         func observation(_ set: ActualSet) -> String {
-            let reps = set.leftReps != nil || set.rightReps != nil
+            let reps = repCounting == .perSide || set.leftReps != nil || set.rightReps != nil
                 ? "left \(set.leftReps.map(String.init) ?? "unrecorded"), right \(set.rightReps.map(String.init) ?? "unrecorded")"
                 : "\(set.reps) reps"
             return "\(reps). Reason: \(set.missedGoalReason?.title ?? "Not recorded")."

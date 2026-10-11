@@ -350,3 +350,80 @@ private struct SyntheticOldEnvelope: Codable {
     }
     func encode(to encoder: any Encoder) throws { try value.encode(to: encoder) }
 }
+
+@MainActor extension BackupTests {
+    @Test(arguments: [2, 3, 4]) func recomputedHashesCannotPromoteNilAcknowledgementDemotion(schema: Int) async throws {
+        let repository = try empty(), programID = UUID()
+        var config = schema == 4 ? try selectStarterProgram(choice: .upperBody, goal: .size, programID: programID) : try selectFixedProgram(goal: .size, programID: programID)
+        for movement in config.movements { config.initialLoads[movement.id] = .some(movement.availableLoads.first) }
+        let rules = schema == 2 ? try RulesetCatalog.fixedV1() : schema == 3 ? try RulesetCatalog.exactV1() : try RulesetCatalog.starter(.upperBody)
+        let first = try WorkoutScheduler.nextSlot(onOrAfter: LocalDate(iso8601: "2026-10-10"), config: config)
+        let initial = try await repository.initialize(config: config, rules: rules, firstWorkout: first)
+        let p = initial.state.activePrescription
+        let logs = p.exercises.map { row in
+            let metadata = MovementPrescriptionSummary.effectiveMovement(state: initial.state, variantID: row.movementID)!
+            return ExerciseLog(movementID: row.movementID, prescriptionID: p.id, status: .completed, actualLoad: row.load,
+                actualSets: row.sets.enumerated().map { index, set in
+                    let reps = set.targetReps ?? 10
+                    return ActualSet(reps: reps, leftReps: metadata.repCounting == .perSide ? reps : nil,
+                        rightReps: metadata.repCounting == .perSide ? reps : nil, setIndex: schema >= 3 ? index : nil)
+                }, finalEffort: .onTarget, problem: .none, baseMovementID: row.baseMovementID,
+                modificationsSnapshot: row.modificationsSnapshot, effortScope: schema >= 3 ? .allWorkingSets : nil,
+                skippedSetIndices: schema >= 3 ? [] : nil, mixedLoads: schema >= 3 ? false : nil)
+        }
+        var event = CompletedWorkout(eventID: UUID().uuidString, date: p.date, slotID: p.slotID, prescriptionID: p.id,
+            plannedPrescriptionID: p.id, sessionMode: .normal, exercises: logs)
+        let next = try WorkoutScheduler.nextSlot(after: p.date, config: config)
+        let receipt = try await repository.finalize(programID: programID, expectedRevision: initial.state.revision, event: event, next: next)
+        #expect(receipt.snapshot.state.revision == initial.state.revision + 1)
+        let goodDocument = try await repository.exportBackup()
+        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(goodDocument))
+        var graph = goodDocument; graph.formatVersion = 2
+        graph.recovery = BackupService.graphManifest(batch, originals: [], quarantines: [], resolved: [])
+        let good = logs[0].actualSets[0]
+        var zero = good; zero.reps = 0
+        if schema >= 3 { zero.missedGoalReason = .effortLimit }
+        event.observationAudit = ObservationAudit(corrections: [
+            SetCorrection(operationID: UUID(), movementID: logs[0].movementID, setIndex: 0, before: good, after: zero,
+                beforeStatus: .completed, afterStatus: .partial, outcomeAcknowledged: false),
+            SetCorrection(operationID: UUID(), movementID: logs[0].movementID, setIndex: 0, before: zero, after: good,
+                beforeStatus: .partial, afterStatus: .partial, outcomeAcknowledged: false)
+        ])
+        #expect(event.exercises == logs) // Effective work remains fully qualifying.
+        #expect(qualifiesCompletedExercise(logs[0], prescription: p.exercises[0], movement: MovementPrescriptionSummary.effectiveMovement(state: initial.state, variantID: logs[0].movementID)!, schemaVersion: schema))
+        do {
+            _ = try BackupService.transition(state: initial.state, command: .workout(completedWorkout: event, next: next), rules: rules)
+            Issue.record("Core admitted permanently demoted completion")
+        } catch let error as EngineError { #expect(error.code == "invalid_observation_audit") }
+        var forged = try #require(receipt.snapshot.history.last)
+        forged.command = .workout(completedWorkout: event, next: next)
+        forged.eventHash = try BackupService.eventHash(forged.command)
+        forged.returnedState.processedEvents[event.eventID] = forged.eventHash
+        forged.envelopeHash = try BackupService.envelopeHash(forged)
+        let object = try BackupService.object(forged, id: forged.eventID)
+        for original in [goodDocument, graph] {
+            _ = try BackupService.validate(original)
+            var bad = original
+            bad.journal[bad.journal.firstIndex { $0.id == forged.eventID }!] = object
+            bad.heads[forged.programID] = forged.envelopeHash
+            if bad.recovery != nil { bad.recovery!.heads[forged.programID] = [forged.envelopeHash] }
+            #expect(throws: (any Error).self) { try BackupService.validate(bad) }
+            let destination = try empty(), before = try await destination.exportBackup()
+            await #expect(throws: (any Error).self) { try await destination.importBackup(bad) }
+            #expect(try await destination.exportBackup() == before)
+            await destination.close()
+            let records = try BackupService.recoveryRecords(bad)
+            let proof = try RecoveryVerifier().verify(records)
+            #expect(proof.quarantined.contains { $0.record.bytes == object.bytes })
+            #expect(!proof.envelopes.values.contains { $0.eventID == forged.eventID })
+            let (fresh, _) = try recoveryEmpty()
+            _ = try await CloudIngestor(repository: fresh).ingest(records.map {
+                DownloadedCloudRecord(observation: CloudObservation(recordID: $0.recordID, zoneName: $0.zoneName,
+                    recordType: $0.recordType, claimedChecksum: $0.claimedChecksum, payload: $0.bytes, systemFields: Data()))
+            }.reversed(), scope: recoveryScope)
+            #expect(try await fresh.recoveryPrograms().allSatisfy { !$0.headHashes.contains(forged.envelopeHash) && $0.knownCompletedWorkoutCount == 0 })
+            await fresh.close()
+        }
+        await repository.close()
+    }
+}
