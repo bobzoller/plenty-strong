@@ -215,6 +215,25 @@ import TrainingCore
         do { try await f.model.beginMovement(movementID: row.movementID); Issue.record("Safety stop reopened") } catch {}
         await f.repository.close()
     }
+    @Test func stoppedRawCorrectionPreservesNilLoadMissingSideZeroAndCursor() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model
+        let row = try #require(model.snapshot.draft!.displayed.exercises.first { model.movement(for: $0).repCounting == .perSide })
+        try await skipBefore(model, movementID: row.movementID)
+        try await model.recordProblem(movementID: row.movementID, problem: .controlLost, pendingActual: ActualSet(reps: 7, leftReps: 7))
+        let before = try #require(model.snapshot.draft)
+        try await model.correctSet(movementID: row.movementID, index: 0, replacement: ActualSet(reps: 0, leftReps: 0), operationID: UUID())
+        let log = try #require(model.log(for: row.movementID))
+        #expect(log.status == .stopped && log.problem == .controlLost && log.actualLoad == nil)
+        #expect(log.actualSets.first?.reps == 0 && log.actualSets.first?.leftReps == 0 && log.actualSets.first?.rightReps == nil)
+        #expect(log.actualSets.first?.missedGoalReason == nil)
+        #expect(model.snapshot.draft?.displayed == before.displayed && model.snapshot.draft?.flow?.forward == before.flow?.forward)
+        #expect(model.snapshot.draft?.restDeadline == before.restDeadline)
+        do { try await model.beginMovement(movementID: row.movementID); Issue.record("Stopped correction reopened working sets") } catch {}
+        try await model.confirmMovementSummary(movementID: row.movementID, effort: .unknown, status: .stopped, reviewing: true)
+        #expect(model.log(for: row.movementID)?.status == .stopped)
+        await f.repository.close()
+    }
     @Test func failedTransitionsKeepCursorAndCorrectionReviewVisible() async throws {
         let f = try await GuidedWorkoutFixture.make()
         let row = f.model.snapshot.draft!.displayed.exercises[0]

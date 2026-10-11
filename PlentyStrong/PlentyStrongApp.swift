@@ -17,22 +17,32 @@ import TrainingCore
                 if let error = composition.errorText {
                     ContentUnavailableView("Local training unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else if let model = composition.workout {
+                    let owner = composition
                     TabView(selection: $selectedTab) {
                         Tab("Today", systemImage: "figure.strengthtraining.traditional", value: Screen.today) {
                             NavigationStack {
-                                Group {
-                                    if composition.showingWorkout { WorkoutView(model: model, close: { composition.showingWorkout = false }) }
-                                    else { TodayView(model: model, optionalServicesUnavailable: composition.optionalServicesUnavailable, start: { composition.showingWorkout = true }) }
-                                }.navigationTitle("Plenty Strong")
+                                TodayView(model: model, optionalServicesUnavailable: owner.optionalServicesUnavailable, start: { owner.showingWorkout = true })
+                                    .navigationTitle("Plenty Strong")
                             }
                         }.accessibilityIdentifier("tab.today")
                         Tab("History", systemImage: "clock", value: Screen.history) {
                             NavigationStack { HistoryView(snapshot: model.snapshot) }
                         }.accessibilityIdentifier("tab.history")
                         Tab("Settings", systemImage: "gearshape", value: Screen.settings) {
-                            NavigationStack { SettingsView(composition: composition, model: model) }
+                            NavigationStack { SettingsView(composition: owner, model: model) }
                         }.accessibilityIdentifier("tab.settings")
                     }
+                    .safeAreaInset(edge: .bottom, alignment: .trailing) {
+                        if model.snapshot.draft != nil, !owner.showingWorkout {
+                            Button("Resume workout", systemImage: "play.fill") {
+                                Task { await model.run { try await model.resumeGuidedWorkout(); if model.operations.contextEnabled { owner.showingWorkout = true } } }
+                            }
+                            .buttonStyle(.borderedProminent).accessibilityIdentifier("workout.resume")
+                            .disabled(model.busy || model.snapshot.health != .ready).padding(.horizontal).padding(.bottom, 6)
+                        }
+                    }
+                    .modifier(WorkoutSheetPresentationModifier(owner: owner, model: model))
+                    .id([ObjectIdentifier(owner), ObjectIdentifier(model)])
                 } else if let snapshot = composition.readOnlyProgram {
                     NavigationStack { ArchivedProgramView(composition: composition, snapshot: snapshot) }
                 } else if composition.loaded, composition.repository != nil {
@@ -74,6 +84,28 @@ import TrainingCore
                 if phase == .active, composition.cloudEnabled { Task { await composition.retryCloudRecovery() } }
                 else if phase != .active { Task { await composition.pauseRecoveryForBackground() } }
             }
+        }
+    }
+}
+/// The presenting container retains transient review state until dismissal succeeds.
+private struct WorkoutSheetPresentationModifier: ViewModifier {
+    let owner: AppComposition
+    let model: WorkoutViewModel
+    @State private var navigation: WorkoutReviewNavigation
+    init(owner: AppComposition, model: WorkoutViewModel) {
+        self.owner = owner; self.model = model
+        _navigation = State(initialValue: WorkoutReviewNavigation(model: model))
+    }
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(get: { owner.showingWorkout }, set: { shown in
+            owner.showingWorkout = shown
+            if !shown {
+                Task { await navigation.dismissed(isCurrentOwner: { owner.workout === model }, restorePresentation: { owner.showingWorkout = true }) }
+            }
+        })) {
+            WorkoutView(model: model, close: { navigation.clearReview(); owner.showingWorkout = false }, navigation: navigation)
+                .modifier(SyntheticAccessibilityOverrides())
+                .presentationDetents([.large]).presentationDragIndicator(.visible)
         }
     }
 }

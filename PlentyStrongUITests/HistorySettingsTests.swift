@@ -81,7 +81,8 @@ final class HistorySettingsTests: XCTestCase {
     }
     @MainActor func testDraftAndPendingEntrySurviveTabsAndSettingsLock() {
         let app = seeded()
-        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         app.textFields["set.reps"].tap(); app.textFields["set.reps"].typeText("7")
         let keyboardEvidence = XCTAttachment(screenshot: app.screenshot()); keyboardEvidence.name = "Pending numeric entry keyboard M1 visible impact"; keyboardEvidence.lifetime = .keepAlways; add(keyboardEvidence)
@@ -89,7 +90,7 @@ final class HistorySettingsTests: XCTestCase {
         app.selectNativeTab("Settings", identifier: "tab.settings"); app.buttons["settings.program"].tap()
         XCTAssertTrue(app.staticTexts["settings.draft-lock"].exists)
         XCTAssertFalse(app.buttons["settings.goal.maintenance"].isEnabled)
-        app.selectNativeTab("Today", identifier: "tab.today"); XCTAssertEqual(app.textFields["set.reps"].value as? String, "7")
+        app.selectNativeTab("Today", identifier: "tab.today"); app.tapWorkoutControl("workout.resume"); XCTAssertEqual(app.textFields["set.reps"].value as? String, "7")
     }
     @MainActor func testLocalFileDuplicateImportAndEmptyOnboardingRecovery() {
         let app = seeded()
@@ -115,10 +116,10 @@ final class HistorySettingsTests: XCTestCase {
     }
     @MainActor func testVoiceOverLabelsAndKeyboardRejectInvalidInput() {
         let app = seeded()
-        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         let input = app.textFields["set.reps"]
         app.revealWorkoutControl(input); XCTAssertEqual(input.label, "Reps performed")
-        app.tapWorkoutControl("load.choose.5")
         app.revealWorkoutControl(input); input.tap(); input.typeText("8")
         let valid = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: app.buttons["set.save"])
         XCTAssertEqual(XCTWaiter.wait(for: [valid], timeout: 15), .completed)
@@ -184,33 +185,49 @@ extension XCUIApplication {
         if waitForWorkout { XCTAssertTrue(buttons["workout.close"].waitForExistence(timeout: 30), file: file, line: line) }
     }
     @MainActor func revealWorkoutControl(_ element: XCUIElement, pinnedFooter: XCUIElement? = nil, scrollDistance: CGFloat = 320, file: StaticString = #filePath, line: UInt = #line) {
-        func footer() -> XCUIElement? {
-            if let pinnedFooter { return pinnedFooter }
-            let stop = buttons["problem.pain"]
-            return stop.exists && !buttons["workout.keep-original-date"].exists ? stop : nil
+        func footerFrame() -> CGRect? {
+            if let pinnedFooter, pinnedFooter.exists {
+                let bounds = pinnedFooter.frame
+                if [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.height > 0, bounds.intersects(frame) { return bounds }
+            }
+            guard !buttons["workout.keep-original-date"].exists else { return nil }
+            for identifier in ["set.save", "summary.confirm", "correction.save", "guided.next", "problem.pain"] {
+                let candidate = buttons[identifier]
+                if candidate.exists {
+                    let bounds = candidate.frame
+                    if [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.height > 0, bounds.intersects(frame) { return bounds }
+                }
+            }
+            return nil
+        }
+        func navigationBottom() -> CGFloat {
+            navigationBars.allElementsBoundByIndex.map(\.frame).filter { $0.maxY.isFinite && $0.height > 0 && $0.intersects(frame) }.map(\.maxY).max() ?? frame.minY + 100
         }
         func reachable() -> Bool {
             guard element.exists else { return false }
             let bounds = element.frame
             guard [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.width > 0, bounds.height > 0,
                   bounds.intersects(frame) else { return false }
-            if (element.elementType == .textField || element.elementType == .button), !element.identifier.hasPrefix("problem.") {
+            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "BackButton"].contains(element.identifier) {
                 // AX can expose a cached offscreen frame before a valid hit point.
                 // Check the complete control inside content before hittability.
-                let bottom = footer().map { $0.frame.minY - 32 } ?? frame.maxY
-                guard bounds.minY >= navigationBars.firstMatch.frame.maxY, bounds.maxY < bottom else { return false }
+                let bottom = footerFrame().map { $0.minY - 32 } ?? frame.maxY
+                guard bounds.minY >= navigationBottom(), bounds.maxY < bottom else { return false }
             }
             return element.isHittable
         }
         for _ in 0..<24 {
             if reachable() { break }
-            let bottom = footer().map { $0.frame.minY - 48 } ?? frame.maxY - 150
+            let viewport = frame
+            guard [viewport.minX, viewport.minY, viewport.width, viewport.height].allSatisfy(\.isFinite), viewport.width > 0, viewport.height > 0 else { break }
+            let observedFooter = footerFrame()
+            let bottom = observedFooter.map { $0.minY - 48 } ?? viewport.maxY - 150
             let origin = coordinate(withNormalizedOffset: .zero)
-            let navigationBottom = navigationBars.firstMatch.frame.maxY
+            let navigationBottom = navigationBottom()
             let bounds = element.exists ? element.frame : .zero
             let hasFrame = [bounds.minY, bounds.height].allSatisfy(\.isFinite) && bounds.height > 0
             let above = hasFrame && bounds.minY < navigationBottom
-            let keyboardOpen = keyboards.firstMatch.exists && pinnedFooter == nil && footer() != nil
+            let keyboardOpen = keyboards.firstMatch.exists && pinnedFooter == nil && observedFooter != nil
             var distance = scrollDistance
             if keyboardOpen, hasFrame {
                 let usableDragHeight = bottom - navigationBottom - 32
@@ -220,8 +237,10 @@ extension XCUIApplication {
                 print("Bounded keyboard reveal: frame=\(bounds) above=\(above) requiredShift=\(requiredShift) usableDragHeight=\(usableDragHeight) distance=\(distance)")
             }
             let top = max(navigationBottom + 32, bottom - distance)
-            let start = origin.withOffset(CGVector(dx: frame.midX, dy: above ? top : bottom))
-            let end = origin.withOffset(CGVector(dx: frame.midX, dy: above ? bottom : top))
+            guard [top, bottom, viewport.midX].allSatisfy(\.isFinite), bottom > navigationBottom else { break }
+            let start = origin.withOffset(CGVector(dx: viewport.midX - viewport.minX, dy: (above ? top : bottom) - viewport.minY))
+            let end = origin.withOffset(CGVector(dx: viewport.midX - viewport.minX, dy: (above ? bottom : top) - viewport.minY))
+            guard [start.screenPoint.x, start.screenPoint.y, end.screenPoint.x, end.screenPoint.y].allSatisfy(\.isFinite) else { break }
             if pinnedFooter != nil {
                 print("Bounded explicit-footer reveal: exists=\(element.exists) frame=\(element.exists ? element.frame : .zero) footer=\(pinnedFooter!.frame) start=\(start.screenPoint) end=\(end.screenPoint)")
                 // The short onboarding Form needs a held slow drag: release
@@ -241,19 +260,72 @@ extension XCUIApplication {
         }
         XCTAssertTrue(reachable(), "Reach the full control above the pinned safety area", file: file, line: line)
     }
+    @MainActor func beginGuidedMovement(loadID: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        if let loadID { tapWorkoutControl(loadID, file: file, line: line) }
+        tapWorkoutControl("guided.next", file: file, line: line)
+        let actualFields = textFields.matching(NSPredicate(format: "identifier IN %@", ["set.reps", "set.left-reps"]))
+        let enteredSet = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count > 0"), object: actualFields)
+        XCTAssertEqual(XCTWaiter.wait(for: [enteredSet], timeout: 15), .completed, file: file, line: line)
+    }
+    @MainActor func continueGuidedRest(file: StaticString = #filePath, line: UInt = #line) {
+        if buttons["guided.next"].exists, buttons["guided.next"].label == "Next", staticTexts["rest.remaining"].exists {
+            tapWorkoutControl("guided.next", file: file, line: line)
+            let leftRest = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: staticTexts["rest.remaining"])
+            XCTAssertEqual(XCTWaiter.wait(for: [leftRest], timeout: 15), .completed, file: file, line: line)
+        }
+    }
+    @MainActor func confirmGuidedSummary(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(buttons["summary.confirm"].waitForExistence(timeout: 15), file: file, line: line)
+        if staticTexts["effort.question"].exists, !buttons["summary.confirm"].isEnabled { tapWorkoutControl("effort.unknown", file: file, line: line) }
+        tapWorkoutControl("summary.confirm", file: file, line: line)
+        let leftSummary = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: buttons["summary.confirm"])
+        XCTAssertEqual(XCTWaiter.wait(for: [leftSummary], timeout: 15), .completed, file: file, line: line)
+        continueGuidedRest(file: file, line: line)
+    }
+    /// The presented workout uses a native ScrollView. Today uses a CollectionView;
+    /// XCTest still enumerates its obscured, unhittable comparison descendants.
+    @MainActor func workoutText(_ identifier: String) -> XCUIElement {
+        scrollViews.staticTexts[identifier]
+    }
     @MainActor func tapWorkoutControl(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) {
-        let control = buttons[identifier]; revealWorkoutControl(control, file: file, line: line); control.tap()
+        let control = buttons[identifier]
+        // These List/Form descendants are lazy until their content is scrolled
+        // into the viewport; waiting alone cannot make an absent row appear.
+        if identifier == "today.start" || identifier == "settings.program-confirm" || identifier.hasPrefix("settings.setup.") {
+            revealWorkoutControl(control, file: file, line: line)
+        }
+        XCTAssertTrue(control.waitForExistence(timeout: 15), file: file, line: line)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: control)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, file: file, line: line)
+        let leavingRest = identifier == "guided.next" && staticTexts["rest.remaining"].exists
+        revealWorkoutControl(control, file: file, line: line); control.tap()
+        if leavingRest {
+            let advanced = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: staticTexts["rest.remaining"])
+            XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 15), .completed, file: file, line: line)
+        }
+        if identifier == "set.save" {
+            let fields = textFields.matching(NSPredicate(format: "identifier IN %@", ["set.reps", "set.left-reps", "set.right-reps"]))
+            let saved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: fields)
+            XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 15), .completed, file: file, line: line)
+        }
     }
     @MainActor func enterPerformedReps(_ value: String, field: String = "set.reps", file: StaticString = #filePath, line: UInt = #line) {
-        let input = textFields[field]; revealWorkoutControl(input, file: file, line: line); input.tap(); input.typeText(value)
+        continueGuidedRest(file: file, line: line)
+        if !textFields[field].exists, buttons["guided.next"].exists, buttons["guided.next"].label == "Start movement" { beginGuidedMovement(file: file, line: line) }
+        let input = textFields[field]
+        XCTAssertTrue(input.waitForExistence(timeout: 15), file: file, line: line)
+        revealWorkoutControl(input, file: file, line: line); input.tap(); input.typeText(value)
         if buttons["keyboard.done"].exists { buttons["keyboard.done"].tap() }
         XCTAssertEqual(input.value as? String, value, file: file, line: line)
     }
     @MainActor func selectNativeTab(_ title: String, identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+        if buttons["workout.close"].exists { buttons["workout.close"].tap() }
         let matches = buttons.matching(NSPredicate(format: "label == %@", title))
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 15), file: file, line: line)
         XCTAssertEqual(matches.count, 1, "Native tab label must be unique", file: file, line: line)
         let button = matches.element(boundBy: 0)
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: button)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 15), .completed, file: file, line: line)
         XCTAssertTrue(button.isHittable, file: file, line: line)
         print("O8 native tab \(title): identifier \(identifier) observed=\(buttons[identifier].exists); visible label navigation")
         button.tap()

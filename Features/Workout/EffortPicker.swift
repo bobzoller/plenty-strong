@@ -4,6 +4,7 @@ import TrainingCore
 struct EffortPicker: View {
     let model: WorkoutViewModel
     let movementID: String
+    @Binding var selection: Effort?
     private var exact: Bool { model.log(for: movementID)?.effortScope == .allWorkingSets }
     var body: some View {
         VStack(alignment: .leading) {
@@ -14,13 +15,13 @@ struct EffortPicker: View {
             }
             ForEach(Effort.allCases, id: \.self) { effort in
                 Button {
-                    Task { await model.run { try await model.recordEffort(movementID: movementID, effort: effort) } }
+                    selection = effort
                 } label: {
                     HStack {
                         Text(effort.title)
-                        if model.log(for: movementID)?.finalEffort == effort { Image(systemName: "checkmark") }
+                        if selection == effort { Image(systemName: "checkmark") }
                     }
-                }.accessibilityIdentifier("effort.\(effort.rawValue)").disabled(model.busy)
+                }.accessibilityIdentifier("effort.\(effort.rawValue)").disabled(model.busy).accessibilityAddTraits(selection == effort ? .isSelected : [])
             }
         }
     }

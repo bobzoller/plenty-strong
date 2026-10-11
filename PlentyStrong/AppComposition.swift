@@ -432,6 +432,7 @@ import TrainingCore
                     // Only during fresh test-program initialization; existing stores are never seeded.
                     try await model.start(easierToday: false, operation: operation)
                     var draft = model.snapshot.draft!
+                    draft.flow = nil // This fixture represents a restored legacy malformed completion.
                     draft.acknowledgedMovementIDs = draft.logs.map(\.movementID)
                     for i in draft.logs.indices { draft.logs[i].status = .completed }
                     draft.logs[0].actualLoad = model.movement(for: draft.displayed.exercises[0]).availableLoads[0]

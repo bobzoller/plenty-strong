@@ -3,17 +3,22 @@ final class OfflineAcceptanceTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     @MainActor func testOptionalServicesDoNotGateWorkoutAndSameStoreResumes() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture", "history-10-10-9", "-cloud-disabled", "-products-unavailable"]
-        app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
+        app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         app.terminate(); app.launchArguments = ["-ui-testing", "-cloud-disabled", "-products-unavailable"]; app.launch()
-        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); XCTAssertEqual(app.buttons["today.start"].label, "Resume workout")
-        app.buttons["today.start"].tap(); app.revealWorkoutControl(app.textFields["set.reps"])
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
+        let resumed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND label == %@", "Resume workout"), object: app.buttons["today.start"])
+        XCTAssertEqual(XCTWaiter.wait(for: [resumed], timeout: 15), .completed)
+        XCTAssertEqual(app.buttons["today.start"].label, "Resume workout")
+        app.tapReadyWorkoutStart(); app.revealWorkoutControl(app.textFields["set.reps"])
     }
     @MainActor func testLargeTextOnboardingKeepsRestoreAndConfirmReachable() {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-ui-large-text", "-ui-dark"]
         app.launch()
         let restore = app.buttons["onboarding.restore"]
+        app.revealWorkoutControl(restore, scrollDistance: 300)
         XCTAssertTrue(restore.waitForExistence(timeout: 15)); XCTAssertTrue(restore.isHittable)
         let confirm = app.buttons["onboarding.confirm"]
         app.revealWorkoutControl(confirm, scrollDistance: 300)
@@ -50,7 +55,8 @@ final class OfflineAcceptanceTests: XCTestCase {
     }
     @MainActor func testLargeTextDarkModeAndPrivacyLabels() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture", "history-10-10-9", "-ui-large-text", "-ui-dark"]
-        app.launch(); app.selectNativeTab("Settings", identifier: "tab.settings"); app.buttons["settings.about"].tap()
+        app.launch(); app.selectNativeTab("Settings", identifier: "tab.settings")
+        app.revealWorkoutControl(app.buttons["settings.about"], scrollDistance: 300); app.buttons["settings.about"].tap()
         XCTAssertTrue(app.staticTexts["about.privacy"].exists)
         XCTAssertTrue(app.staticTexts["about.privacy"].label.contains("No account, no subscription, no telemetry"))
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Accessibility size dark privacy"; attachment.lifetime = .keepAlways; add(attachment)
@@ -82,7 +88,8 @@ extension OfflineAcceptanceTests {
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-cloud-disabled", "-products-unavailable"]
-        app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
+        app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
+        app.beginGuidedMovement(loadID: "load.confirm-prescribed")
         let input = app.textFields["set.reps"]
         app.revealWorkoutControl(input)
         XCTAssertTrue(input.isHittable); XCTAssertTrue(app.buttons["problem.pain"].isHittable); XCTAssertTrue(app.buttons["problem.control_lost"].isHittable)

@@ -3,9 +3,10 @@ import TrainingCore
 
 struct MissedGoalReasonPicker: View {
     @Binding var selection: MissedGoalReason?
+    var required = true
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Why did you stop before the goal?").font(.headline).accessibilityIdentifier("set.miss-question")
+            Text(required ? "Why did you stop before the goal?" : "Reason, if known (optional)").font(.headline).accessibilityIdentifier("set.miss-question")
             ForEach(MissedGoalReason.allCases, id: \.self) { reason in
                 Button { selection = reason } label: {
                     HStack { Text(reason.title); if selection == reason { Image(systemName: "checkmark") } }

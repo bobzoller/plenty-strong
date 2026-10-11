@@ -4,7 +4,7 @@ final class DeveloperDemoModeUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
     @MainActor private func startOrResume(_ app: XCUIApplication) {
         let started = Date()
-        app.buttons["today.start"].tap()
+        app.tapReadyWorkoutStart()
         XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 15))
         print("DEMO_UI_START_OR_RESUME_SECONDS \(Date().timeIntervalSince(started))")
     }

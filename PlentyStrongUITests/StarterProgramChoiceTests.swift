@@ -22,6 +22,7 @@ final class StarterProgramChoiceTests: XCTestCase {
         // no frame, so an absent card cannot tell us which direction to scroll.
         let restore = app.buttons["onboarding.restore"]
         for _ in 0..<12 where !restore.isHittable { app.swipeDown() }
+        if !restore.exists { app.revealWorkoutControl(restore, scrollDistance: 300) }
         XCTAssertTrue(restore.isHittable)
         // A large-text card can be taller than the viewport. Its full text stays
         // scrollable; verify a visible 44-point hit area without shrinking text.
@@ -173,10 +174,11 @@ final class StarterProgramChoiceTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["settings.current-program"].label, "Upper-body emphasis")
         app.buttons["settings.change-program"].tap()
         app.buttons["settings.program.whole_body_glutes"].tap(); app.tapWorkoutControl("settings.program-goal.size")
+        app.revealWorkoutControl(app.buttons["settings.program-confirm"])
         app.tapWorkoutControl("settings.program-confirm"); applyProgramChange("Whole-body, glute emphasis", in: app)
         XCTAssertTrue(app.staticTexts["settings.current-program"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["settings.current-program"].label, "Whole-body, glute emphasis")
-        app.selectNativeTab("Today", identifier: "tab.today"); app.buttons["today.start"].tap()
+        app.selectNativeTab("Today", identifier: "tab.today"); app.tapReadyWorkoutStart()
         XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 15)); app.buttons["workout.close"].tap(); openSettings(app)
         let lock = app.staticTexts["settings.draft-lock"]
         for _ in 0..<8 where !lock.isHittable { app.swipeDown() }
@@ -193,6 +195,7 @@ final class StarterProgramChoiceTests: XCTestCase {
         choice("whole_body_glutes", in: app); app.buttons["onboarding.confirm"].tap()
         XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15)); app.tapWorkoutControl("today.start")
         app.tapWorkoutControl("load.choose.5")
+        app.beginGuidedMovement()
         let left = app.textFields["set.left-reps"]
         app.revealWorkoutControl(left); left.tap(); left.typeText("8")
         app.revealWorkoutControl(left)
@@ -208,7 +211,9 @@ final class StarterProgramChoiceTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["set.actual.1"].label, "Set 2: left 8, right 7")
         app.revealWorkoutControl(app.staticTexts["set.actual.1"])
         capture(app, "Largest per-side raw unequal and missing actuals")
-        app.tapWorkoutControl("movement.partial-action")
+        XCTAssertEqual(app.staticTexts["summary.outcome"].label, "Outcome: partial")
+        app.tapWorkoutControl("effort.unknown")
+        app.confirmGuidedSummary()
         XCTAssertFalse(app.buttons["movement.setup"].exists)
     }
     @MainActor func testBridgeAndStrengthChecksCreateOnlyTypedReviewedSetup() {
@@ -216,6 +221,7 @@ final class StarterProgramChoiceTests: XCTestCase {
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); openSettings(app)
         app.revealWorkoutControl(app.staticTexts["settings.movement.db_floor_glute_bridge"])
         app.staticTexts["settings.movement.db_floor_glute_bridge"].tap()
+        app.revealWorkoutControl(app.buttons["settings.setup.db_floor_glute_bridge"])
         app.tapWorkoutControl("settings.setup.db_floor_glute_bridge")
         XCTAssertTrue(app.buttons["setup.bridge.dumbbell"].exists)
         app.buttons["setup.bridge.bodyweight"].tap()
@@ -226,14 +232,14 @@ final class StarterProgramChoiceTests: XCTestCase {
         app.buttons["setup.keyboard-done"].tap()
         app.tapWorkoutControl("setup.new")
         XCTAssertTrue(app.buttons["settings.setup.db_floor_glute_bridge"].waitForExistence(timeout: 15))
-        app.selectNativeTab("Today", identifier: "tab.today"); app.buttons["today.start"].tap()
-        app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next")
+        app.selectNativeTab("Today", identifier: "tab.today"); app.tapReadyWorkoutStart()
+        app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
         XCTAssertTrue(app.staticTexts["movement.modifications"].label.contains("future dumbbell notes"))
         XCTAssertFalse(app.buttons["load.choose.5"].exists)
         app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
         capture(app, "Bodyweight bridge modification retains null load and no numeric catalog")
-        app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("movement.next")
-        for _ in 0..<4 { app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next") }
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary()
+        for _ in 0..<4 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         capture(app, "Bodyweight bridge completion frozen loading metadata")
@@ -264,22 +270,23 @@ final class StarterProgramChoiceTests: XCTestCase {
         capture(strength, "Explicit first-load strength handling review")
         strength.buttons["setup.handling.low-rep"].tap()
         XCTAssertTrue(strength.buttons["settings.setup.\(rowID)"].waitForExistence(timeout: 15))
-        strength.selectNativeTab("Today", identifier: "tab.today"); strength.buttons["today.start"].tap()
-        for _ in 0..<2 { strength.tapWorkoutControl("movement.skip"); strength.tapWorkoutControl("movement.next") }
-        XCTAssertEqual(strength.staticTexts["movement.goal-reps"].label, "4 / 4 reps")
+        strength.selectNativeTab("Today", identifier: "tab.today"); strength.tapReadyWorkoutStart()
+        for _ in 0..<2 { strength.tapWorkoutControl("movement.skip"); strength.confirmGuidedSummary() }
+        XCTAssertEqual(strength.workoutText("movement.goal-reps").label, "4 / 4 reps")
         strength.tapWorkoutControl("load.choose.20")
-        XCTAssertTrue(strength.staticTexts["save.error"].label.contains("not been reviewed"))
+        XCTAssertTrue(strength.workoutText("save.error").label.contains("not been reviewed"))
+        capture(strength, "Reviewed strength load gate retained error and action")
         strength.tapWorkoutControl("load.confirm-prescribed")
         capture(strength, "Reviewed load controls low-rep entry")
     }
     @MainActor func testIntroCompletionAndHistoryRemainPinnedAfterProgramChange() {
         let app = launch(["-fixture-starter-intro"])
-        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
-        XCTAssertEqual(app.staticTexts["movement.goal-reps"].label, "9 / 8 reps")
+        XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
+        XCTAssertEqual(app.workoutText("movement.goal-reps").label, "9 / 8 reps")
         app.tapWorkoutControl("load.confirm-prescribed")
         for reps in ["9", "8"] { app.enterPerformedReps(reps); app.tapWorkoutControl("set.save") }
-        app.tapWorkoutControl("movement.complete"); app.tapWorkoutControl("effort.on_target"); app.tapWorkoutControl("movement.next")
-        for _ in 0..<5 { app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next") }
+        app.tapWorkoutControl("effort.on_target"); app.confirmGuidedSummary()
+        for _ in 0..<5 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         app.revealWorkoutControl(app.staticTexts["workout.completed-set-growth"])
@@ -305,10 +312,10 @@ extension StarterProgramChoiceTests {
             XCTAssertEqual(app.staticTexts["today.suggested-date"].label, "Suggested date: 2026-10-06")
             XCTAssertTrue(app.staticTexts["today.schedule"].label.contains("suggested"))
             XCTAssertTrue(app.buttons["today.start"].isEnabled)
-            app.buttons["today.start"].tap()
+            app.tapReadyWorkoutStart()
             XCTAssertTrue(app.buttons["movement.skip"].waitForExistence(timeout: 15))
             for _ in 0..<12 where !app.buttons["workout.finish"].exists {
-                app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next")
+                app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
             }
             app.tapWorkoutControl("workout.finish")
             XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 20))

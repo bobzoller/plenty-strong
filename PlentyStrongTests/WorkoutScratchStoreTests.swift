@@ -277,6 +277,76 @@ import TrainingCore
         #expect(!pending.isEmpty && pending.allSatisfy { !String(decoding: $0.payload, as: UTF8.self).contains("unfinished 8") })
         await reopenedRepository.close()
     }
+    @Test func nativeBackFlushFailureRestoresPageTextAndDurableCursor() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let broken = directory()
+        try Data("file instead of directory".utf8).write(to: broken)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: WorkoutScratchStore(directory: broken), scratchStoreID: "broken")
+        let id = model.snapshot.draft!.logs[0].movementID
+        model.reviewStep = .set(movementID: id, index: 0)
+        model.entryDraft.reps = "unfinished correction"
+        let before = model.snapshot
+        let navigation = WorkoutReviewNavigation(model: model)
+        let old: [WorkoutReviewRoute] = [.summary(id), .correction(id, 0)]
+        let popped: [WorkoutReviewRoute] = [.summary(id)]
+        navigation.path = popped
+        await navigation.nativeBack(from: old, to: popped)
+        #expect(navigation.path == old)
+        #expect(model.visibleStep == .set(movementID: id, index: 0))
+        #expect(model.entryDraft.reps == "unfinished correction")
+        #expect(model.errorText?.contains("Retry Back") == true)
+        #expect(model.snapshot == before)
+        #expect(try await f.repository.snapshot(programID: model.programID) == before)
+        model.operations.contextEnabled = false
+        navigation.path = popped
+        await navigation.nativeBack(from: old, to: popped)
+        #expect(navigation.path == popped && model.entryDraft.reps == "unfinished correction")
+        await f.repository.close()
+    }
+
+    @Test func failedSheetDismissRetainsCorrectionPageTextAndIgnoresObsoleteOwner() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        let load = try #require(f.model.movement(for: row).availableLoads.first)
+        try await f.model.confirmLoad(movementID: row.movementID, load: load)
+        try await f.model.beginMovement(movementID: row.movementID)
+        let performed = row.sets[0].targetReps ?? 8
+        try await f.model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: performed))
+        let broken = directory()
+        try Data("file instead of directory".utf8).write(to: broken)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: WorkoutScratchStore(directory: broken), scratchStoreID: "broken")
+        let id = model.snapshot.draft!.logs[0].movementID
+        let navigation = WorkoutReviewNavigation(model: model)
+        let route: [WorkoutReviewRoute] = [.summary(id), .correction(id, 0)]
+        navigation.path = route
+        model.reviewStep = .set(movementID: id, index: 0)
+        model.entryDraft = SetEntryDraft(reps: "unfinished correction", reason: .effortLimit)
+        let before = model.snapshot
+        var shown = false
+        navigation.invalidate() // The presented view disappeared; its container keeps this coordinator.
+        await navigation.dismissed(isCurrentOwner: { true }, restorePresentation: { shown = true })
+        #expect(shown && navigation.path == route && navigation.retainsCorrectionEntry)
+        #expect(model.visibleStep == .set(movementID: id, index: 0))
+        #expect(model.entryDraft == SetEntryDraft(reps: "unfinished correction", reason: .effortLimit))
+        #expect(model.errorText?.contains("Retry closing") == true)
+        let reopened = try await f.repository.snapshot(programID: model.programID)
+        #expect(model.snapshot == before && reopened == before)
+        shown = false
+        await navigation.dismissed(isCurrentOwner: { false }, restorePresentation: { shown = true })
+        #expect(!shown && navigation.path == route && model.entryDraft.reps == "unfinished correction")
+        model.entryDraft = SetEntryDraft()
+        await navigation.dismissed(isCurrentOwner: { true }, restorePresentation: { shown = true })
+        #expect(shown && navigation.retainsCorrectionEntry && model.entryDraft == SetEntryDraft())
+        #expect(model.log(for: id)?.actualSets.first?.reps == performed && model.snapshot == before)
+        shown = false
+        model.operations.contextEnabled = false
+        await navigation.dismissed(isCurrentOwner: { true }, restorePresentation: { shown = true })
+        #expect(!shown && model.entryDraft == SetEntryDraft() && navigation.path == route)
+        await f.repository.close()
+    }
+
 }
 
 private final class ScratchCommitCounter: @unchecked Sendable {

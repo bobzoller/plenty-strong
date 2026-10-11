@@ -16,7 +16,7 @@ final class WorkoutFlowTests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-cloud-disabled", "-products-unavailable"]
         app.launch()
         app.selectInitialUpperProgram()
-        app.buttons["today.start"].tap()
+        app.tapReadyWorkoutStart()
         app.tapWorkoutControl("workout.easier")
         let easierMode = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND label == %@", "Easier workout"),
@@ -29,8 +29,8 @@ final class WorkoutFlowTests: XCTestCase {
         if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
         savePerformed(in: app)
         XCTAssertTrue(app.staticTexts["set.actual.0"].waitForExistence(timeout: 15))
-        app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("movement.next")
-        for _ in 0..<4 { app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next") }
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary()
+        for _ in 0..<4 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
 
@@ -46,7 +46,7 @@ extension WorkoutFlowTests {
             app.selectInitialUpperProgram(goal: goal)
         }
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
-        app.buttons["today.start"].tap()
+        app.tapReadyWorkoutStart()
         XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 15))
         return app
     }
@@ -66,10 +66,10 @@ extension WorkoutFlowTests {
     }
     @MainActor func testActualSetForceQuitResumeProblemAndFinishOffline() {
         let app = start()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         XCTAssertEqual(app.textFields["set.reps"].value as? String, "Reps performed")
         XCTAssertFalse(app.buttons["set.save"].isEnabled)
-        app.tapWorkoutControl("load.choose.5")
         app.enterPerformedReps("7", field: "set.reps")
         if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
         savePerformed(in: app)
@@ -85,8 +85,8 @@ extension WorkoutFlowTests {
         resumed.buttons["problem.pain"].tap()
         XCTAssertTrue(resumed.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
         XCTAssertFalse(resumed.buttons["set.save"].exists)
-        resumed.tapWorkoutControl("movement.next")
-        for _ in 0..<4 { resumed.tapWorkoutControl("movement.skip"); resumed.tapWorkoutControl("movement.next") }
+        resumed.confirmGuidedSummary()
+        for _ in 0..<4 { resumed.tapWorkoutControl("movement.skip"); resumed.confirmGuidedSummary() }
         XCTAssertTrue(resumed.buttons["workout.finish"].waitForExistence(timeout: 15))
         resumed.tapWorkoutControl("workout.finish")
         XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 10))
@@ -120,6 +120,7 @@ extension WorkoutFlowTests {
             // third (split squat) and fifth (hammer curl) count each side.
             if movement != 3 { app.tapWorkoutControl("load.choose.5") }
             let perSide = movement == 2 || movement == 4
+            app.beginGuidedMovement()
             let input = app.textFields[perSide ? "set.left-reps" : "set.reps"]
             app.revealWorkoutControl(input); waitEnabled(input)
             for set in 0..<2 {
@@ -132,9 +133,9 @@ extension WorkoutFlowTests {
                 savePerformed(in: app)
                 XCTAssertTrue(app.staticTexts["set.actual.\(set)"].waitForExistence(timeout: 15))
             }
-            app.tapWorkoutControl("effort.on_target"); waitEnabled(app.buttons["movement.complete"]); app.tapWorkoutControl("movement.complete")
-            XCTAssertTrue(app.buttons["movement.next"].waitForExistence(timeout: 15))
-            app.tapWorkoutControl("movement.next")
+            app.tapWorkoutControl("effort.on_target"); waitEnabled(app.buttons["summary.confirm"])
+            XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+            app.confirmGuidedSummary()
             if movement < 4 { app.revealWorkoutControl(app.buttons["movement.partial-action"]) }
         }
         app.tapWorkoutControl("workout.finish")
@@ -148,6 +149,7 @@ extension WorkoutFlowTests {
     }
     @MainActor func testTypedPendingRepsProblemMidnightCannotDiscardSafetyObservation() {
         let app = start()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.enterPerformedReps("6", field: "set.reps")
         if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
         app.buttons["problem.pain"].tap()
@@ -170,12 +172,12 @@ extension WorkoutFlowTests {
     @MainActor func testAccessiblePerHandPerSideTotalAndBodyweightLabelsInLandscape() {
         let app = start("maintenance")
         XCTAssertEqual(app.buttons["load.choose.5"].label, "5 lb per hand")
-        XCTAssertTrue(app.staticTexts["movement.instruction"].label.contains("Aim for the listed reps"))
+        XCTAssertTrue(app.workoutText("movement.instruction").label.contains("Aim for the listed reps"))
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["problem.pain"].exists)
         XCUIDevice.shared.orientation = .portrait
-        for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next") }
-        XCTAssertTrue(app.staticTexts["movement.goal-reps"].label.contains("per side"))
+        for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
+        XCTAssertTrue(app.workoutText("movement.goal-reps").label.contains("per side"))
         app.tapWorkoutControl("load.choose.5")
         app.enterPerformedReps("7", field: "set.left-reps")
         app.enterPerformedReps("5", field: "set.right-reps")
@@ -185,11 +187,11 @@ extension WorkoutFlowTests {
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: left 7, right 5")
         let perSide = XCTAttachment(screenshot: app.screenshot())
         perSide.name = "Candidate synthetic per-side actuals and stopping controls"; perSide.lifetime = .keepAlways; add(perSide)
-        app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("movement.next")
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary()
         XCTAssertFalse(app.buttons["load.choose.5"].exists)
         app.terminate()
         let thursday = start("maintenance", clockOffset: 172800)
-        for _ in 0..<4 { thursday.tapWorkoutControl("movement.skip"); thursday.tapWorkoutControl("movement.next") }
+        for _ in 0..<4 { thursday.tapWorkoutControl("movement.skip"); thursday.confirmGuidedSummary() }
         XCTAssertEqual(thursday.buttons["load.choose.5"].label, "5 lb total")
     }
 }
@@ -198,18 +200,19 @@ extension WorkoutFlowTests {
     @MainActor func testReviewRetainsVisiblePendingRepsForPartialAndProblemAfterReopen() {
         for problem in [false, true] {
             let app = start()
+            app.beginGuidedMovement(loadID: "load.choose.5")
             app.enterPerformedReps("6", field: "set.reps")
             if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
             app.buttons["workout.review"].tap()
+            app.buttons["Cancel"].tap()
             app.tapWorkoutControl(problem ? "problem.pain" : "movement.partial-action")
             XCTAssertTrue(app.staticTexts["set.actual.0"].waitForExistence(timeout: 15))
             app.terminate()
             let resumed = start(reset: false)
-            resumed.buttons["workout.review"].tap()
             XCTAssertEqual(resumed.staticTexts["set.actual.0"].label, "Set 1: 6 reps")
             XCTAssertTrue(resumed.staticTexts[problem ? "movement.stopped" : "movement.partial"].exists)
-            resumed.tapWorkoutControl("movement.next")
-            for _ in 0..<4 { resumed.tapWorkoutControl("movement.skip"); resumed.tapWorkoutControl("movement.next") }
+            resumed.confirmGuidedSummary()
+            for _ in 0..<4 { resumed.tapWorkoutControl("movement.skip"); resumed.confirmGuidedSummary() }
             resumed.tapWorkoutControl("workout.finish")
             XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 15))
             XCTAssertEqual(resumed.staticTexts["workout.next-prescription"].label, "Next: THU, 2026-10-08")
@@ -230,7 +233,6 @@ extension WorkoutFlowTests {
         XCTAssertTrue(app.staticTexts["set.actual.1"].waitForExistence(timeout: 15))
         app.terminate()
         let resumed = start(reset: false)
-        resumed.buttons["workout.review"].tap()
         XCTAssertEqual(resumed.staticTexts["set.actual.0"].label, "Set 1: 7 reps")
         XCTAssertEqual(resumed.staticTexts["set.actual.1"].label, "Set 2: 5 reps")
         XCTAssertTrue(resumed.staticTexts["movement.partial"].exists)
@@ -244,12 +246,12 @@ extension WorkoutFlowTests {
         app.launch()
         app.selectInitialUpperProgram()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
-        app.buttons["today.start"].tap()
+        app.tapReadyWorkoutStart()
         XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.buttons["workout.repair-completion"].waitForExistence(timeout: 15))
         app.buttons["workout.repair-completion"].tap()
-        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Affected movements:")).firstMatch.exists)
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Affected movements:")).firstMatch.waitForExistence(timeout: 15))
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["workout.repair-completion"].exists)
         app.buttons["workout.repair-completion"].tap()
@@ -259,12 +261,23 @@ extension WorkoutFlowTests {
         app.buttons["workout.review"].tap()
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 4 reps")
         XCTAssertTrue(app.staticTexts["movement.stopped"].exists)
+        XCTAssertEqual(app.buttons["summary.confirm"].label, "Return to review")
+        app.tapWorkoutControl("effort.too_hard")
+        app.tapWorkoutControl("summary.confirm")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch.waitForExistence(timeout: 15))
         app.terminate()
         let resumed = start(reset: false)
-        resumed.buttons["workout.review"].tap()
+        resumed.tapWorkoutControl("workout.review")
         XCTAssertEqual(resumed.staticTexts["set.actual.0"].label, "Set 1: 4 reps")
         XCTAssertTrue(resumed.staticTexts["movement.stopped"].exists)
-        for _ in 0..<5 { resumed.tapWorkoutControl("movement.next") }
+        XCTAssertTrue(resumed.buttons["effort.too_hard"].isSelected, "Legacy effort edit survives force quit without changing the repaired outcome")
+        XCTAssertEqual(resumed.buttons["summary.confirm"].label, "Return to review")
+        resumed.navigationBars.buttons["BackButton"].tap()
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: resumed.buttons["summary.confirm"])
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 15), .completed)
+        let summaries = resumed.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).allElementsBoundByIndex.map(\.identifier)
+        XCTAssertEqual(summaries.count, 5)
+        for identifier in summaries.dropFirst() { resumed.tapWorkoutControl(identifier); resumed.confirmGuidedSummary() }
         resumed.tapWorkoutControl("workout.finish")
         XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         XCTAssertEqual(resumed.staticTexts["workout.next-prescription"].label, "Next: THU, 2026-10-08")
@@ -274,19 +287,20 @@ extension WorkoutFlowTests {
 extension WorkoutFlowTests {
     @MainActor func testReviewNavigationExplicitlyKeepsPendingEntryBeforeLeavingMovement() {
         let app = start()
-        app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("movement.next")
+        app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.enterPerformedReps("9", field: "set.reps")
         if app.buttons["keyboard.done"].exists { app.buttons["keyboard.done"].tap() }
         app.buttons["workout.review"].tap(); app.buttons["Cancel"].tap()
         XCTAssertEqual(app.textFields["set.reps"].value as? String, "9")
         app.buttons["workout.review"].tap(); app.buttons["Keep entry as partial and review"].tap()
-        XCTAssertTrue(app.buttons["movement.next"].waitForExistence(timeout: 15))
-        app.tapWorkoutControl("movement.next")
+        XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+        app.confirmGuidedSummary()
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 9 reps")
         XCTAssertTrue(app.staticTexts["movement.partial"].exists)
         app.terminate()
         let resumed = start(reset: false)
-        resumed.buttons["workout.review"].tap(); resumed.tapWorkoutControl("movement.next")
+        resumed.buttons["workout.review"].tap(); resumed.confirmGuidedSummary()
         XCTAssertEqual(resumed.staticTexts["set.actual.0"].label, "Set 1: 9 reps")
         XCTAssertTrue(resumed.staticTexts["movement.partial"].exists)
     }

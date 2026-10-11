@@ -17,6 +17,7 @@ final class ExactRepFlowTests: XCTestCase {
         app.revealWorkoutControl(element)
     }
     @MainActor private func enter(_ value: String, in app: XCUIApplication, field: String = "set.reps") {
+        app.continueGuidedRest()
         let input = app.textFields[field]; reveal(input, in: app); input.tap()
         if app.launchArguments.contains("-ui-large-text") {
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
@@ -29,7 +30,7 @@ final class ExactRepFlowTests: XCTestCase {
         XCTAssertEqual(input.value as? String, value)
     }
     @MainActor private func confirm(_ app: XCUIApplication) {
-        let button = app.buttons["load.confirm-prescribed"]; reveal(button, in: app); button.tap()
+        app.beginGuidedMovement(loadID: app.buttons["load.confirm-prescribed"].exists ? "load.confirm-prescribed" : "load.choose.5")
     }
     @MainActor private func screenshot(_ app: XCUIApplication, _ name: String) {
         let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = name; capture.lifetime = .keepAlways; add(capture)
@@ -40,8 +41,9 @@ final class ExactRepFlowTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
         app.tapReadyWorkoutStart()
-        XCTAssertEqual(app.staticTexts["movement.last-reps"].label, "10 / 10 / 9 reps")
-        XCTAssertEqual(app.staticTexts["movement.goal-reps"].label, "10 / 10 / 10 reps")
+        confirm(app)
+        XCTAssertEqual(app.workoutText("movement.last-reps").label, "10 / 10 / 9 reps")
+        XCTAssertEqual(app.workoutText("movement.goal-reps").label, "10 / 10 / 10 reps")
         reveal(app.textFields["set.reps"], in: app)
         XCTAssertTrue(["", "Reps performed"].contains(app.textFields["set.reps"].value as? String ?? ""))
         screenshot(app, "Exact prior 10-10-9 and goal 10-10-10")
@@ -66,6 +68,7 @@ final class ExactRepFlowTests: XCTestCase {
         let reason = app.buttons["reason.effort_limit"]; reveal(reason, in: app); reason.tap()
         let save = app.buttons["set.save"]; reveal(save, in: app); save.tap()
         XCTAssertTrue(app.staticTexts["set.actual.0"].waitForExistence(timeout: 15))
+        app.continueGuidedRest()
         XCTAssertEqual(app.textFields["set.reps"].value as? String, "Reps performed")
         XCTAssertFalse(app.staticTexts["set.miss-question"].exists)
         let skip = app.buttons["set.skip"]; reveal(skip, in: app); skip.tap()
@@ -80,16 +83,16 @@ final class ExactRepFlowTests: XCTestCase {
         screenshot(app, "Exact indexed middle skip and all-set effort")
     }
     @MainActor func testPainWinsWithPendingShortfallAndSavedHistoryKeepsThreeValues() {
-        let app = launch(); enter("9", in: app)
+        let app = launch(); confirm(app); enter("9", in: app)
         XCTAssertTrue(app.staticTexts["set.miss-question"].exists)
         XCTAssertFalse(app.buttons["set.save"].isEnabled)
         XCTAssertTrue(app.buttons["problem.pain"].isHittable); app.buttons["problem.pain"].tap()
         XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["set.actual.0"].exists)
-        let next = app.buttons["movement.next"]; reveal(next, in: app); next.tap()
+        app.confirmGuidedSummary()
         for _ in 0..<4 {
             let skip = app.buttons["movement.skip"]; reveal(skip, in: app); skip.tap()
-            reveal(next, in: app); next.tap()
+            app.confirmGuidedSummary()
         }
         let finish = app.buttons["workout.finish"]; reveal(finish, in: app); finish.tap()
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
@@ -100,7 +103,7 @@ final class ExactRepFlowTests: XCTestCase {
         XCTAssertEqual(issuedLoad.label, "Issued load: 40 lb per hand")
         let actualLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.completed-actual-load.")).firstMatch
         reveal(actualLoad, in: app)
-        XCTAssertEqual(actualLoad.label, "Actual load: not recorded")
+        XCTAssertEqual(actualLoad.label, "Actual load: 40 lb per hand")
         let savedNext = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.next-goal.")).firstMatch
         reveal(savedNext, in: app)
         let originalSavedNext = savedNext.label
@@ -111,10 +114,11 @@ final class ExactRepFlowTests: XCTestCase {
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Maintenance"), object: app.staticTexts["settings.current-goal"])
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 10), .completed)
         app.selectNativeTab("Today", identifier: "tab.today")
+        app.tapWorkoutControl("today.saved-workout")
         reveal(savedNext, in: app)
         XCTAssertEqual(savedNext.label, originalSavedNext, "Completion keeps the exact next prescription saved by Finish")
         reveal(issuedLoad, in: app); XCTAssertEqual(issuedLoad.label, "Issued load: 40 lb per hand")
-        reveal(actualLoad, in: app); XCTAssertEqual(actualLoad.label, "Actual load: not recorded")
+        reveal(actualLoad, in: app); XCTAssertEqual(actualLoad.label, "Actual load: 40 lb per hand")
         screenshot(app, "Exact saved independent issued goal and partial actual")
         let back = app.buttons["Back to Today"]; reveal(back, in: app); back.tap()
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
@@ -129,16 +133,17 @@ final class ExactRepFlowTests: XCTestCase {
     @MainActor func testNoHistoryBaselineAndEasierInputsStayEmpty() {
         for mode in ["no-history", "baseline", "easier"] {
             let app = launch(mode)
-            XCTAssertEqual(app.staticTexts["movement.goal-reps"].label, mode == "easier" ? "8 / 8 reps" : "8 / 8 / 8 reps")
+            confirm(app)
+            XCTAssertEqual(app.workoutText("movement.goal-reps").label, mode == "easier" ? "8 / 8 reps" : "8 / 8 / 8 reps")
             XCTAssertEqual(app.textFields["set.reps"].value as? String, "Reps performed")
             XCTAssertFalse(app.buttons["set.save"].isEnabled)
-            if mode != "easier" { XCTAssertTrue(app.staticTexts["movement.first-workout"].exists) }
+            if mode != "easier" { XCTAssertTrue(app.workoutText("movement.first-workout").exists) }
             screenshot(app, "Exact \(mode) blank actual entry"); app.terminate()
         }
     }
     @MainActor func testLegacyUnfinishedKeepsCeilingAndOriginalFeedback() {
         let app = launch("legacy-unfinished"); confirm(app)
-        XCTAssertTrue(app.staticTexts["movement.goal-reps"].label.contains("Up to 12 good reps"))
+        XCTAssertTrue(app.workoutText("movement.goal-reps").label.contains("Up to 12 good reps"))
         enter("6", in: app)
         XCTAssertFalse(app.staticTexts["set.miss-question"].exists)
         let partial = app.buttons["movement.partial-action"]; reveal(partial, in: app); partial.tap()
@@ -150,19 +155,20 @@ final class ExactRepFlowTests: XCTestCase {
         let app = launch("per-side")
         for _ in 0..<2 {
             let skip = app.buttons["movement.skip"]; reveal(skip, in: app); skip.tap()
-            let next = app.buttons["movement.next"]; reveal(next, in: app); next.tap()
+            app.confirmGuidedSummary()
         }
-        XCTAssertTrue(app.staticTexts["movement.goal-reps"].label.contains("per side"))
+        confirm(app)
+        XCTAssertTrue(app.workoutText("movement.goal-reps").label.contains("per side"))
         enter("7", in: app, field: "set.left-reps")
         XCTAssertEqual(app.textFields["set.right-reps"].value as? String, "Right reps performed")
         app.buttons["problem.control_lost"].tap()
         XCTAssertTrue(app.staticTexts["set.actual.0"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: left 7, right unrecorded")
         screenshot(app, "Exact raw missing side preserved on control stop")
-        let next = app.buttons["movement.next"]; reveal(next, in: app); next.tap()
+        app.confirmGuidedSummary()
         for _ in 0..<2 {
             let skip = app.buttons["movement.skip"]; reveal(skip, in: app); skip.tap()
-            reveal(next, in: app); next.tap()
+            app.confirmGuidedSummary()
         }
         let finish = app.buttons["workout.finish"]; reveal(finish, in: app); finish.tap()
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
@@ -178,7 +184,7 @@ final class ExactRepFlowTests: XCTestCase {
         XCTAssertEqual(retained.label, "Retained normal goals when saved: 8 / 8 / 8 reps per side")
         app.terminate()
         let review = launch("setup-review")
-        XCTAssertTrue(review.staticTexts["movement.setup-review"].exists)
+        XCTAssertTrue(review.workoutText("movement.setup-review").exists)
         XCTAssertFalse(review.textFields["set.reps"].exists)
         let setup = review.buttons["movement.review-setup"]; reveal(setup, in: review); setup.tap()
         XCTAssertTrue(review.textFields["setup.modifications"].waitForExistence(timeout: 10))
@@ -186,6 +192,7 @@ final class ExactRepFlowTests: XCTestCase {
     }
     @MainActor func testLargestTextDarkKeepsEntryAndStopControlsVisible() {
         let app = launch("normal", extra: ["-ui-large-text", "-ui-dark"])
+        confirm(app)
         let input = app.textFields["set.reps"]; reveal(input, in: app)
         XCTAssertTrue(app.buttons["problem.pain"].isHittable); XCTAssertTrue(app.buttons["problem.control_lost"].isHittable)
         screenshot(app, "Exact accessibility5 dark blank entry and pinned stops")
