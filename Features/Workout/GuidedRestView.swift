@@ -1,11 +1,22 @@
 import SwiftUI
 import TrainingCore
 
+struct WorkoutSessionModeLabel: View {
+    let model: WorkoutViewModel
+    var body: some View {
+        if !model.finished, let draft = model.snapshot.draft {
+            Text(draft.sessionMode == .easier ? "Easier workout" : "Normal workout")
+                .accessibilityIdentifier("workout.session-mode")
+        }
+    }
+}
+
 struct GuidedRestView: View {
     let model: WorkoutViewModel
     let step: WorkoutStep
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            WorkoutSessionModeLabel(model: model)
             Text("Rest").font(.largeTitle)
             if let deadline = model.snapshot.draft?.restDeadline {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in

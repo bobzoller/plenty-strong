@@ -449,3 +449,44 @@ extension CloudRecoveryTests {
         await f.repository.close()
     }
 }
+
+extension CloudRecoveryTests {
+    @Test(arguments: [false, true]) func correctedHistoryShuffledRecoveryRetainsAuditAndDeniesTamper(inactive: Bool) async throws {
+        let f = try await CorrectionHistoryFixture.make(inactive: inactive)
+        for document in try f.formats() {
+            let records = try BackupService.recoveryRecords(document).map { DownloadedCloudRecord(observation: CloudObservation(recordID: $0.recordID, zoneName: $0.zoneName, recordType: $0.recordType, claimedChecksum: $0.claimedChecksum, payload: $0.bytes, systemFields: Data())) }
+            let (fresh, _) = try recoveryEmpty()
+            let result = try await CloudIngestor(repository: fresh).ingest(records.shuffled(), scope: recoveryScope)
+            #expect(result.health == .ready)
+            let snapshot = try await fresh.snapshot(programID: f.programID)
+            #expect(snapshot.history.contains(f.envelope))
+            #expect((snapshot.state.config.activeVariantIDs!.values.contains(f.movementID)) == !inactive)
+            let retained = try await fresh.exportBackup()
+            #expect(retained.journal == document.journal)
+            #expect(retained.recovery!.originals.contains { $0.bytes == (try? BackupService.bytes(f.envelope)) })
+            await fresh.close()
+        }
+        // Transport, event and envelope hashes are recomputed: structural audit
+        // validation must still deny this unsupported replacement chain.
+        var tampered = f.envelope
+        var event = f.event; event.observationAudit!.corrections[0].after.reps = 99
+        guard case let .workout(_, next) = tampered.command else { Issue.record("Missing workout"); return }
+        tampered.command = .workout(completedWorkout: event, next: next)
+        tampered.eventHash = try BackupService.eventHash(tampered.command)
+        tampered.envelopeHash = try BackupService.envelopeHash(tampered)
+        var bad = f.document
+        let object = try BackupService.object(tampered, id: tampered.eventID)
+        bad.journal[bad.journal.firstIndex { $0.id == tampered.eventID }!] = object
+        bad.heads[tampered.programID] = tampered.envelopeHash
+        #expect(throws: (any Error).self) { try BackupService.validate(bad) }
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(bad))
+        #expect(proof.quarantined.contains { $0.record.bytes == object.bytes })
+        #expect(!proof.envelopes.values.contains { $0.eventID == tampered.eventID })
+        let (fresh, _) = try recoveryEmpty()
+        _ = try await CloudIngestor(repository: fresh).ingest(BackupService.recoveryRecords(bad).map {
+            DownloadedCloudRecord(observation: CloudObservation(recordID: $0.recordID, zoneName: $0.zoneName, recordType: $0.recordType, claimedChecksum: $0.claimedChecksum, payload: $0.bytes, systemFields: Data()))
+        }.reversed(), scope: recoveryScope)
+        #expect(try await fresh.recoveryPrograms().allSatisfy { !$0.headHashes.contains(tampered.envelopeHash) })
+        await fresh.close()
+    }
+}

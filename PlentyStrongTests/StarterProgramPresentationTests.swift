@@ -71,6 +71,7 @@ extension StarterProgramPresentationTests {
         try await model.recordEffort(movementID: modifiedID, effort: .onTarget)
         try await model.recordStatus(movementID: modifiedID, status: .completed)
         for row in model.snapshot.draft!.displayed.exercises where row.movementID != modifiedID { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let receipt = try await model.finish()
         let recorded = try XCTUnwrap(receipt.snapshot.history.last)
         let issued = try XCTUnwrap(MovementPrescriptionSummary.issuedWorkout(envelope: recorded, history: receipt.snapshot.history))
@@ -123,6 +124,7 @@ extension StarterProgramPresentationTests {
         do { try await model.selectBridgeLoadingMode(variantID: model.snapshot.state.config.activeVariantIDs!["db_floor_glute_bridge"]!, mode: .bodyweight); XCTFail("Working observations protect setup") } catch {}
         try await model.recordStatus(movementID: row.movementID, status: .partial)
         for other in model.snapshot.draft!.displayed.exercises where other.movementID != row.movementID { try await model.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         await s.repository.failNextSave()
         do { _ = try await model.finish(); XCTFail("Synthetic failure") } catch {}
         XCTAssertTrue(model.hasAmbiguousFinish)

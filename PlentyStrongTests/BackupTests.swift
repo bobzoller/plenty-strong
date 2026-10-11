@@ -271,3 +271,82 @@ extension BackupTests {
         }
     }
 }
+
+extension BackupTests {
+    @Test(arguments: [false, true]) func correctedEventRoundTripsAndRecovers(inactive: Bool) async throws {
+        let f = try await CorrectionHistoryFixture.make(inactive: inactive)
+        // Only the effective observations drive progression. Audit remains hashed
+        // provenance, so processedEvents (and therefore whole states) differ.
+        #expect(f.envelope.returnedState.exercises == f.plainEnvelope.returnedState.exercises)
+        #expect(f.envelope.returnedPrescription == f.plainEnvelope.returnedPrescription)
+        #expect(f.envelope.decisions == f.plainEnvelope.decisions)
+        #expect(f.envelope.eventHash != f.plainEnvelope.eventHash)
+        #expect(f.envelope.envelopeHash != f.plainEnvelope.envelopeHash)
+        #expect(f.envelope.returnedState.processedEvents[f.event.eventID] == f.envelope.eventHash)
+        #expect(f.plainEnvelope.returnedState.processedEvents[f.event.eventID] == f.plainEnvelope.eventHash)
+        #expect(Array(f.document.journal.prefix(f.prefix.journal.count)) == f.prefix.journal)
+        for document in try f.formats() {
+            let destination = try empty()
+            _ = try await destination.importBackup(document)
+            let snapshot = try await destination.snapshot(programID: f.programID)
+            #expect((snapshot.state.config.activeVariantIDs!.values.contains(f.movementID)) == !inactive)
+            #expect(snapshot.state.config.variants![f.movementID] != nil)
+            #expect(snapshot.history.contains(f.envelope))
+            let restored = try await destination.exportBackup()
+            #expect(restored.journal == document.journal)
+            #expect(restored.rules == document.rules && restored.profiles == document.profiles)
+            #expect(try BackupService.bytes(snapshot.history.first { $0.eventID == f.envelope.eventID }!) == BackupService.bytes(f.envelope))
+            await destination.close()
+        }
+    }
+
+    @Test func oldDecoderCannotStripAuditAndAccept() async throws {
+        let f = try await CorrectionHistoryFixture.make()
+        let archived = try #require(f.document.journal.first { $0.id == f.envelope.eventID })
+        let old = try JSONDecoder().decode(SyntheticOldEnvelope.self, from: archived.bytes)
+        let downgraded = try BackupService.bytes(old)
+        #expect(downgraded != archived.bytes && BackupService.hash(downgraded) != archived.checksum)
+        let decoded = try JSONDecoder().decode(JournalEnvelope.self, from: downgraded)
+        guard case let .workout(event, _) = decoded.command else { Issue.record("Missing workout"); return }
+        #expect(event.observationAudit == nil)
+        #expect(try BackupService.eventHash(decoded.command) != decoded.eventHash)
+        #expect(try BackupService.envelopeHash(decoded) != decoded.envelopeHash)
+        var backup = f.document
+        backup.journal[backup.journal.firstIndex { $0.id == archived.id }!] = ArchivedObject(id: archived.id,
+            bytes: downgraded, checksum: BackupService.hash(downgraded))
+        let destination = try empty()
+        let before = try await destination.exportBackup()
+        await #expect(throws: (any Error).self) { try await destination.importBackup(backup) }
+        #expect(try await destination.exportBackup() == before)
+        await destination.close()
+        // Nil-audit envelopes survive the same old decoder byte-for-byte.
+        let plainBytes = try BackupService.bytes(f.plainEnvelope)
+        #expect(try BackupService.bytes(JSONDecoder().decode(SyntheticOldEnvelope.self, from: plainBytes)) == plainBytes)
+    }
+}
+
+/// An old client's typed workout knows every former field and ignores new keys.
+/// The envelope preserves its old canonical fields and hashes unchanged.
+private struct SyntheticOldWorkout: Codable {
+    let eventId: String
+    let date: LocalDate
+    let slotId: String
+    let prescriptionId: String
+    let plannedPrescriptionId: String
+    let sessionMode: SessionMode
+    let exercises: [ExerciseLog]
+    let timing: SessionTiming?
+}
+private struct SyntheticOldEnvelope: Codable {
+    let value: CanonicalValue
+    init(from decoder: any Decoder) throws {
+        var fields = try [String: CanonicalValue](from: decoder)
+        if case .object(var command) = fields["command"], let event = command["completedWorkout"] {
+            let old = try JSONDecoder().decode(SyntheticOldWorkout.self, from: CanonicalJSON.encode(event))
+            command["completedWorkout"] = try JSONDecoder().decode(CanonicalValue.self, from: BackupService.bytes(old))
+            fields["command"] = .object(command)
+        }
+        value = .object(fields)
+    }
+    func encode(to encoder: any Encoder) throws { try value.encode(to: encoder) }
+}

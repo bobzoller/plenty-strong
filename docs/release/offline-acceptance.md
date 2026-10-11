@@ -1,6 +1,10 @@
 # Offline milestone acceptance
 
-## Current review fix · build 5
+## Guided workout sheet · October 10–11, 2026
+
+[Guided workout validation](guided-workout-validation.md) records retained correction provenance, canonical downgrade limits, local scratch scope and the current source-bound matrix. Final seven affected native UI owners and unsigned Release passed; required full `make verify-current` remains failed, and `make verify` remains failed because minimum iOS18 is unavailable. Owning unit follow-ups, ten macOS crash proofs and earlier source-bound UI unions remain separate components. Human accessibility, physical-device, service, signing and distribution gates remain open. The dated sections below preserve earlier evidence and do not replace this matrix.
+
+## Earlier review fix · build 5
 
 Retained normal goals include “per side” from saved counting metadata, with raw left 7 / right unrecorded preserved. The existing native regression failed that exact missing qualifier before the fix and passed afterward. Fresh complete Exact/History/Offline/Tip Jar/Cloud Recovery coverage passed 28/0/0/native 0 under default diagnostics. Prior-source Workout/Movement Setup/Shell 13 cases and unchanged core/model/fixture/tooling/six crash dependencies are retained separately; they are not a fresh 41-case run or old app-host proof for the new view.
 

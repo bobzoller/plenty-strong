@@ -283,6 +283,7 @@ extension FlexibleSchedulingRepositoryTests {
             now: { ISO8601DateFormatter().date(from: "2026-10-09T20:00:00Z")! })
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let first = try await model.finish()
         #expect(first.snapshot.state.activePrescription.slotID == "TUE")
         #expect(first.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-13")))
@@ -292,6 +293,7 @@ extension FlexibleSchedulingRepositoryTests {
             now: { ISO8601DateFormatter().date(from: "2026-10-12T20:00:00Z")! })
         try await monday.start(easierToday: true)
         for row in monday.snapshot.draft!.displayed.exercises { try await monday.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await monday.confirmHandledSummariesForTesting()
         let second = try await monday.finish()
         #expect(second.snapshot.state.activePrescription.slotID == "THU")
         #expect(second.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-15")))
@@ -306,6 +308,7 @@ extension FlexibleSchedulingRepositoryTests {
         try await model.start(easierToday: false)
         #expect(model.snapshot.draft?.planned.slotID == "SUN")
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         _ = try await model.finish()
         #expect(model.snapshot.state.activePrescription.slotID == "TUE")
         #expect(model.snapshot.state.activePrescription.date == (try LocalDate(iso8601: "2026-10-15")))
@@ -331,6 +334,7 @@ extension FlexibleSchedulingRepositoryTests {
         #expect(model.snapshot.draft == nil && model.snapshot.state.activePrescription == issued)
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let before = try await s.repository.exportBackup()
         let frozenFinish = try SessionTiming.milliseconds(at: instant)
         await s.repository.failNextSave()
@@ -384,6 +388,7 @@ extension FlexibleSchedulingRepositoryTests {
         await #expect(throws: (any Error).self) { try await traveler.recordStatus(movementID: draft.logs[0].movementID, status: .skipped) }
         try await traveler.resolveDateChange(keepOriginal: true)
         for row in draft.displayed.exercises { try await traveler.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await traveler.confirmHandledSummariesForTesting()
         let receipt = try await traveler.finish()
         guard case let .workout(event, next) = receipt.snapshot.history.last!.command else { Issue.record("Missing timing"); return }
         #expect(event.date == (try LocalDate(iso8601: "2026-10-09")))
@@ -407,6 +412,7 @@ extension FlexibleSchedulingRepositoryTests {
         _ = try await draftClone.importBackup(pending)
         #expect(try await draftClone.snapshot(programID: s.programID) == model.snapshot)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         _ = try await model.finish()
         let ordinary = try await s.repository.exportBackup()
         let before = model.snapshot
@@ -449,6 +455,7 @@ extension FlexibleSchedulingRepositoryTests {
             now: { ISO8601DateFormatter().date(from: "2026-10-06T20:00:00Z")! })
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         _ = try await model.finish()
         let original = try await s.repository.exportBackup()
         let exact = WorkoutViewModel(repository: s.repository, snapshot: model.snapshot, timeZoneID: "Pacific/Honolulu",

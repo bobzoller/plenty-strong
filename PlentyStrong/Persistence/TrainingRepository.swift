@@ -405,7 +405,9 @@ import TrainingCore
             let originals = current.history.filter { UUID(uuidString: $0.eventID) == UUID(uuidString: event.eventID) }
             if !originals.isEmpty {
                 let eventHash = try BackupService.hash(event)
-                return try originals.contains(where: { try $0.eventHash == eventHash && BackupService.bytes($0.command) == BackupService.bytes(command) })
+                // Acceptance already retained its scheduling decision. Ignore a
+                // retry's new suggestion while preserving the canonical event.
+                return originals.contains(where: { $0.eventHash == eventHash })
                     ? .noOp(nextState: current.state, reason: .eventReplayed)
                     : .rejected(nextState: current.state, errors: ["event_id_conflict"])
             }

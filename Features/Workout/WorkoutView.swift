@@ -196,7 +196,7 @@ struct WorkoutView: View {
         switch step {
         case let .introduction(id):
             if let row = rows.first(where: { $0.movementID == id }) {
-                ScrollView { VStack(alignment: .leading, spacing: 16) { introduction(row) }.padding() }.disabled(model.busy || model.snapshot.health != .ready)
+                ScrollView { VStack(alignment: .leading, spacing: 16) { WorkoutSessionModeLabel(model: model); introduction(row) }.padding() }.disabled(model.busy || model.snapshot.health != .ready)
                     .safeAreaInset(edge: .bottom) {
                         GuidedWorkoutFooter(model: model, row: row, pendingActual: $pendingActual) {
                         Button(row.sets.isEmpty ? (textSize.isAccessibilitySize ? "Review" : "Review outcome") : (textSize.isAccessibilitySize ? "Start" : "Start movement")) {
@@ -231,6 +231,7 @@ struct WorkoutView: View {
     }
     private var dateChoice: some View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
+            WorkoutSessionModeLabel(model: model)
             if let draft = model.snapshot.draft { Text("This workout belongs to \(draft.date.iso8601) in \(draft.timeZoneID).") }
             Text("Keep the original date and observations as history, or explicitly discard this draft and restart the same next workout with a new session date.")
             Button("Keep original date and observations") { Task { await model.run { try await model.resolveDateChange(keepOriginal: true) } } }.accessibilityIdentifier("workout.keep-original-date")
@@ -241,6 +242,7 @@ struct WorkoutView: View {
     }
     private var workoutReview: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
+            WorkoutSessionModeLabel(model: model)
             Text(frozen ? "Finish pending — retry the exact saved workout" : "Workout review").font(.title2)
             ForEach(rows, id: \.movementID) { row in
                 Text(model.movement(for: row).name ?? "Movement").font(.headline)
@@ -263,7 +265,6 @@ struct WorkoutView: View {
     }
     @ViewBuilder private func introduction(_ row: ExercisePrescription) -> some View {
         let metadata = model.movement(for: row), log = model.log(for: row.movementID)
-        Text(model.snapshot.draft?.sessionMode == .easier ? "Easier workout" : "Normal workout").accessibilityIdentifier("workout.session-mode")
         Text("\((rows.firstIndex(where: { $0.movementID == row.movementID }) ?? 0) + 1) of \(rows.count) · \(metadata.name ?? "Movement")").font(.title2)
         Text(row.modificationsSnapshot?.isEmpty == false ? row.modificationsSnapshot! : "Default setup").accessibilityIdentifier("movement.modifications")
         if metadata.loadingMode == .externalLoad {

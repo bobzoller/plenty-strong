@@ -14,6 +14,19 @@ struct WorkoutDetailView: View {
             return String(set.reps)
         }.joined(separator: ", ")
     }
+    /// Preserve journal order; a later edit may correct the same slot again.
+    static func corrections(event: CompletedWorkout, movementID: String, setIndex: Int) -> [SetCorrection] {
+        event.observationAudit?.corrections.filter { $0.movementID == movementID && $0.setIndex == setIndex } ?? []
+    }
+    static func correctionDetail(_ correction: SetCorrection) -> String {
+        func observation(_ set: ActualSet) -> String {
+            let reps = set.leftReps != nil || set.rightReps != nil
+                ? "left \(set.leftReps.map(String.init) ?? "unrecorded"), right \(set.rightReps.map(String.init) ?? "unrecorded")"
+                : "\(set.reps) reps"
+            return "\(reps). Reason: \(set.missedGoalReason?.title ?? "Not recorded")."
+        }
+        return "Original: \(observation(correction.before)) Replacement: \(observation(correction.after)) Outcome: \(correction.beforeStatus.rawValue) → \(correction.afterStatus.rawValue)."
+    }
     private func effort(_ value: Effort) -> String {
         switch value { case .tooEasy: "Too easy"; case .onTarget: "Right effort"; case .tooHard: "Too hard"; case .unknown: "Not recorded" }
     }
@@ -77,6 +90,16 @@ struct WorkoutDetailView: View {
                         if log.mixedLoads == true { Text("Different loads used — noncomparable partial work") }
                         ForEach(Array(log.actualSets.enumerated()), id: \.offset) { offset, actual in
                             if let reason = actual.missedGoalReason { Text("Set \((actual.setIndex ?? offset) + 1) stopped early: \(reason.title)") }
+                            let setIndex = actual.setIndex ?? offset
+                            let edits = Self.corrections(event: event, movementID: log.movementID, setIndex: setIndex)
+                            if !edits.isEmpty {
+                                DisclosureGroup("Set \(setIndex + 1) corrections") {
+                                    ForEach(Array(edits.enumerated()), id: \.element.operationID) { order, edit in
+                                        Text("Correction \(order + 1). \(Self.correctionDetail(edit))")
+                                            .accessibilityIdentifier("history.correction.detail.\(edit.operationID.uuidString)")
+                                    }
+                                }.accessibilityIdentifier("history.corrections.\(log.movementID).\(setIndex)")
+                            }
                         }
                         if let target = envelope.returnedState.exercises[log.movementID] {
                             Text("Next target for this setup when saved").font(.headline)

@@ -132,4 +132,16 @@ final class MovementPrescriptionSummaryTests: XCTestCase {
         XCTAssertFalse(summary.isPriorComparable)
         XCTAssertEqual(summary.policy, .fixedExactV1)
     }
+    @MainActor func testCorrectionProvenanceDoesNotPoolOriginalIntoLastPerformance() async throws {
+        let fixture = try await CorrectionHistoryFixture.make()
+        let history = try BackupService.validate(fixture.document).histories[fixture.programID.uuidString.lowercased()]!
+        // Inspect the same setup row independently of whether the next slot uses it.
+        let issued = try XCTUnwrap(MovementPrescriptionSummary.issuedWorkout(envelope: fixture.envelope, history: history))
+        let row = try XCTUnwrap(issued.displayed.exercises.first { $0.movementID == fixture.movementID })
+        let summary = MovementPrescriptionSummary.make(row: row, state: fixture.envelope.returnedState, history: history, draft: nil)
+        XCTAssertEqual(summary.targetReps, [8, 8, 8])
+        XCTAssertEqual(summary.prior?.actualSets.map(\.reps), [8, 8, 8])
+        XCTAssertEqual(WorkoutDetailView.corrections(event: fixture.event, movementID: fixture.movementID, setIndex: 0).first?.before.reps, 7)
+    }
+
 }

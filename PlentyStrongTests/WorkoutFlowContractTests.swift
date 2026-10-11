@@ -6,7 +6,8 @@ import TrainingCore
 @MainActor @Suite(.serialized) struct WorkoutFlowContractTests {
     @Test func nilMetadataPreservesCanonicalDraft() async throws {
         let f = try await GuidedWorkoutFixture.make()
-        let draft = try #require(f.model.snapshot.draft)
+        var draft = try #require(f.model.snapshot.draft)
+        draft.flow = nil
         let bytes = try BackupService.bytes(draft)
         let object = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
         for key in ["flow", "observationAudit", "pendingFinish"] { #expect(object[key] == nil) }
@@ -18,6 +19,7 @@ import TrainingCore
     @Test func legacyReconciliationNeverInfersCompletion() async throws {
         let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
         var draft = try #require(f.model.snapshot.draft)
+        draft.flow = nil
         let row = draft.displayed.exercises[0], id = row.movementID
         #expect(try WorkoutFlowResolver.reconciled(draft).forward == .introduction(movementID: id))
         for status in [LogStatus.skipped, .completed, .stopped] {
@@ -223,6 +225,7 @@ import TrainingCore
     @Test func legacyArrayPositionsAndNilStartRemainAdmitted() async throws {
         let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
         var draft = try #require(f.model.snapshot.draft)
+        draft.flow = nil
         let row = draft.displayed.exercises[0]
         draft.logs[0].actualSets = [ActualSet(reps: 8)]
         draft.logs[0].skippedSetIndices = nil

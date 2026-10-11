@@ -25,6 +25,7 @@ struct MovementSummaryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                WorkoutSessionModeLabel(model: model)
                 Text("Movement summary").font(.title2).accessibilityIdentifier("movement.summary")
                 Text(model.movement(for: row).name ?? "Movement").font(.headline)
                 ForEach(Array(row.sets.enumerated()), id: \.offset) { index, goal in

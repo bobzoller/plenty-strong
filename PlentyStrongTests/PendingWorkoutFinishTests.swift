@@ -198,6 +198,11 @@ import TrainingCore
         let receipt = try await f.repository.finalize(programID: UUID(uuidString: config.programID)!, expectedRevision: other.state.revision, event: event, next: next)
         guard case .applied = receipt.result else { Issue.record("Synthetic sibling event failed"); return }
         let before = try await f.repository.exportBackup()
+        let pending = try #require(frozen.pendingFinish)
+        let conflict = try await f.repository.finalize(programID: f.model.programID, expectedRevision: pending.expectedRevision,
+            event: pending.event, next: pending.next)
+        guard case let .rejected(_, errors) = conflict.result else { Issue.record("Sibling accepted UUID must block frozen finalization"); return }
+        #expect(errors == ["event_id_conflict"])
         await #expect(throws: EngineError.self) { try await f.repository.repairRejectedDraft(programID: f.model.programID, expectedDraftHash: BackupService.hash(frozen)) }
         await #expect(throws: EngineError.self) { try await f.repository.discardDraft(id: draft.id) }
         #expect(try await f.repository.exportBackup() == before)

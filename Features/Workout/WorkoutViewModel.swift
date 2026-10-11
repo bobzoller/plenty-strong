@@ -915,6 +915,8 @@ import TrainingCore
     private var owner: UUID?
     #if DEBUG
     var contextEnabled = true
+    #else
+    let contextEnabled = true
     #endif
     var afterRelease: (@MainActor () -> Void)?
     private var deferred: (@MainActor (Lease) async -> Void)?

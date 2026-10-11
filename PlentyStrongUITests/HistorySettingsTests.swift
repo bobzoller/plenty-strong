@@ -157,6 +157,44 @@ final class HistorySettingsTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["save.error"].exists)
     }
 
+    @MainActor func testAcceptedFinishHistoryDisclosesRetainedCorrection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-fixture-exact-mode", "normal", "-cloud-disabled", "-products-unavailable"]
+        app.launch(); app.tapReadyWorkoutStart()
+        if app.buttons["workout.keep-original-date"].exists { app.tapWorkoutControl("workout.keep-original-date") }
+        app.tapWorkoutControl("load.confirm-prescribed"); app.beginGuidedMovement()
+        app.enterPerformedReps("7"); app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("guided.back")
+        app.tapWorkoutControl("summary.correct.0"); app.replacePerformedReps("8")
+        app.tapWorkoutControl("reason.time_interruption"); app.tapWorkoutControl("correction.save")
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["correction.save"])
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 15), .completed)
+        print("Task8 corrected Summary native Back hierarchy: \(app.debugDescription)")
+        let nativeBack = app.navigationBars.buttons["BackButton"]
+        XCTAssertTrue(nativeBack.waitForExistence(timeout: 15)); nativeBack.tap()
+        app.continueGuidedRest()
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary()
+        for _ in 0..<4 {
+            app.continueGuidedRest(); app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
+        }
+        app.tapWorkoutControl("workout.finish")
+        XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
+        app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
+        XCTAssertTrue(app.staticTexts["history.actual-reps"].label.contains("8"))
+        XCTAssertFalse(app.staticTexts["history.actual-reps"].label.contains("7"))
+        let disclosure = app.buttons.matching(NSPredicate(format: "label == %@", "Set 1 corrections")).firstMatch
+        app.revealWorkoutControl(disclosure); disclosure.tap()
+        print("Task8 expanded correction native hierarchy: \(app.debugDescription)")
+        // Native DisclosureGroup propagates its row identifier to the visible
+        // Text. Match the rendered correction label, retaining content checks.
+        let detail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 1. Original:")).firstMatch
+        app.revealWorkoutControl(detail)
+        XCTAssertTrue(detail.label.contains("Original: 7"))
+        XCTAssertTrue(detail.label.contains("Replacement: 8"))
+        XCTAssertTrue(detail.label.contains("Time or interruption"))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Accepted Finish retained correction provenance"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
 }
 
 // Native TabContent metadata is retained in the app. On this SDK some initial

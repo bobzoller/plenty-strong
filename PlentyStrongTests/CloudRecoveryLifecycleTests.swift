@@ -92,6 +92,7 @@ import TrainingCore
         let row = try #require(model.snapshot.draft?.displayed.exercises.first)
         try await model.recordProblem(movementID: row.movementID, problem: .pain)
         for row in model.snapshot.draft!.displayed.exercises where !model.handled(row.movementID) { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let before = model.snapshot
         await app.setCloudRecoveryEnabled(true)
         try await local.repository.retainCloudObservations(incoming.map(\.observation), scope: recoveryScope)
@@ -195,6 +196,7 @@ extension CloudRecoveryLifecycleTests {
         let first = try #require(model.snapshot.draft?.displayed.exercises.first)
         try await model.recordProblem(movementID: first.movementID, problem: .pain)
         for row in model.snapshot.draft!.displayed.exercises where !model.handled(row.movementID) { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         let original = model.snapshot
         await app.setCloudRecoveryEnabled(true)
         await transport.deliver(incoming)
@@ -283,6 +285,7 @@ extension CloudRecoveryLifecycleTests {
         let (app, model, _) = try await composition(s, provider: provider)
         try await model.start(easierToday: false)
         for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         await app.setCloudRecoveryEnabled(true)
         try await s.repository.retainCloudObservations(recoveryRecords(other).map(\.observation), scope: recoveryScope)
         await app.cloudRecordsChanged(recoveryScope); try await settle(app)
@@ -709,6 +712,7 @@ extension CloudRecoveryLifecycleTests {
         // Truthful partial/stop handling and finalization remain available.
         try await model.recordStatus(movementID: row.movementID, status: inactiveDraft ? .partial : .stopped)
         for other in draft.displayed.exercises.dropFirst() where !model.handled(other.movementID) { try await model.recordStatus(movementID: other.movementID, status: .skipped) }
+        try await model.confirmHandledSummariesForTesting()
         _ = try await model.finish()
         let saved = try #require(model.snapshot.history.last)
         if case let .workout(event, _) = saved.command {
@@ -730,6 +734,7 @@ extension CloudRecoveryLifecycleTests {
         if control == "protected" || control == "ambiguous-finish" { try await model.start(easierToday: false) }
         if control == "ambiguous-finish" {
             for row in model.snapshot.draft!.displayed.exercises { try await model.recordStatus(movementID: row.movementID, status: .skipped) }
+            try await model.confirmHandledSummariesForTesting()
             await s.repository.failNextSave()
             await #expect(throws: (any Error).self) { _ = try await model.finish() }
             #expect(model.hasAmbiguousFinish)

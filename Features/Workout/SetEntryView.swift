@@ -34,6 +34,7 @@ struct SetEntryView: View {
     }
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 12) {
+            WorkoutSessionModeLabel(model: model)
             Text(model.movement(for: row).name ?? "Movement").font(.title2)
             if let index, row.sets.indices.contains(index) {
                 Text(correctionIndex == nil ? "Set \(index + 1) of \(row.sets.count)" : "Correct Set \(index + 1)").font(.headline).accessibilityIdentifier("set.position")

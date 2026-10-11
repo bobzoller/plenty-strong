@@ -62,7 +62,13 @@ extension CloudRecoveryFlowTests {
         app.selectNativeTab("Settings", identifier: "tab.settings"); app.buttons["settings.cloud-recovery"].tap()
         let program = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sync.program.")).firstMatch
         for _ in 0..<6 where !program.isHittable { app.swipeUp() }
-        XCTAssertTrue(program.isHittable); program.tap(); app.buttons["sync.compare-branches"].tap()
+        XCTAssertTrue(program.isHittable); program.tap()
+        // The loaded snapshot inserts rows before Compare; await that owner
+        // before choosing the native link's hit target.
+        XCTAssertTrue(app.buttons["sync.old-history"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["sync.compare-branches"].isHittable)
+        app.buttons["sync.compare-branches"].tap()
+        XCTAssertTrue(app.staticTexts["sync.safety-union"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["sync.safety-union"].label.contains("cannot clear a pause"))
         let branches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sync.branch-details."))
         XCTAssertEqual(branches.count, 2)

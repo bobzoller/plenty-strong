@@ -12,11 +12,14 @@ final class TipJarTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.buttons["today.start"].tap()
         capture("Tip training entry before bounded reveal", app: app)
+        app.revealWorkoutControl(app.buttons["workout.easier"])
+        XCTAssertTrue(app.buttons["workout.easier"].exists)
+        app.beginGuidedMovement(loadID: "load.choose.5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
         capture("Tip training entry fully revealed before purchase", app: app)
-        let capabilities = [app.buttons["workout.easier"].exists, app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists]
-        XCTAssertEqual(capabilities, [true, true, true])
+        let capabilities = [app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists]
+        XCTAssertEqual(capabilities, [true, true])
         XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
         let pendingEntry = app.textFields["set.reps"].value as? String
         app.selectNativeTab("Settings", identifier: "tab.settings"); app.buttons["settings.tips"].tap()
@@ -27,9 +30,15 @@ final class TipJarTests: XCTestCase {
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
         XCTAssertEqual(app.staticTexts["history.actual-reps"].label, "10, 10, 9")
         app.selectNativeTab("Today", identifier: "tab.today")
+        let resume = app.buttons["workout.resume"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 30))
+        let resumeReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: resume)
+        XCTAssertEqual(XCTWaiter.wait(for: [resumeReady], timeout: 30), .completed)
+        resume.tap()
+        XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 30))
         app.revealWorkoutControl(app.textFields["set.reps"])
         capture("Tip training entry fully revealed after purchase", app: app)
-        XCTAssertEqual([app.buttons["workout.easier"].exists, app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists], capabilities)
+        XCTAssertEqual([app.buttons["movement.partial-action"].exists, app.textFields["set.reps"].exists], capabilities)
         XCTAssertEqual(app.staticTexts["workout.session-mode"].label, "Normal workout")
         XCTAssertEqual(app.textFields["set.reps"].value as? String, pendingEntry)
         app.selectNativeTab("Settings", identifier: "tab.settings")
@@ -57,7 +66,7 @@ final class TipJarTests: XCTestCase {
         // Existence can precede the native sheet's presentation animation.
         // Wait for its lower purchase control to be hittable before dismissal.
         let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            cancel.exists && purchase.isHittable
+            cancel.isHittable && purchase.isHittable
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [presented], timeout: 10), .completed)
         cancel.tap()
@@ -66,7 +75,12 @@ final class TipJarTests: XCTestCase {
         let idle = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             !cancel.exists && tip.isEnabled
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed)
+        let idleResult = XCTWaiter.wait(for: [idle], timeout: 10)
+        if idleResult != .completed {
+            capture("Native cancellation app at timeout", app: app)
+            capture("Native cancellation SpringBoard at timeout", app: springboard)
+        }
+        XCTAssertEqual(idleResult, .completed)
         XCTAssertFalse(app.staticTexts["tips.thank-you"].exists); XCTAssertFalse(app.staticTexts["tips.failure"].exists)
         app.selectNativeTab("Today", identifier: "tab.today"); XCTAssertTrue(app.buttons["today.start"].exists)
     }
@@ -80,11 +94,13 @@ final class TipJarTests: XCTestCase {
         XCTAssertTrue(app.buttons["backup.share"].waitForExistence(timeout: 10))
         app.selectNativeTab("Today", identifier: "tab.today")
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 10)); app.buttons["today.start"].tap()
-        app.revealWorkoutControl(app.textFields["set.reps"])
-        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
         app.revealWorkoutControl(app.buttons["workout.easier"])
         app.buttons["workout.easier"].tap()
         let easier = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Easier workout"), object: app.staticTexts["workout.session-mode"])
         XCTAssertEqual(XCTWaiter.wait(for: [easier], timeout: 10), .completed)
+        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.revealWorkoutControl(app.textFields["set.reps"])
+        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["movement.partial-action"].exists)
     }
 }
