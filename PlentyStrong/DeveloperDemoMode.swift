@@ -108,7 +108,7 @@ import TrainingCore
                         scratchDirectory: sandbox.appendingPathComponent("workout-scratch", isDirectory: true),
                         scratchStoreID: sandbox.appendingPathComponent("training.store").standardizedFileURL.path)
                     do { try await model.restoreScratch() }
-                    catch { candidate.errorText = "Saved demo input could not be opened. Demo workout is retained. \(error)" }
+                    catch { model.errorText = "Saved demo input could not be opened. Demo workout is retained. \(error)" }
                     candidate.isDemoContext = true; candidate.now = real.now; candidate.timeZoneID = real.timeZoneID
                     progressText = "Checking demo history…"
                     try await model.prepareToday()

@@ -24,8 +24,8 @@ import TrainingCore
         try await operations.perform { _ in try await action() }
     }
     func suspendContext() async {
-        do { try await workout?.flushScratch() }
-        catch { errorText = "Workout input could not be saved locally. Entered text is retained. \(error)" }
+        // The model retains a nonfatal scratch error alongside the entered text.
+        try? await workout?.flushScratch()
         workout?.suspendScratch()
         operations.contextEnabled = false
         cloudGeneration += 1; selectionGeneration += 1
@@ -491,9 +491,10 @@ extension AppComposition {
         if let model = workout, model.snapshot.state.config.programID == snapshot.state.config.programID {
             try model.adoptRecoverySnapshot(snapshot, operation: operation)
         } else {
-            workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
-            do { try await workout?.restoreScratch() }
-            catch { errorText = "Saved workout input could not be opened. Local training is retained. \(error)" }
+            let model = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
+            do { try await model.restoreScratch() }
+            catch { model.errorText = "Saved workout input could not be opened. Local training is retained. \(error)" }
+            workout = model
             showingWorkout = false
         }
         try await workout?.refreshWorkingAdmission(operation: operation)
@@ -628,8 +629,8 @@ extension AppComposition {
     }
     func retryCloudRecovery() async { await resumeRecovery() }
     func pauseRecoveryForBackground() async {
-        do { try await workout?.flushScratch() }
-        catch { errorText = "Workout input could not be saved locally. Entered text is retained. \(error)" }
+        // The model retains a nonfatal scratch error alongside the entered text.
+        try? await workout?.flushScratch()
         cloudGeneration += 1; verifiedCloudScope = nil
         let ticket = cloudGeneration
         await cloudCoordinator?.disable()

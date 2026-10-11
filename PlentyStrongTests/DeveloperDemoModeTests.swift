@@ -197,6 +197,39 @@ import TrainingCore
         #expect(relaunched.active.workout?.visibleStep == cursor)
         await relaunched.setEnabled(false)
     }
+    @Test func corruptDemoRelaunchKeepsActiveWorkoutReachable() async throws {
+        let (real, directory) = try await empty(), url = directory.appendingPathComponent("demo")
+        var mode: DeveloperDemoMode? = DeveloperDemoMode(real: real, directory: url)
+        await mode!.setEnabled(true)
+        #expect(mode!.enabled && mode!.errorText == nil)
+        let demo = mode!.active, model = try #require(demo.workout)
+        try await model.start(easierToday: false)
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        model.entryDraft.reps = "demo before corruption"; try await model.flushScratch()
+        let before = try await demo.repository!.exportBackup(), cursor = model.visibleStep
+        let selection = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url.appendingPathComponent("selection.json"))) as? [String: Any])
+        let sandbox = try #require(selection["sandbox"] as? String), id = try #require(model.snapshot.draft?.id)
+        await demo.suspendContext(); await demo.repository!.close()
+        mode = nil
+        let scratch = url.appendingPathComponent(sandbox).appendingPathComponent("workout-scratch").appendingPathComponent(id.uuidString.lowercased() + ".json")
+        try Data("corrupt demo sidecar".utf8).write(to: scratch)
+        await real.resumeContext()
+        let relaunched = DeveloperDemoMode(real: real, directory: url)
+        await relaunched.load()
+        #expect(relaunched.enabled && relaunched.errorText == nil)
+        let retained = try #require(relaunched.active.workout)
+        #expect(relaunched.active.errorText == nil)
+        #expect(retained.errorText != nil && retained.entryDraft == SetEntryDraft())
+        #expect(retained.visibleStep == cursor && retained.log(for: row.movementID)?.actualSets.isEmpty == true)
+        relaunched.active.showingWorkout = true
+        #expect(relaunched.active.showingWorkout && relaunched.active.workout === retained)
+        #expect(try await relaunched.active.repository!.exportBackup() == before)
+        await relaunched.setEnabled(false)
+        #expect(relaunched.active === real && real.errorText == nil)
+        await real.repository?.close()
+    }
     @Test func failedSelectionRollsBackAndCanRetryAndBusySwitchIsRejected() async throws {
         let (real, directory) = try await empty()
         let mode = DeveloperDemoMode(real: real, directory: directory.appendingPathComponent("demo"))

@@ -179,6 +179,62 @@ import TrainingCore
         #expect(try await f.repository.snapshot(programID: f.model.programID) == before)
         await f.repository.close()
     }
+    @Test func corruptRealCompositionReopenKeepsWorkoutReachable() async throws {
+        let f = try await GuidedWorkoutFixture.make(), row = f.model.snapshot.draft!.displayed.exercises[0]
+        let scratchURL = directory(), path = f.storeURL.standardizedFileURL.path
+        let store = WorkoutScratchStore(directory: scratchURL)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: path)
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        model.entryDraft.reps = "unfinished real text"; try await model.flushScratch()
+        let before = try await f.repository.exportBackup(), expected = model.snapshot
+        let draftID = try #require(model.snapshot.draft?.id)
+        await f.repository.close()
+        try Data("corrupt sidecar".utf8).write(to: scratchURL.appendingPathComponent(draftID.uuidString.lowercased() + ".json"))
+        let reopened = try TrainingRepository.open(at: f.storeURL)
+        let composition = AppComposition(repository: reopened, scratchDirectory: scratchURL, scratchStoreID: path)
+        composition.now = model.now; composition.timeZoneID = model.timeZoneID
+        try await composition.reloadLocalProductChoices()
+        let retained = try #require(composition.workout)
+        #expect(composition.errorText == nil)
+        #expect(retained.errorText != nil)
+        #expect(retained.snapshot == expected && retained.entryDraft == SetEntryDraft())
+        #expect(retained.log(for: row.movementID)?.actualSets.isEmpty == true)
+        composition.showingWorkout = true
+        #expect(composition.showingWorkout && composition.workout === retained)
+        #expect(try await reopened.exportBackup() == before)
+        await reopened.close()
+    }
+    @Test func backgroundAndContextScratchFailureRetainReachableTextAndFatalState() async throws {
+        let f = try await GuidedWorkoutFixture.make(), row = f.model.snapshot.draft!.displayed.exercises[0]
+        let broken = directory()
+        try Data("file instead of directory".utf8).write(to: broken)
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        let composition = AppComposition(repository: f.repository, workout: model,
+            scratchDirectory: broken, scratchStoreID: f.storeURL.standardizedFileURL.path)
+        composition.now = model.now; composition.timeZoneID = model.timeZoneID
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        let before = model.snapshot, backup = try await f.repository.exportBackup()
+        composition.showingWorkout = true
+        model.entryDraft.reps = "retained during background"
+        await composition.pauseRecoveryForBackground()
+        #expect(composition.errorText == nil && model.errorText != nil)
+        #expect(composition.showingWorkout && composition.workout === model)
+        #expect(model.entryDraft.reps == "retained during background" && model.snapshot == before)
+        model.entryDraft.reps = "still reachable"
+        await composition.suspendContext()
+        #expect(composition.errorText == nil && model.errorText != nil)
+        #expect(composition.workout === model && model.entryDraft.reps == "still reachable")
+        let retainedBackup = try await f.repository.exportBackup()
+        #expect(model.snapshot == before && retainedBackup == backup)
+        composition.errorText = "Preexisting authoritative local store failure"
+        await composition.pauseRecoveryForBackground()
+        #expect(composition.errorText == "Preexisting authoritative local store failure")
+        #expect(model.entryDraft.reps == "still reachable" && model.snapshot == before)
+        await f.repository.close()
+    }
     @Test func scratchRelaunchDoesNotBecomeActual() async throws {
         let f = try await GuidedWorkoutFixture.make(), row = f.model.snapshot.draft!.displayed.exercises[0]
         let scratchURL = directory(), store = WorkoutScratchStore(directory: scratchURL)
