@@ -30,7 +30,7 @@ final class ExactRepFlowTests: XCTestCase {
         XCTAssertEqual(input.value as? String, value)
     }
     @MainActor private func confirm(_ app: XCUIApplication) {
-        app.beginGuidedMovement(loadID: app.buttons["load.confirm-prescribed"].exists ? "load.confirm-prescribed" : "load.choose.5")
+        app.beginGuidedMovement()
     }
     @MainActor private func screenshot(_ app: XCUIApplication, _ name: String) {
         let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = name; capture.lifetime = .keepAlways; add(capture)

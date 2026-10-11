@@ -194,7 +194,7 @@ final class StarterProgramChoiceTests: XCTestCase {
         let app = launch(["-ui-dark", "-ui-large-text"])
         choice("whole_body_glutes", in: app); app.buttons["onboarding.confirm"].tap()
         XCTAssertTrue(app.staticTexts["today.schedule"].waitForExistence(timeout: 15)); app.tapWorkoutControl("today.start")
-        app.tapWorkoutControl("load.choose.5")
+        app.confirmGuidedWeight(amount: "5")
         app.beginGuidedMovement()
         let left = app.textFields["set.left-reps"]
         app.revealWorkoutControl(left); left.tap(); left.typeText("8")
@@ -235,7 +235,7 @@ final class StarterProgramChoiceTests: XCTestCase {
         app.selectNativeTab("Today", identifier: "tab.today"); app.tapReadyWorkoutStart()
         app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
         XCTAssertTrue(app.staticTexts["movement.modifications"].label.contains("future dumbbell notes"))
-        XCTAssertFalse(app.buttons["load.choose.5"].exists)
+        XCTAssertFalse(app.buttons["load.picker"].exists)
         app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
         capture(app, "Bodyweight bridge modification retains null load and no numeric catalog")
         app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary()
@@ -273,17 +273,17 @@ final class StarterProgramChoiceTests: XCTestCase {
         strength.selectNativeTab("Today", identifier: "tab.today"); strength.tapReadyWorkoutStart()
         for _ in 0..<2 { strength.tapWorkoutControl("movement.skip"); strength.confirmGuidedSummary() }
         XCTAssertEqual(strength.workoutText("movement.goal-reps").label, "4 / 4 reps")
-        strength.tapWorkoutControl("load.choose.20")
+        strength.confirmGuidedWeight(amount: "20")
         XCTAssertTrue(strength.workoutText("save.error").label.contains("not been reviewed"))
         capture(strength, "Reviewed strength load gate retained error and action")
-        strength.tapWorkoutControl("load.confirm-prescribed")
+        strength.confirmGuidedWeight(amount: "15")
         capture(strength, "Reviewed load controls low-rep entry")
     }
     @MainActor func testIntroCompletionAndHistoryRemainPinnedAfterProgramChange() {
         let app = launch(["-fixture-starter-intro"])
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
         XCTAssertEqual(app.workoutText("movement.goal-reps").label, "9 / 8 reps")
-        app.tapWorkoutControl("load.confirm-prescribed")
+        app.tapWorkoutControl("load.confirm")
         for reps in ["9", "8"] { app.enterPerformedReps(reps); app.tapWorkoutControl("set.save") }
         app.tapWorkoutControl("effort.on_target"); app.confirmGuidedSummary()
         for _ in 0..<5 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }

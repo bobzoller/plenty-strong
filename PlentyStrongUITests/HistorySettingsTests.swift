@@ -82,7 +82,7 @@ final class HistorySettingsTests: XCTestCase {
     @MainActor func testDraftAndPendingEntrySurviveTabsAndSettingsLock() {
         let app = seeded()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
-        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.beginGuidedMovement(weight: "5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         app.textFields["set.reps"].tap(); app.textFields["set.reps"].typeText("7")
         let keyboardEvidence = XCTAttachment(screenshot: app.screenshot()); keyboardEvidence.name = "Pending numeric entry keyboard M1 visible impact"; keyboardEvidence.lifetime = .keepAlways; add(keyboardEvidence)
@@ -117,7 +117,7 @@ final class HistorySettingsTests: XCTestCase {
     @MainActor func testVoiceOverLabelsAndKeyboardRejectInvalidInput() {
         let app = seeded()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
-        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.beginGuidedMovement(weight: "5")
         let input = app.textFields["set.reps"]
         app.revealWorkoutControl(input); XCTAssertEqual(input.label, "Reps performed")
         app.revealWorkoutControl(input); input.tap(); input.typeText("8")
@@ -162,7 +162,7 @@ final class HistorySettingsTests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-fixture-exact-mode", "normal", "-cloud-disabled", "-products-unavailable"]
         app.launch(); app.tapReadyWorkoutStart()
         if app.buttons["workout.keep-original-date"].exists { app.tapWorkoutControl("workout.keep-original-date") }
-        app.tapWorkoutControl("load.confirm-prescribed"); app.beginGuidedMovement()
+        app.tapWorkoutControl("load.confirm"); app.beginGuidedMovement()
         app.enterPerformedReps("7"); app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("set.save")
         app.tapWorkoutControl("guided.back")
         app.tapWorkoutControl("summary.correct.0"); app.replacePerformedReps("8")
@@ -226,6 +226,21 @@ final class HistorySettingsTests: XCTestCase {
 // launches expose only the visible native label; this verifies user navigation
 // without changing the app hierarchy or claiming the identifier check passed.
 extension XCUIApplication {
+    @MainActor func selectGuidedWeight(amount: String, file: StaticString = #filePath, line: UInt = #line) {
+        tapWorkoutControl("load.picker", file: file, line: line)
+        let choice = buttons["load.option.\(amount)"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), file: file, line: line)
+        choice.tap()
+    }
+    @MainActor func confirmGuidedWeight(amount: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        if let amount { selectGuidedWeight(amount: amount, file: file, line: line) }
+        tapWorkoutControl("load.confirm", file: file, line: line)
+        let saved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !self.otherElements["workout.busy"].exists &&
+                (self.buttons["load.confirm"].label == "Weight confirmed" || self.workoutText("save.error").exists)
+        }, object: self)
+        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 15), .completed, file: file, line: line)
+    }
     @MainActor func selectInitialUpperProgram(goal: String = "size", confirmSelection: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         let footer = buttons["onboarding.confirm"]
         let card = buttons["onboarding.program.upper_body"]
@@ -323,8 +338,10 @@ extension XCUIApplication {
         }
         XCTAssertTrue(reachable(), "Reach the full control above the pinned safety area", file: file, line: line)
     }
-    @MainActor func beginGuidedMovement(loadID: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
-        if let loadID { tapWorkoutControl(loadID, file: file, line: line) }
+    @MainActor func beginGuidedMovement(weight: String? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        if let weight { confirmGuidedWeight(amount: weight, file: file, line: line) }
+        else if buttons["load.picker"].exists, !buttons["guided.next"].isEnabled,
+                buttons["load.confirm"].label != "Weight confirmed" { confirmGuidedWeight(file: file, line: line) }
         tapWorkoutControl("guided.next", file: file, line: line)
         let actualFields = textFields.matching(NSPredicate(format: "identifier IN %@", ["set.reps", "set.left-reps"]))
         let enteredSet = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count > 0"), object: actualFields)

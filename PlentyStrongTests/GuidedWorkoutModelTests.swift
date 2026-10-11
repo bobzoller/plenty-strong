@@ -4,6 +4,53 @@ import TrainingCore
 @testable import PlentyStrong
 
 @MainActor @Suite(.serialized) struct GuidedWorkoutModelTests {
+    @Test func easierWorkoutIsHiddenWithoutPerformedHistory() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        #expect(f.model.canChangePreparation)
+        #expect(!f.model.canOfferEasierWorkout)
+        for row in f.model.snapshot.draft!.displayed.exercises {
+            try await f.model.recordStatus(movementID: row.movementID, status: .skipped)
+            try await f.model.confirmMovementSummary(movementID: row.movementID, effort: nil, status: .skipped, reviewing: false)
+        }
+        _ = try await f.model.finish()
+        let next = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID, now: { f.model.now().addingTimeInterval(86_400) })
+        try await next.start(easierToday: false)
+        #expect(next.canChangePreparation)
+        #expect(!next.canOfferEasierWorkout)
+        await f.repository.close()
+    }
+    @Test func easierWorkoutUsesSameProgramHistoryAndObservationLock() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let first = f.model.snapshot.draft!.displayed.exercises[0]
+        try await confirmLoad(f.model, row: first)
+        try await f.model.beginMovement(movementID: first.movementID)
+        try await f.model.recordSet(movementID: first.movementID, index: 0, actual: actual(f.model, row: first, index: 0))
+        try await f.model.recordStatus(movementID: first.movementID, status: .partial)
+        try await f.model.confirmMovementSummary(movementID: first.movementID, effort: .unknown, status: .partial, reviewing: false)
+        for row in f.model.snapshot.draft!.displayed.exercises.dropFirst() {
+            try await f.model.recordStatus(movementID: row.movementID, status: .skipped)
+            try await f.model.confirmMovementSummary(movementID: row.movementID, effort: nil, status: .skipped, reviewing: false)
+        }
+        _ = try await f.model.finish()
+        let next = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID, now: { f.model.now().addingTimeInterval(86_400) })
+        try await next.start(easierToday: false)
+        #expect(next.canOfferEasierWorkout)
+        let row = next.snapshot.draft!.displayed.exercises[0]
+        try await confirmLoad(next, row: row)
+        #expect(next.canOfferEasierWorkout, "Weight confirmation alone is preparation, not performed work")
+        try await next.beginMovement(movementID: row.movementID)
+        try await next.recordSet(movementID: row.movementID, index: 0, actual: actual(next, row: row, index: 0))
+        #expect(!next.canOfferEasierWorkout)
+        // An unrelated initialized program in the same store has no performed history.
+        let config = try selectStarterProgram(choice: .upperBody, goal: .size, programID: UUID())
+        let rules = try RulesetCatalog.starter(.upperBody)
+        let slot = try WorkoutScheduler.nextSlot(onOrAfter: LocalDate(iso8601: "2026-10-10"), config: config)
+        let snapshot = try await f.repository.initialize(config: config, rules: rules, firstWorkout: slot)
+        let other = WorkoutViewModel(repository: f.repository, snapshot: snapshot, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        try await other.start(easierToday: false)
+        #expect(!other.canOfferEasierWorkout)
+        await f.repository.close()
+    }
     @Test func perSideReasonAndStaleSelection() throws {
         var entry = SetEntryDraft(left: "8", right: "6", reason: .effortLimit)
         #expect(entry.requiresReason(target: 8, repCounting: .perSide))

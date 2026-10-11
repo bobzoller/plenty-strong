@@ -209,6 +209,13 @@ import TrainingCore
     var programID: UUID { UUID(uuidString: snapshot.state.config.programID)! }
     var canDiscardDraft: Bool { submitted == nil && snapshot.draft?.logs.contains { $0.problem != .none } != true }
     var canChangePreparation: Bool { (submitted == nil || finished) && !(snapshot.draft?.hasObservations ?? false) }
+    var canOfferEasierWorkout: Bool {
+        canChangePreparation && snapshot.history.contains { envelope in
+            guard envelope.programID == snapshot.state.config.programID,
+                  case let .workout(event, _) = envelope.command else { return false }
+            return event.exercises.contains { !$0.actualSets.isEmpty }
+        }
+    }
     var needsDateChoice: Bool {
         guard let draft = snapshot.draft, draft.pendingFinish == nil, submitted == nil, !retainedOriginalDate,
               let today = try? CalendarContext(timeZoneID: draft.timeZoneID).localDate(at: now()) else { return false }

@@ -107,6 +107,9 @@ struct WorkoutView: View {
     @State private var reviewingPending = false
     @State private var repairingCompletion = false
     @State private var pendingActual: ActualSet?
+    @State private var preparationWeight: Load?
+    @State private var preparationWeightContext: String?
+    @State private var preparationWeightNeedsConfirmation = false
     private var rows: [ExercisePrescription] { model.snapshot.draft?.displayed.exercises ?? [] }
     private var forward: WorkoutStep? { model.snapshot.draft?.flow?.forward ?? model.visibleStep }
     private var currentRow: ExercisePrescription? {
@@ -196,13 +199,16 @@ struct WorkoutView: View {
         switch step {
         case let .introduction(id):
             if let row = rows.first(where: { $0.movementID == id }) {
-                ScrollView { VStack(alignment: .leading, spacing: 16) { WorkoutSessionModeLabel(model: model); introduction(row) }.padding() }.disabled(model.busy || model.snapshot.health != .ready)
+                ScrollView { VStack(alignment: .leading, spacing: 16) {
+                    if model.snapshot.draft?.sessionMode == .easier { WorkoutSessionModeLabel(model: model) }
+                    introduction(row)
+                }.padding() }.disabled(model.busy || model.snapshot.health != .ready)
                     .safeAreaInset(edge: .bottom) {
                         GuidedWorkoutFooter(model: model, row: row, pendingActual: $pendingActual) {
                         Button(row.sets.isEmpty ? (textSize.isAccessibilitySize ? "Review" : "Review outcome") : (textSize.isAccessibilitySize ? "Start" : "Start movement")) {
                             Task { await model.run { try await model.beginMovement(movementID: id) } }
                         }.buttonStyle(.borderedProminent).controlSize(.large).accessibilityLabel(row.sets.isEmpty ? "Review outcome" : "Start movement").accessibilityIdentifier("guided.next")
-                            .disabled(model.busy || model.snapshot.health != .ready || (!row.sets.isEmpty && model.movement(for: row).loadingMode == .externalLoad && model.log(for: id)?.actualLoad == nil))
+                            .disabled(model.busy || model.snapshot.health != .ready || (!row.sets.isEmpty && model.movement(for: row).loadingMode == .externalLoad && !preparationWeightIsConfirmed(for: row)))
                         }
                     }
             }
@@ -265,18 +271,36 @@ struct WorkoutView: View {
     }
     @ViewBuilder private func introduction(_ row: ExercisePrescription) -> some View {
         let metadata = model.movement(for: row), log = model.log(for: row.movementID)
+        let summary = MovementPrescriptionSummary.make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft)
         Text("\((rows.firstIndex(where: { $0.movementID == row.movementID }) ?? 0) + 1) of \(rows.count) · \(metadata.name ?? "Movement")").font(.title2)
         Text(row.modificationsSnapshot?.isEmpty == false ? row.modificationsSnapshot! : "Default setup").accessibilityIdentifier("movement.modifications")
+        VStack(alignment: .leading, spacing: 4) {
+            if !row.sets.isEmpty { Text("\(row.sets.count) sets").font(.headline) }
+            Text(MovementPrescriptionSummary.goal(row, policy: summary.policy, repCounting: metadata.repCounting))
+                .accessibilityIdentifier("movement.goal-reps")
+            if let instruction = row.sets.first?.effortInstruction { Text(instruction).accessibilityIdentifier("movement.instruction") }
+        }
         if metadata.loadingMode == .externalLoad {
-            if let prescribed = row.load { Text("Prescription: \(MovementPrescriptionSummary.load(prescribed)). Confirm the actual load below.") }
-            Text(log?.actualLoad.map { "Confirmed: \(MovementPrescriptionSummary.load($0))" } ?? "Confirm actual dumbbell load before recording sets")
-            if let prescribed = row.load { Button("Confirm prescribed load: \(MovementPrescriptionSummary.load(prescribed))") { Task { await model.run { try await model.confirmLoad(movementID: row.movementID, load: prescribed) } } }.accessibilityIdentifier("load.confirm-prescribed") }
-            ScrollView(.horizontal) { HStack { ForEach(metadata.availableLoads, id: \.amount) { load in
-                Button(MovementPrescriptionSummary.load(load)) { Task { await model.run { try await model.confirmLoad(movementID: row.movementID, load: load) } } }.accessibilityIdentifier("load.choose.\(load.amount)")
-            } } }
+            if !row.sets.isEmpty, log?.actualSets.isEmpty == true, log?.problem == Problem.none, !model.handled(row.movementID), row.kind != .paused {
+                Picker("Weight", selection: preparationWeightSelection(for: row)) {
+                    Text("Choose weight").tag(nil as Int?)
+                    ForEach(Array(metadata.availableLoads.enumerated()), id: \.offset) { index, load in
+                        Text(MovementPrescriptionSummary.load(load)).tag(Optional(index))
+                            .accessibilityIdentifier("load.option.\(load.amount)")
+                    }
+                }.pickerStyle(.menu).accessibilityIdentifier("load.picker")
+                Button(preparationWeightIsConfirmed(for: row) ? "Weight confirmed" : "Confirm weight") {
+                    confirmPreparationWeight(for: row)
+                }.buttonStyle(.bordered).accessibilityIdentifier("load.confirm")
+                    .disabled(selectedPreparationWeight(for: row) == nil || preparationWeightIsConfirmed(for: row))
+            } else if let load = log?.actualLoad {
+                Text("Weight: \(MovementPrescriptionSummary.load(load))").accessibilityIdentifier("load.recorded")
+            }
         } else { Text("Bodyweight / your setup — no numeric load is inferred") }
-        if model.canChangePreparation {
+        if model.canOfferEasierWorkout {
             Button("I need an easier workout today") { Task { await model.run { try await model.start(easierToday: true) } } }.accessibilityIdentifier("workout.easier")
+        }
+        if model.canChangePreparation {
             Button("Movement setup") { showingSetup = true }.accessibilityIdentifier("movement.setup")
         }
         if model.blockedWorkingMovementIDs.contains(row.movementID) { Text("Additional working sets are unavailable: a saved program has a pause or stricter effort reserve for this movement. Changing programs does not clear safety.").accessibilityIdentifier("movement.retained-safety") }
@@ -284,14 +308,56 @@ struct WorkoutView: View {
         else if model.snapshot.state.exercises[row.movementID]?.starterState?.doseStage == .established, row.phase == .baseline { Text("Ready for 3 sets; keep the same weight and establish your baseline.").accessibilityIdentifier("movement.established-baseline") }
         if row.phase == .baseline { Text("Baseline — this setup has its own starting point").accessibilityIdentifier("movement.baseline") }
         GuidedMovementCues(model: model, row: row)
-        PrescriptionComparisonView(summary: .make(row: row, state: model.snapshot.state, history: model.snapshot.history, draft: model.snapshot.draft), repCounting: metadata.repCounting)
+        if let prior = summary.prior {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Last time · \(prior.date.iso8601)").font(.headline)
+                Text(MovementPrescriptionSummary.reps(prior.actualSets, repCounting: metadata.repCounting)).accessibilityIdentifier("movement.last-reps")
+                if let load = prior.actualLoad { Text(MovementPrescriptionSummary.load(load)) }
+                ForEach(prior.contextLabels, id: \.self) { Text($0).font(.caption) }
+                if let skipped = prior.skippedSetIndices, !skipped.isEmpty { Text("Skipped sets: \(skipped.map { String($0 + 1) }.joined(separator: ", "))") }
+            }
+        }
         if row.kind == .paused { Text("Paused — no working sets. A new setup cannot clear the safety pause.").accessibilityIdentifier("movement.paused") }
         if row.kind == .setupReview {
             Text("Choose a manageable saved setup or create a new setup. Existing history and safety remain.")
             if model.canChangePreparation { Button("Review movement setup") { showingSetup = true }.accessibilityIdentifier("movement.review-setup") }
         }
-        Text("Stopping early to preserve effort or control is correct. Actual reps are recorded independently.")
         earlyActions(row)
+    }
+    private func preparationContext(for row: ExercisePrescription) -> String {
+        "\(model.snapshot.draft?.displayed.id ?? ""):\(row.movementID)"
+    }
+    private func selectedPreparationWeight(for row: ExercisePrescription) -> Load? {
+        let loads = model.movement(for: row).availableLoads
+        let selected = preparationWeightContext == preparationContext(for: row)
+            ? preparationWeight : model.log(for: row.movementID)?.actualLoad ?? row.load ?? loads.first
+        return selected.flatMap { loads.contains($0) ? $0 : nil }
+    }
+    private func preparationWeightIsConfirmed(for row: ExercisePrescription) -> Bool {
+        let log = model.log(for: row.movementID)
+        if log?.actualSets.isEmpty == false { return log?.actualLoad != nil }
+        guard let selected = selectedPreparationWeight(for: row), log?.actualLoad == selected else { return false }
+        return preparationWeightContext != preparationContext(for: row) || !preparationWeightNeedsConfirmation
+    }
+    /// Picker indices retain the exact catalog Load without floating-point conversion.
+    private func preparationWeightSelection(for row: ExercisePrescription) -> Binding<Int?> {
+        Binding(get: {
+            selectedPreparationWeight(for: row).flatMap { model.movement(for: row).availableLoads.firstIndex(of: $0) }
+        }, set: { index in
+            let loads = model.movement(for: row).availableLoads
+            preparationWeight = index.flatMap { loads.indices.contains($0) ? loads[$0] : nil }
+            preparationWeightContext = preparationContext(for: row)
+            preparationWeightNeedsConfirmation = true
+        })
+    }
+    private func confirmPreparationWeight(for row: ExercisePrescription) {
+        guard let load = selectedPreparationWeight(for: row) else { return }
+        let context = preparationContext(for: row)
+        Task { await model.run {
+            try await model.confirmLoad(movementID: row.movementID, load: load)
+            guard preparationContext(for: row) == context, selectedPreparationWeight(for: row) == load else { return }
+            preparationWeight = load; preparationWeightContext = context; preparationWeightNeedsConfirmation = false
+        } }
     }
     @ViewBuilder private func earlyActions(_ row: ExercisePrescription) -> some View {
         if !model.handled(row.movementID) {

@@ -4,7 +4,7 @@ final class OfflineAcceptanceTests: XCTestCase {
     @MainActor func testOptionalServicesDoNotGateWorkoutAndSameStoreResumes() {
         let app = XCUIApplication(); app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture", "history-10-10-9", "-cloud-disabled", "-products-unavailable"]
         app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
-        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.beginGuidedMovement(weight: "5")
         app.revealWorkoutControl(app.textFields["set.reps"])
         app.terminate(); app.launchArguments = ["-ui-testing", "-cloud-disabled", "-products-unavailable"]; app.launch()
         XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15))
@@ -89,7 +89,7 @@ extension OfflineAcceptanceTests {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-reset-local-store", "-fixture-exact-reps", "-cloud-disabled", "-products-unavailable"]
         app.launch(); XCTAssertTrue(app.buttons["today.start"].waitForExistence(timeout: 15)); app.tapReadyWorkoutStart()
-        app.beginGuidedMovement(loadID: "load.confirm-prescribed")
+        app.beginGuidedMovement()
         let input = app.textFields["set.reps"]
         app.revealWorkoutControl(input)
         XCTAssertTrue(input.isHittable); XCTAssertTrue(app.buttons["problem.pain"].isHittable); XCTAssertTrue(app.buttons["problem.control_lost"].isHittable)

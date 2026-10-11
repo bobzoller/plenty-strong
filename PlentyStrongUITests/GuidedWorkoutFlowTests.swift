@@ -2,6 +2,46 @@ import XCTest
 
 final class GuidedWorkoutFlowTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
+    @MainActor func testFirstPreparationHidesEmptyComparisonsAndNormalLabel() {
+        let app = launch(mode: "no-history")
+        XCTAssertFalse(app.buttons["workout.easier"].exists)
+        XCTAssertFalse(app.workoutText("workout.session-mode").exists)
+        XCTAssertFalse(app.workoutText("movement.first-workout").exists)
+        XCTAssertFalse(app.workoutText("movement.actual-reps").exists)
+        XCTAssertEqual(app.workoutText("movement.goal-reps").label, "8 / 8 / 8 reps")
+    }
+    @MainActor func testPreparationRequiresExplicitWeightConfirmationAndReconfirmation() {
+        let app = launch(mode: "no-history")
+        XCTAssertTrue(app.buttons["load.picker"].exists)
+        XCTAssertTrue(app.buttons["load.picker"].label.contains("40 lb per hand"))
+        XCTAssertFalse(app.buttons["guided.next"].isEnabled)
+        capture(app, "Compact first preparation with local unconfirmed weight")
+        app.tapWorkoutControl("load.confirm")
+        let confirmed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["guided.next"])
+        XCTAssertEqual(XCTWaiter.wait(for: [confirmed], timeout: 15), .completed)
+        app.selectGuidedWeight(amount: "10")
+        XCTAssertFalse(app.buttons["guided.next"].isEnabled)
+        app.selectGuidedWeight(amount: "40")
+        XCTAssertFalse(app.buttons["guided.next"].isEnabled, "Returning to the saved weight still requires a fresh confirmation")
+        app.tapWorkoutControl("load.confirm")
+        let reconfirmed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["guided.next"])
+        XCTAssertEqual(XCTWaiter.wait(for: [reconfirmed], timeout: 15), .completed)
+        app.tapWorkoutControl("workout.close"); app.terminate()
+        let resumed = launch(mode: "no-history", reset: false)
+        XCTAssertTrue(resumed.buttons["guided.next"].isEnabled, "Explicit durable confirmation survives resume")
+        resumed.tapWorkoutControl("guided.next")
+        XCTAssertTrue(resumed.textFields["set.reps"].waitForExistence(timeout: 15))
+    }
+    @MainActor func testBodyweightPreparationHasNoWeightPicker() {
+        let app = launch(mode: "per-side")
+        for _ in 0..<3 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
+        XCTAssertFalse(app.buttons["load.picker"].exists)
+        XCTAssertFalse(app.buttons["load.confirm"].exists)
+        XCTAssertTrue(app.buttons["guided.next"].isEnabled)
+        capture(app, "Bodyweight preparation without numeric weight controls")
+        app.beginGuidedMovement()
+        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 15))
+    }
     @MainActor private func launch(mode: String = "normal", reset: Bool = true, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-fixture-exact-reps", "-fixture-exact-mode", mode, "-cloud-disabled", "-products-unavailable"] + (reset ? ["-reset-local-store"] : []) + extra
@@ -13,7 +53,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         return app
     }
     @MainActor private func begin(_ app: XCUIApplication) {
-        app.tapWorkoutControl("load.confirm-prescribed")
+        app.tapWorkoutControl("load.confirm")
         app.tapWorkoutControl("guided.next")
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 15))
     }
@@ -42,7 +82,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
     @MainActor func testImmediatePerSideMissReasonClearsAndRequiresFreshAnswer() {
         let app = launch(mode: "per-side")
         for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.tapWorkoutControl("summary.confirm") }
-        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.beginGuidedMovement(weight: "5")
         app.enterPerformedReps("8", field: "set.left-reps")
         app.enterPerformedReps("6", field: "set.right-reps")
         XCTAssertTrue(app.buttons["reason.effort_limit"].exists)
@@ -238,7 +278,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
     @MainActor func testStoppedRawCorrectionKeepsMissingSideZeroAndNoInventedReason() {
         let app = launch(mode: "per-side")
         for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
-        app.beginGuidedMovement(loadID: "load.choose.5")
+        app.beginGuidedMovement(weight: "5")
         app.enterPerformedReps("7", field: "set.left-reps")
         app.buttons["problem.control_lost"].tap()
         XCTAssertTrue(app.staticTexts["movement.stopped"].waitForExistence(timeout: 15))
