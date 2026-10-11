@@ -100,12 +100,16 @@ private struct WorkoutSheetPresentationModifier: ViewModifier {
         content.sheet(isPresented: Binding(get: { owner.showingWorkout }, set: { shown in
             owner.showingWorkout = shown
             if !shown {
-                Task { await navigation.dismissed(isCurrentOwner: { owner.workout === model }, restorePresentation: { owner.showingWorkout = true }) }
+                let attempt = navigation.beginDismissal()
+                Task { await navigation.dismissed(attempt: attempt, isCurrentOwner: { owner.workout === model }, isStillDismissed: { !owner.showingWorkout }, restorePresentation: { owner.showingWorkout = true }) }
             }
         })) {
             WorkoutView(model: model, close: { navigation.clearReview(); owner.showingWorkout = false }, navigation: navigation)
                 .modifier(SyntheticAccessibilityOverrides())
                 .presentationDetents([.large]).presentationDragIndicator(.visible)
+        }
+        .onChange(of: owner.showingWorkout) { _, shown in
+            if shown { navigation.presentationReopened() }
         }
     }
 }

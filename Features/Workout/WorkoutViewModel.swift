@@ -54,6 +54,16 @@ import TrainingCore
     private var settingScratchEntry = false
     private var scratchBase: Task<UInt64, any Error>?
     private var scratchWrite: Task<Void, any Error>?
+    /// Transient UI ownership, including edits that intentionally return to blank.
+    struct EntryOwnership: Equatable {
+        fileprivate let epoch: UInt64
+        fileprivate let generation: UInt64
+        fileprivate let step: WorkoutStep?
+        fileprivate let key: WorkoutScratchKey?
+    }
+    var entryOwnership: EntryOwnership {
+        EntryOwnership(epoch: scratchEpoch, generation: scratchGeneration, step: visibleStep, key: currentScratchKey())
+    }
 
     /// Configuration happens before a composition publishes a new model.
     func configureScratch(store: WorkoutScratchStore?, storeID: String?) {
@@ -96,7 +106,7 @@ import TrainingCore
             let base = scratchBase, generation = scratchGeneration
             let task = Task { try await store.invalidate(draftID: old.draftID, throughGeneration: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: generation)) }
             scratchWrite = task
-            surfaceScratchFailure(task, epoch: scratchEpoch)
+            surfaceScratchFailure(task, ownership: entryOwnership)
         }
         scratchContext = next
         if scratchDraftID != snapshot.draft?.id {
@@ -117,32 +127,57 @@ import TrainingCore
         let entry = entryDraft, ordinal = scratchGeneration, base = scratchBase
         let task = Task { try await store.save(WorkoutScratch(generation: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: ordinal), key: key, entry: entry)) }
         scratchWrite = task
-        surfaceScratchFailure(task, epoch: scratchEpoch)
+        surfaceScratchFailure(task, ownership: entryOwnership)
     }
-    private func surfaceScratchFailure(_ task: Task<Void, any Error>, epoch: UInt64) {
+    private func surfaceScratchFailure(_ task: Task<Void, any Error>, ownership: EntryOwnership) {
         Task { [weak self] in
             do { try await task.value }
             catch {
-                guard let self, self.scratchEpoch == epoch else { return }
+                guard let self, self.operations.contextEnabled, self.entryOwnership == ownership else { return }
                 self.errorText = "Workout input could not be saved locally. Your entered text is retained. \(error)"
             }
         }
     }
     func flushScratch() async throws {
+        let ownership = entryOwnership
         queueScratchSave()
         do { try await scratchWrite?.value }
-        catch { errorText = "Workout input could not be saved locally. Your entered text is retained. \(error)"; throw error }
+        catch {
+            if operations.contextEnabled, entryOwnership == ownership, !Task.isCancelled {
+                errorText = "Workout input could not be saved locally. Your entered text is retained. \(error)"
+            }
+            throw error
+        }
     }
     func suspendScratch() { scratchEpoch += 1 }
-    func restoreScratch() async throws {
-        guard let store = scratchStore, let key = currentScratchKey() else { return }
+    @discardableResult func restoreScratch() async throws -> Bool {
+        guard let store = scratchStore, let key = currentScratchKey() else { return false }
         let epoch = scratchEpoch, ordinal = scratchGeneration
         let restored = try await store.load(key: key)
-        guard operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key, let restored else { return }
+        guard !Task.isCancelled, operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key, let restored else { return false }
         // The persisted watermark was captured before any new text writes.
         _ = try await scratchBase?.value
-        guard operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key else { return }
+        guard !Task.isCancelled, operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key else { return false }
         settingScratchEntry = true; entryDraft = restored.entry; settingScratchEntry = false
+        return true
+    }
+    /// Opens recorded correction input; called by the correction screen's task.
+    func openCorrectionEntry(movementID: String, index: Int) async -> Bool {
+        guard !Task.isCancelled, operations.contextEnabled, reviewStep == .set(movementID: movementID, index: index),
+              let actual = log(for: movementID)?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element else { return false }
+        let ownership = entryOwnership
+        var restored = false
+        do { restored = try await restoreScratch() }
+        catch {
+            guard !Task.isCancelled, operations.contextEnabled, entryOwnership == ownership else { return false }
+            errorText = "Correction input could not be opened. Saved observations are retained. \(error)"
+        }
+        guard !Task.isCancelled, operations.contextEnabled, entryOwnership == ownership,
+              log(for: movementID)?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element == actual else { return false }
+        if !restored, entryDraft == SetEntryDraft() {
+            entryDraft = SetEntryDraft(reps: String(actual.reps), left: actual.leftReps.map(String.init) ?? "", right: actual.rightReps.map(String.init) ?? "", reason: actual.missedGoalReason)
+        }
+        return true
     }
     private func removeScratch(draftID: UUID) async {
         guard let store = scratchStore else { return }

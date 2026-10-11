@@ -84,13 +84,10 @@ struct SetEntryView: View {
         }
         .onChange(of: model.entryDraft.reason) { pendingActual = observation }
         .task {
-            if !retainsOpenedEntry, let index = correctionIndex,
-               let actual = model.log(for: row.movementID)?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element {
-                do { try await model.restoreScratch() } catch { model.errorText = "Correction input could not be opened. Saved observations are retained. \(error)" }
-                if model.entryDraft == SetEntryDraft() {
-                    model.entryDraft = SetEntryDraft(reps: String(actual.reps), left: actual.leftReps.map(String.init) ?? "", right: actual.rightReps.map(String.init) ?? "", reason: actual.missedGoalReason)
-                }
+            if !retainsOpenedEntry, let index = correctionIndex {
+                guard await model.openCorrectionEntry(movementID: row.movementID, index: index) else { return }
             }
+            guard !Task.isCancelled else { return }
             pendingActual = observation
         }
         .safeAreaInset(edge: .bottom) {

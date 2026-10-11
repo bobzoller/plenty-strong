@@ -277,6 +277,253 @@ import TrainingCore
         #expect(!pending.isEmpty && pending.allSatisfy { !String(decoding: $0.payload, as: UTF8.self).contains("unfinished 8") })
         await reopenedRepository.close()
     }
+    private func recordedCorrectionFixture(store: WorkoutScratchStore) async throws -> (GuidedWorkoutFixture, WorkoutViewModel, String) {
+        let f = try await GuidedWorkoutFixture.make()
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        try await f.model.confirmLoad(movementID: row.movementID, load: #require(f.model.movement(for: row).availableLoads.first))
+        try await f.model.beginMovement(movementID: row.movementID)
+        try await f.model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 9, missedGoalReason: .effortLimit))
+        try await f.model.advanceRest()
+        try await f.model.recordSet(movementID: row.movementID, index: 1, actual: ActualSet(reps: 10))
+        try await f.model.advanceRest()
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: "real")
+        model.reviewStep = .set(movementID: row.movementID, index: 0)
+        return (f, model, row.movementID)
+    }
+    @Test func delayedCorrectionOpenerCannotAdoptAfterNavigationClearingOrCancellation() async throws {
+        for scenario in ["working", "other correction", "cleared", "cancelled", "obsolete error"] {
+            let url = directory(), store = WorkoutScratchStore(directory: url)
+            let (f, model, id) = try await recordedCorrectionFixture(store: store)
+            let before = model.snapshot, delay = ScratchNavigationDelay()
+            await store.setBeforeLoadForTesting { await delay.holdFirst() }
+            let opening = Task { await model.openCorrectionEntry(movementID: id, index: 0) }
+            await delay.waitUntilEntered()
+            switch scenario {
+            case "working", "obsolete error":
+                model.reviewStep = nil
+                #expect(model.visibleStep == .set(movementID: id, index: 2))
+            case "other correction":
+                model.reviewStep = .set(movementID: id, index: 1)
+                #expect(await model.openCorrectionEntry(movementID: id, index: 1))
+            case "cleared":
+                model.entryDraft = SetEntryDraft(reps: "edited", reason: .timeInterruption)
+                model.entryDraft = SetEntryDraft()
+            default: opening.cancel()
+            }
+            if scenario == "obsolete error" {
+                try await model.flushScratch() // Finish the new context's invalidation before load-only corruption.
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                let draftID = try #require(model.snapshot.draft?.id)
+                try Data("invalid scratch".utf8).write(to: url.appendingPathComponent(draftID.uuidString.lowercased() + ".json"))
+            }
+            let expected = model.entryDraft
+            await delay.release()
+            #expect(await opening.value == false, "Obsolete opener: \(scenario)")
+            #expect(model.entryDraft == expected, "No old recorded actuals/reason: \(scenario)")
+            #expect(model.errorText == nil, "No obsolete opener error: \(scenario)")
+            #expect(model.snapshot == before)
+            #expect(try await f.repository.snapshot(programID: model.programID) == before)
+            await f.repository.close()
+        }
+    }
+    @Test func delayedDismissCannotReplaceSameOwnerReopenedInputOrNavigation() async throws {
+        for fails in [false, true] {
+            for action in ["reopen", "edit", "back", "resume"] {
+                let url = directory(), store = WorkoutScratchStore(directory: url)
+                let (f, model, id) = try await recordedCorrectionFixture(store: store)
+                let navigation = WorkoutReviewNavigation(model: model)
+                navigation.path = [.summary(id), .correction(id, 0)]
+                model.entryDraft = SetEntryDraft(reps: "dismissed text", reason: .effortLimit)
+                try await model.flushScratch()
+                let before = model.snapshot, delay = ScratchNavigationDelay()
+                await store.setBeforeSaveForTesting { await delay.holdFirst() }
+                var shown = false, restored = false
+                let dismissal = Task { await navigation.dismissed(isCurrentOwner: { true }, restorePresentation: { shown = true; restored = true }) }
+                await delay.waitUntilEntered()
+                shown = true
+                navigation.presentationReopened() // Same retained coordinator's new presentation.
+                if action == "edit" { model.entryDraft = SetEntryDraft(reps: "new resumed text", reason: .timeInterruption) }
+                if action == "back" {
+                    let old = navigation.path
+                    navigation.path.removeLast()
+                    await navigation.nativeBack(from: old, to: navigation.path)
+                }
+                if action == "resume" {
+                    try await model.resumeGuidedWorkout()
+                    navigation.clearReview()
+                    try await navigation.push(.summary(id))
+                    try await navigation.push(.correction(id, 1))
+                    #expect(await model.openCorrectionEntry(movementID: id, index: 1))
+                    model.entryDraft = SetEntryDraft(reps: "resumed different correction")
+                    try await model.flushScratch()
+                }
+                let expectedEntry = model.entryDraft, expectedStep = model.visibleStep, expectedPath = navigation.path
+                if fails {
+                    try FileManager.default.removeItem(at: url)
+                    try Data("file instead of directory".utf8).write(to: url)
+                }
+                await delay.release(); await dismissal.value
+                #expect(shown && !restored, "Old dismissal must not restore: \(fails)/\(action)")
+                #expect(navigation.path == expectedPath && model.visibleStep == expectedStep)
+                #expect(model.entryDraft == expectedEntry)
+                #expect(!navigation.retainsCorrectionEntry)
+                #expect(model.snapshot == before)
+                #expect(try await f.repository.snapshot(programID: model.programID) == before)
+                await f.repository.close()
+            }
+        }
+    }
+
+    @Test func correctionOpeningPreservesSavedBlankAndCancelledRestoration() async throws {
+        let store = WorkoutScratchStore(directory: directory())
+        let (f, model, id) = try await recordedCorrectionFixture(store: store)
+        let before = model.snapshot
+        #expect(await model.openCorrectionEntry(movementID: id, index: 0))
+        #expect(model.entryDraft == SetEntryDraft(reps: "9", reason: .effortLimit))
+        model.entryDraft = SetEntryDraft()
+        try await model.flushScratch()
+        #expect(await model.openCorrectionEntry(movementID: id, index: 0))
+        #expect(model.entryDraft == SetEntryDraft(), "Persisted deliberate blank is input intent")
+        model.entryDraft = SetEntryDraft(reps: "saved correction")
+        try await model.flushScratch()
+        let other = WorkoutViewModel(repository: f.repository, snapshot: before, timeZoneID: model.timeZoneID,
+            now: model.now, scratchStore: store, scratchStoreID: "real")
+        other.reviewStep = .set(movementID: id, index: 0)
+        let delay = ScratchNavigationDelay()
+        await store.setBeforeLoadForTesting { await delay.holdFirst() }
+        let opening = Task { await other.openCorrectionEntry(movementID: id, index: 0) }
+        await delay.waitUntilEntered(); opening.cancel(); await delay.release()
+        #expect(await opening.value == false)
+        #expect(other.entryDraft == SetEntryDraft() && other.errorText == nil)
+        #expect(other.snapshot == before && model.snapshot == before)
+        await f.repository.close()
+    }
+    @Test func delayedDismissInputRevisionPreservesClearedIntentWithoutReopening() async throws {
+        for fails in [false, true] {
+            let url = directory(), store = WorkoutScratchStore(directory: url)
+            let (f, model, id) = try await recordedCorrectionFixture(store: store)
+            let navigation = WorkoutReviewNavigation(model: model)
+            navigation.path = [.summary(id), .correction(id, 0)]
+            model.entryDraft.reps = "pre-dismiss input"
+            try await model.flushScratch()
+            let delay = ScratchNavigationDelay(), before = model.snapshot, expectedPath = navigation.path
+            await store.setBeforeSaveForTesting { await delay.holdFirst() }
+            let attempt = navigation.beginDismissal()
+            var restored = false
+            let dismissal = Task { await navigation.dismissed(attempt: attempt, isCurrentOwner: { true }, restorePresentation: { restored = true }) }
+            await delay.waitUntilEntered()
+            model.entryDraft.reps = "new intent"
+            model.entryDraft = SetEntryDraft()
+            try await model.flushScratch()
+            if fails {
+                try FileManager.default.removeItem(at: url)
+                try Data("file instead of directory".utf8).write(to: url)
+            }
+            await delay.release(); await dismissal.value
+            #expect(!restored && !navigation.retainsCorrectionEntry)
+            #expect(navigation.path == expectedPath && model.reviewStep == .set(movementID: id, index: 0))
+            #expect(model.entryDraft == SetEntryDraft() && model.errorText == nil)
+            #expect(model.snapshot == before)
+            await f.repository.close()
+        }
+    }
+    @Test func delayedDismissBindingReopenRejectsCallbackBeforePresentationNotification() async throws {
+        for fails in [false, true] {
+            let url = directory(), store = WorkoutScratchStore(directory: url)
+            let (f, model, id) = try await recordedCorrectionFixture(store: store)
+            let navigation = WorkoutReviewNavigation(model: model)
+            navigation.path = [.summary(id), .correction(id, 0)]
+            model.entryDraft.reps = "retained correction"
+            try await model.flushScratch()
+            let expected = model.entryDraft, expectedPath = navigation.path, before = model.snapshot
+            let delay = ScratchNavigationDelay()
+            await store.setBeforeSaveForTesting { await delay.holdFirst() }
+            let attempt = navigation.beginDismissal() // Same synchronous capture as the sheet binding.
+            var shown = false, restored = false
+            let dismissal = Task {
+                await navigation.dismissed(attempt: attempt, isCurrentOwner: { true }, isStillDismissed: { !shown }, restorePresentation: { shown = true; restored = true })
+            }
+            await delay.waitUntilEntered()
+            shown = true // Reopened binding; SwiftUI's presentationReopened notification has not run.
+            if fails {
+                try FileManager.default.removeItem(at: url)
+                try Data("file instead of directory".utf8).write(to: url)
+            }
+            await delay.release(); await dismissal.value
+            #expect(shown && !restored && !navigation.retainsCorrectionEntry)
+            #expect(navigation.path == expectedPath && model.entryDraft == expected)
+            #expect(model.reviewStep == .set(movementID: id, index: 0) && model.snapshot == before)
+            await f.repository.close()
+        }
+    }
+    @Test func sameOwnerResumeAlignsOnlyStalePathAndPreservesForwardInput() async throws {
+        for fails in [false, true] {
+            let url = directory(), store = WorkoutScratchStore(directory: url)
+            let (f, model, id) = try await recordedCorrectionFixture(store: store)
+            let navigation = WorkoutReviewNavigation(model: model)
+            let old: [WorkoutReviewRoute] = [.summary(id), .correction(id, 0)]
+            navigation.path = old
+            model.entryDraft.reps = "old correction"
+            try await model.flushScratch()
+            let delay = ScratchNavigationDelay(), before = model.snapshot
+            await store.setBeforeSaveForTesting { await delay.holdFirst() }
+            var shown = false, restored = false
+            let attempt = navigation.beginDismissal()
+            let dismissal = Task { await navigation.dismissed(attempt: attempt, isCurrentOwner: { true }, isStillDismissed: { !shown }, restorePresentation: { shown = true; restored = true }) }
+            await delay.waitUntilEntered()
+            try await model.resumeGuidedWorkout()
+            #expect(model.reviewStep == nil && model.visibleStep == .set(movementID: id, index: 2))
+            model.entryDraft.reps = "new forward input"
+            try await model.flushScratch()
+            let forwardEntry = model.entryDraft
+            shown = true; navigation.presentationReopened()
+            #expect(navigation.path.isEmpty && !navigation.retainsCorrectionEntry)
+            #expect(!navigation.ownsNativeBack(from: old))
+            #expect(model.entryDraft == forwardEntry)
+            if fails {
+                try FileManager.default.removeItem(at: url)
+                try Data("file instead of directory".utf8).write(to: url)
+                // SwiftUI may observe this programmatic path change after presentation.
+                await navigation.nativeBack(from: old, to: [])
+                #expect(navigation.path.isEmpty && model.reviewStep == nil)
+                #expect(model.entryDraft == forwardEntry)
+            }
+            await delay.release(); await dismissal.value
+            #expect(shown && !restored && navigation.path.isEmpty)
+            #expect(model.reviewStep == nil && model.entryDraft == forwardEntry && model.snapshot == before)
+            #expect(try await f.repository.snapshot(programID: model.programID) == before)
+            await f.repository.close()
+        }
+    }
+    @Test func correctionSaveReturnsToUnconfirmedForwardSummaryWithoutReplay() async throws {
+        let store = WorkoutScratchStore(directory: directory())
+        let (f, model, id) = try await recordedCorrectionFixture(store: store)
+        model.reviewStep = nil
+        try await model.recordSet(movementID: id, index: 2, actual: ActualSet(reps: 10))
+        #expect(model.visibleStep == .summary(movementID: id))
+        let issued = model.snapshot.draft!.displayed, history = model.snapshot.history
+        let navigation = WorkoutReviewNavigation(model: model)
+        try await navigation.push(.correction(id, 0))
+        model.entryDraft.reps = "10"
+        try await model.correctSet(movementID: id, index: 0, replacement: ActualSet(reps: 10), operationID: UUID())
+        #expect(model.reviewStep == .summary(movementID: id))
+        let old = navigation.path
+        navigation.path.removeLast() // The correction Save callback, followed by native path observation.
+        #expect(navigation.ownsNativeBack(from: old))
+        await navigation.nativeBack(from: old, to: navigation.path)
+        #expect(navigation.path.isEmpty && model.reviewStep == nil)
+        #expect(model.visibleStep == .summary(movementID: id))
+        #expect(model.log(for: id)?.actualSets.map { $0.reps } == [10, 10, 10])
+        #expect(model.snapshot.draft?.displayed == issued && model.snapshot.history == history)
+        try await model.confirmMovementSummary(movementID: id, effort: .unknown, status: .completed, reviewing: false)
+        #expect(model.snapshot.draft?.flow?.reviewedSummaryMovementIDs.contains(id) == true)
+        #expect(model.log(for: id)?.actualSets.count == 3 && model.log(for: id)?.status == .completed)
+        #expect(model.snapshot.draft?.displayed == issued && model.snapshot.history == history)
+        #expect(try await f.repository.snapshot(programID: model.programID) == model.snapshot)
+        await f.repository.close()
+    }
+
     @Test func nativeBackFlushFailureRestoresPageTextAndDurableCursor() async throws {
         let f = try await GuidedWorkoutFixture.make()
         let broken = directory()
@@ -327,6 +574,7 @@ import TrainingCore
         var shown = false
         navigation.invalidate() // The presented view disappeared; its container keeps this coordinator.
         await navigation.dismissed(isCurrentOwner: { true }, restorePresentation: { shown = true })
+        navigation.presentationReopened()
         #expect(shown && navigation.path == route && navigation.retainsCorrectionEntry)
         #expect(model.visibleStep == .set(movementID: id, index: 0))
         #expect(model.entryDraft == SetEntryDraft(reps: "unfinished correction", reason: .effortLimit))

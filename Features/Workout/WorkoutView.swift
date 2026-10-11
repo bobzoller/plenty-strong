@@ -7,15 +7,33 @@ import TrainingCore
     var path: [WorkoutReviewRoute] = []
     var retainsCorrectionEntry = false
     private var epoch = 0
+    struct DismissalAttempt {
+        fileprivate let epoch: Int
+        fileprivate let ownership: WorkoutViewModel.EntryOwnership
+        fileprivate let path: [WorkoutReviewRoute]
+        fileprivate let entry: SetEntryDraft
+    }
     init(model: WorkoutViewModel) { self.model = model }
     func invalidate() { epoch += 1 }
-    private func adopt(_ route: WorkoutReviewRoute?) {
-        switch route {
-        case let .summary(id): model.reviewStep = .summary(movementID: id)
-        case let .correction(id, index): model.reviewStep = .set(movementID: id, index: index)
-        case nil: model.reviewStep = nil
+    func presentationReopened() {
+        invalidate()
+        if Self.step(for: path.last) != model.reviewStep {
+            // Resume owns the forward input; discard only obsolete native review chrome.
+            path = []; retainsCorrectionEntry = false
         }
     }
+    func beginDismissal() -> DismissalAttempt {
+        epoch += 1
+        return DismissalAttempt(epoch: epoch, ownership: model.entryOwnership, path: path, entry: model.entryDraft)
+    }
+    private static func step(for route: WorkoutReviewRoute?) -> WorkoutStep? {
+        switch route {
+        case let .summary(id): .summary(movementID: id)
+        case let .correction(id, index): .set(movementID: id, index: index)
+        case nil: nil
+        }
+    }
+    private func adopt(_ route: WorkoutReviewRoute?) { model.reviewStep = Self.step(for: route) }
     func push(_ route: WorkoutReviewRoute) async throws {
         epoch += 1; let token = epoch
         try await model.flushScratch()
@@ -25,21 +43,35 @@ import TrainingCore
     func clearReview() {
         epoch += 1; path = []; retainsCorrectionEntry = false; model.reviewStep = nil
     }
-    func dismissed(isCurrentOwner: () -> Bool, restorePresentation: () -> Void) async {
+    func dismissed(attempt: DismissalAttempt? = nil, isCurrentOwner: () -> Bool, isStillDismissed: () -> Bool = { true }, restorePresentation: () -> Void) async {
         guard model.operations.contextEnabled, isCurrentOwner() else { return }
-        let entered = model.entryDraft
+        let attempt = attempt ?? beginDismissal()
+        func ownsDismissal() -> Bool {
+            !Task.isCancelled && model.operations.contextEnabled && isCurrentOwner() && isStillDismissed()
+                && attempt.epoch == epoch && attempt.ownership == model.entryOwnership && attempt.path == path
+        }
+        guard ownsDismissal() else { return }
         do {
             try await model.flushScratch()
-            guard model.operations.contextEnabled, isCurrentOwner() else { return }
+            guard ownsDismissal() else { return }
             clearReview()
         } catch {
-            guard model.operations.contextEnabled, isCurrentOwner() else { return }
-            model.entryDraft = entered; retainsCorrectionEntry = true
+            guard ownsDismissal() else { return }
+            model.entryDraft = attempt.entry; retainsCorrectionEntry = true
             model.errorText = "Workout input could not be saved. Your text is retained. Retry closing after saving. \(error.localizedDescription)"
             restorePresentation()
         }
     }
+    func ownsNativeBack(from oldPath: [WorkoutReviewRoute]) -> Bool {
+        guard let current = model.reviewStep else { return false }
+        if current == Self.step(for: oldPath.last) { return true }
+        // correctSet adopts Summary before its Save callback pops native Correction.
+        if case let .correction(id, _) = oldPath.last, current == .summary(movementID: id) { return true }
+        return false
+    }
     func nativeBack(from oldPath: [WorkoutReviewRoute], to newPath: [WorkoutReviewRoute]) async {
+        // A programmatic Resume/correction context change already owns the new page.
+        guard ownsNativeBack(from: oldPath) else { return }
         epoch += 1; let token = epoch
         let oldStep = model.reviewStep, entered = model.entryDraft
         do { try await model.flushScratch() }
@@ -153,12 +185,11 @@ struct WorkoutView: View {
             Button("Discard and restart", role: .destructive) { Task { await model.run { try await model.resolveDateChange(keepOriginal: false); close() } } }
         }
         .onChange(of: path) { oldPath, newPath in
-            if newPath.count < oldPath.count {
+            if newPath.count < oldPath.count, navigation.ownsNativeBack(from: oldPath) {
                 dismissKeyboard()
                 Task { await navigation.nativeBack(from: oldPath, to: newPath); pendingActual = nil }
             }
         }
-        .onDisappear { navigation.invalidate() }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: String(describing: forward))
     }
     @ViewBuilder private func stepView(_ step: WorkoutStep?) -> some View {
