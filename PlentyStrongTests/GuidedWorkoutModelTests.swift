@@ -26,6 +26,106 @@ import TrainingCore
         let sides = model.movement(for: row).repCounting == .perSide
         return ActualSet(reps: reps, leftReps: sides ? reps : nil, rightReps: sides ? reps : nil)
     }
+    private func skipBefore(_ model: WorkoutViewModel, movementID: String) async throws {
+        for row in model.snapshot.draft!.displayed.exercises.prefix(while: { $0.movementID != movementID }) {
+            try await model.recordStatus(movementID: row.movementID, status: .skipped)
+            try await model.confirmMovementSummary(movementID: row.movementID, effort: nil, status: .skipped, reviewing: false)
+        }
+    }
+    @Test func introductionRequiresConfirmedLoadAndPreservesBodyweightNullLoad() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+        #expect(model.movement(for: row).loadingMode == .externalLoad)
+        let original = model.snapshot
+        do { try await model.beginMovement(movementID: row.movementID); Issue.record("Intro admitted missing actual load") }
+        catch let error as EngineError { #expect(error.code == "load_confirmation_required") }
+        #expect(model.snapshot == original && model.visibleStep == original.draft?.flow?.forward)
+        #expect(try await f.repository.snapshot(programID: model.programID) == original)
+        try await confirmLoad(model, row: row)
+        try await model.beginMovement(movementID: row.movementID)
+        #expect(model.visibleStep == .set(movementID: row.movementID, index: 0))
+        await f.repository.close()
+
+        let body = try await StarterRepositoryTestHarness.make(choice: .wholeBodyGlutes, goal: .size)
+        let clock = ISO8601DateFormatter().date(from: "2026-10-11T20:00:00Z")!
+        let bodyModel = WorkoutViewModel(repository: body.repository, snapshot: body.initial, timeZoneID: "Pacific/Honolulu", now: { clock })
+        try await bodyModel.start(easierToday: false)
+        let externalID = try #require(bodyModel.snapshot.state.config.activeVariantIDs?["db_floor_glute_bridge"])
+        try await bodyModel.selectBridgeLoadingMode(variantID: externalID, mode: .bodyweight)
+        let bodyRow = try #require(bodyModel.snapshot.draft!.displayed.exercises.first { bodyModel.movement(for: $0).loadingMode == .bodyweight && !$0.sets.isEmpty })
+        try await skipBefore(bodyModel, movementID: bodyRow.movementID)
+        #expect(bodyModel.log(for: bodyRow.movementID)?.actualLoad == nil)
+        try await bodyModel.beginMovement(movementID: bodyRow.movementID)
+        #expect(bodyModel.visibleStep == .set(movementID: bodyRow.movementID, index: 0))
+        #expect(bodyModel.log(for: bodyRow.movementID)?.actualLoad == nil)
+        await body.repository.close()
+    }
+    @Test func introductionRejectsReviewedHandlingMismatchWithoutChangingDraft() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .wholeBodyGlutes, goal: .strength)
+        let clock = ISO8601DateFormatter().date(from: "2026-10-11T20:00:00Z")!
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu", now: { clock })
+        try await model.start(easierToday: false)
+        let id = try #require(model.snapshot.state.config.activeVariantIDs?["incline_db_press_30"])
+        let reviewed = Load(amount: "15", unit: .lb, basis: .perImplement)
+        try await model.reviewStrengthHandling(variantID: id, choice: .lowRep(load: reviewed))
+        try await skipBefore(model, movementID: id)
+        var mismatched = try #require(model.snapshot.draft)
+        let i = try #require(mismatched.logs.firstIndex { $0.movementID == id })
+        // A supported legacy/imported draft can carry a catalog load that differs
+        // from its admitted low-rep handling choice. Intro must recheck it.
+        mismatched.logs[i].actualLoad = Load(amount: "20", unit: .lb, basis: .perImplement)
+        let original = try await s.repository.saveDraft(mismatched)
+        let resumed = WorkoutViewModel(repository: s.repository, snapshot: original, timeZoneID: model.timeZoneID, now: { clock })
+        do { try await resumed.beginMovement(movementID: id); Issue.record("Intro bypassed reviewed handling") }
+        catch let error as EngineError { #expect(error.code == "handling_load_mismatch") }
+        #expect(resumed.snapshot == original && resumed.visibleStep == original.draft?.flow?.forward)
+        #expect(try await s.repository.snapshot(programID: resumed.programID) == original)
+        try await resumed.confirmLoad(movementID: id, load: reviewed)
+        try await resumed.beginMovement(movementID: id)
+        #expect(resumed.visibleStep == .set(movementID: id, index: 0))
+        await s.repository.close()
+    }
+    @Test func emptySetupReviewIntroductionAndExplicitSkipNeedNoActualLoad() async throws {
+        let s = try await StarterRepositoryTestHarness.make(choice: .wholeBodyGlutes, goal: .strength)
+        let clock = ISO8601DateFormatter().date(from: "2026-10-11T20:00:00Z")!
+        let model = WorkoutViewModel(repository: s.repository, snapshot: s.initial, timeZoneID: "Pacific/Honolulu", now: { clock })
+        try await model.start(easierToday: false)
+        let row = try #require(model.snapshot.draft!.displayed.exercises.first { $0.kind == .setupReview && $0.sets.isEmpty })
+        try await skipBefore(model, movementID: row.movementID)
+        #expect(model.log(for: row.movementID)?.actualLoad == nil)
+        try await model.beginMovement(movementID: row.movementID)
+        #expect(model.visibleStep == .summary(movementID: row.movementID))
+        try await model.confirmMovementSummary(movementID: row.movementID, effort: nil, status: .skipped, reviewing: false)
+        #expect(model.log(for: row.movementID)?.actualLoad == nil && model.log(for: row.movementID)?.actualSets.isEmpty == true)
+        await s.repository.close()
+    }
+    @Test(arguments: [false, true], [false, true]) func unacknowledgedDeclaredStoppedSummaryCannotRelabel(emptyAcknowledgements: Bool, performed: Bool) async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        var draft = try await s.draft(empty: true)
+        for i in draft.logs.indices { draft.logs[i].status = .partial }
+        draft.acknowledgedMovementIDs = emptyAcknowledgements ? [] : nil
+        draft.logs[0].status = .stopped
+        if performed { draft.logs[0].actualSets = s.firstEvent.exercises[0].actualSets }
+        draft.workingSetsStarted = performed
+        let original = try await s.repository.saveDraft(draft)
+        let clock = ISO8601DateFormatter().date(from: "2026-10-04T20:00:00Z")!
+        let model = WorkoutViewModel(repository: s.repository, snapshot: original, timeZoneID: "Pacific/Honolulu", now: { clock })
+        try await model.resumeGuidedWorkout()
+        #expect(model.snapshot == original && model.log(for: draft.logs[0].movementID)?.problem == Problem.none)
+        let id = draft.logs[0].movementID
+        for status in [performed ? LogStatus.completed : .skipped, .partial] {
+            do { try await model.confirmMovementSummary(movementID: id, effort: .onTarget, status: status, reviewing: false); Issue.record("Declared stopped work relabelled") }
+            catch let error as EngineError { #expect(error.code == "movement_stopped") }
+            #expect(model.snapshot == original)
+            #expect(try await s.repository.snapshot(programID: model.programID) == original)
+        }
+        try await model.confirmMovementSummary(movementID: id, effort: .onTarget, status: .stopped, reviewing: false)
+        #expect(model.log(for: id)?.status == .stopped && model.log(for: id)?.actualSets == draft.logs[0].actualSets)
+        #expect(model.log(for: id)?.problem == Problem.none && model.log(for: id)?.effortScope == draft.logs[0].effortScope)
+        #expect(model.snapshot.draft?.acknowledgedMovementIDs?.contains(id) == true)
+        #expect(model.snapshot.draft?.flow?.reviewedSummaryMovementIDs.contains(id) == true)
+        await s.repository.close()
+    }
     @Test func setRestSummaryAndBackAreExactlyOnce() async throws {
         let f = try await GuidedWorkoutFixture.make()
         let model = f.model, row = try #require(model.snapshot.draft?.displayed.exercises.first)
@@ -63,6 +163,7 @@ import TrainingCore
     @Test func allSkippedHasNoTimerOrRequiredEffort() async throws {
         let f = try await GuidedWorkoutFixture.make()
         for row in f.model.snapshot.draft!.displayed.exercises {
+            try await confirmLoad(f.model, row: row)
             try await f.model.beginMovement(movementID: row.movementID)
             for index in row.sets.indices { try await f.model.skipSet(movementID: row.movementID, index: index) }
             #expect(f.model.visibleStep == .summary(movementID: row.movementID))
@@ -116,7 +217,9 @@ import TrainingCore
     }
     @Test func failedTransitionsKeepCursorAndCorrectionReviewVisible() async throws {
         let f = try await GuidedWorkoutFixture.make()
-        let row = f.model.snapshot.draft!.displayed.exercises[0], original = f.model.snapshot
+        let row = f.model.snapshot.draft!.displayed.exercises[0]
+        try await confirmLoad(f.model, row: row)
+        let original = f.model.snapshot
         await f.repository.failNextSave()
         do { try await f.model.beginMovement(movementID: row.movementID); Issue.record("Expected failed save") } catch {}
         #expect(f.model.snapshot == original)

@@ -280,6 +280,9 @@ import TrainingCore
                 draft.flow?.forward = .summary(movementID: movementID)
             } else {
                 try await requireWorkingExposure(row)
+                let movement = try await admittedMovement(for: row)
+                guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
+                try requireReviewedHandling(movementID: movementID, load: draft.logs[i].actualLoad)
                 guard let slot = nextSetIndex(log: draft.logs[i], row: row) else { throw EngineError(code: "invalid_workout_step", field: "flow") }
                 draft.flow?.forward = .set(movementID: movementID, index: slot)
             }
@@ -321,7 +324,8 @@ import TrainingCore
             }
             guard reviewing ? reviewStep == .summary(movementID: movementID) :
                 (reviewStep == nil && draft.flow?.forward == .summary(movementID: movementID)) else { throw EngineError(code: "invalid_workout_step", field: "summary") }
-            guard !handled(movementID) || status == log.status, log.problem == .none || status == .stopped,
+            guard !handled(movementID) || status == log.status,
+                  log.status != .stopped || status == .stopped, log.problem == .none || status == .stopped,
                   !WorkoutFlowResolver.hasDemotedCompletion(log, draft: draft) || status == .partial else { throw EngineError(code: "movement_stopped", field: "status") }
             if status == .completed, !(await validCompletion(log, row: row)) { throw EngineError(code: "incomplete_sets", field: "status") }
             guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
