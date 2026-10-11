@@ -46,7 +46,7 @@ file_lists = list(derived.glob('Build/Intermediates.noindex/PlentyStrong.build/D
 if len(file_lists) != 1:
     raise SystemExit('Expected exactly one native architecture source list')
 files = [Path(p) for p in file_lists[0].read_text().splitlines() if not p.endswith('/main.swift')]
-files += [ROOT / p for p in ['Features/Workout/WorkoutViewModel.swift', 'Features/Workout/RestTimer.swift', 'Features/Workout/SetEntryDraft.swift', 'Features/Workout/MovementPrescriptionSummary.swift']]
+files += [ROOT / p for p in ['Features/Workout/WorkoutViewModel.swift', 'Features/Workout/RestTimer.swift', 'Features/Workout/SetEntryDraft.swift', 'Features/Workout/WorkoutScratchStore.swift', 'Features/Workout/MovementPrescriptionSummary.swift']]
 sources = OUT / 'sources'
 sources.mkdir(exist_ok=True)
 manifest = []

@@ -88,6 +88,55 @@ import TrainingCore
         #expect(mode.active.workout?.programID != demoModel.programID)
         await mode.setEnabled(false)
     }
+    @Test func scratchAndCursorStayIsolatedAcrossSwitchAndLateCallbacks() async throws {
+        let f = try await GuidedWorkoutFixture.make()
+        let scratchURL = f.storeURL.deletingLastPathComponent().appendingPathComponent("real-scratch")
+        let store = WorkoutScratchStore(directory: scratchURL)
+        let path = f.storeURL.standardizedFileURL.path
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID,
+            now: f.model.now, scratchStore: store, scratchStoreID: path)
+        let real = AppComposition(repository: f.repository, workout: model)
+        real.now = model.now; real.timeZoneID = model.timeZoneID
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        model.entryDraft.reps = "real unfinished"; try await model.flushScratch()
+        let draft = model.snapshot.draft!
+        let root = try #require(model.snapshot.history.first { $0.parentEnvelopeHash == nil })
+        let key = WorkoutScratchKey(storeID: path, datasetID: root.datasetID, programID: draft.programID,
+            draftID: draft.id, prescriptionID: draft.displayed.id, step: model.visibleStep!, expectedObservationHash: nil)
+        let before = try await f.repository.exportBackup(), cursor = model.visibleStep
+        let delay = DemoScratchDelay()
+        await store.setBeforeSaveForTesting { await delay.holdFirst() }
+        let late = Task { try await store.save(WorkoutScratch(generation: 1, key: key, entry: SetEntryDraft(reps: "stale real"))) }
+        await delay.waitUntilEntered()
+        let restoreDelay = DemoScratchDelay()
+        await store.setBeforeLoadForTesting { await restoreDelay.holdFirst() }
+        try await store.save(WorkoutScratch(generation: 99, key: key, entry: SetEntryDraft(reps: "late restored real")))
+        let lateRestore = Task { try await model.restoreScratch() }
+        await restoreDelay.waitUntilEntered()
+        let mode = DeveloperDemoMode(real: real, directory: f.storeURL.deletingLastPathComponent().appendingPathComponent("demo"))
+        await mode.setEnabled(true)
+        #expect(mode.enabled && mode.errorText == nil)
+        let demo = try #require(mode.active.workout)
+        try await demo.start(easierToday: false)
+        let demoRow = demo.snapshot.draft!.displayed.exercises[0]
+        try await demo.confirmLoad(movementID: demoRow.movementID, load: #require(demo.movement(for: demoRow).availableLoads.first))
+        try await demo.beginMovement(movementID: demoRow.movementID)
+        demo.entryDraft.reps = "demo unfinished"; try await demo.flushScratch()
+        await delay.release(); try await late.value
+        await restoreDelay.release(); try await lateRestore.value
+        #expect(try await store.load(key: key)?.entry.reps == "late restored real")
+        #expect(model.entryDraft.reps == "real unfinished")
+        #expect(demo.entryDraft.reps == "demo unfinished")
+        model.entryDraft.reps = "parked callback"
+        #expect(model.entryDraft.reps == "real unfinished")
+        await mode.setEnabled(false)
+        #expect(mode.active.workout === model)
+        #expect(model.entryDraft.reps == "real unfinished" && model.visibleStep == cursor)
+        #expect(try await f.repository.exportBackup() == before)
+        await f.repository.close()
+    }
     @Test func missingEnabledSandboxFailsOpenToRealContextAndRetry() async throws {
         let (real, directory) = try await empty()
         let url = directory.appendingPathComponent("demo")
@@ -129,6 +178,12 @@ import TrainingCore
         await mode!.setEnabled(true)
         let demo = mode!.active
         try await demo.workout!.start(easierToday: false)
+        let model = demo.workout!, row = model.snapshot.draft!.displayed.exercises[0]
+        try await model.confirmLoad(movementID: row.movementID, load: #require(model.movement(for: row).availableLoads.first))
+        try await model.beginMovement(movementID: row.movementID)
+        model.entryDraft = SetEntryDraft(reps: "demo relaunch text", left: "8")
+        try await model.flushScratch()
+        let cursor = model.visibleStep
         let before = try await demo.repository!.exportBackup()
         await demo.suspendContext(); await demo.repository!.close()
         mode = nil
@@ -138,6 +193,8 @@ import TrainingCore
         #expect(relaunched.enabled)
         #expect(relaunched.errorText == nil)
         #expect(try await relaunched.active.repository!.exportBackup() == before)
+        #expect(relaunched.active.workout?.entryDraft == SetEntryDraft(reps: "demo relaunch text", left: "8"))
+        #expect(relaunched.active.workout?.visibleStep == cursor)
         await relaunched.setEnabled(false)
     }
     @Test func failedSelectionRollsBackAndCanRetryAndBusySwitchIsRejected() async throws {
@@ -204,4 +261,21 @@ private actor DemoCountingTransport: CloudTransport {
     func requestSync() { }
     func syncStatus() -> SyncStatus { .init() }
     func discoverRecoveryCandidates(scope: CloudScope) -> [RecoveryCandidate] { [] }
+}
+
+private actor DemoScratchDelay {
+    private var entered = false
+    private var entryWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    func holdFirst() async {
+        guard !entered else { return }
+        entered = true
+        entryWaiter?.resume(); entryWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { entryWaiter = $0 }
+    }
+    func release() { releaseWaiter?.resume(); releaseWaiter = nil }
 }

@@ -4,6 +4,9 @@ import CloudKit
 import TrainingCore
 
 @MainActor @Observable final class AppComposition {
+    private var scratchDirectory: URL?
+    private var scratchStoreID: String?
+    private var scratchStore: WorkoutScratchStore?
     let tips: TipStore
     private let operations: TrainingOperationGate
     var busy: Bool { operations.busy }
@@ -21,6 +24,9 @@ import TrainingCore
         try await operations.perform { _ in try await action() }
     }
     func suspendContext() async {
+        do { try await workout?.flushScratch() }
+        catch { errorText = "Workout input could not be saved locally. Entered text is retained. \(error)" }
+        workout?.suspendScratch()
         operations.contextEnabled = false
         cloudGeneration += 1; selectionGeneration += 1
         cloudEnabled = false; verifiedCloudScope = nil
@@ -62,7 +68,7 @@ import TrainingCore
     var selectionBeforeAdoptionForTesting: (@MainActor () async throws -> Void)?
     #endif
 
-    init(repository: TrainingRepository? = nil, workout: WorkoutViewModel? = nil, cloudCoordinator: CloudSyncCoordinator? = nil, preferencesURL: URL? = nil, tipStore: TipStore? = nil) {
+    init(repository: TrainingRepository? = nil, workout: WorkoutViewModel? = nil, cloudCoordinator: CloudSyncCoordinator? = nil, preferencesURL: URL? = nil, tipStore: TipStore? = nil, scratchDirectory: URL? = nil, scratchStoreID: String? = nil) {
         if let tipStore { tips = tipStore }
         else {
             #if DEBUG
@@ -77,6 +83,12 @@ import TrainingCore
             #else
             tips = TipStore(purchaser: StoreKitTipPurchaser())
             #endif
+        }
+        self.scratchDirectory = scratchDirectory?.standardizedFileURL; self.scratchStoreID = scratchStoreID
+        if let scratchDirectory {
+            let store = WorkoutScratchStore(directory: scratchDirectory)
+            scratchStore = store
+            workout?.configureScratch(store: store, storeID: scratchStoreID)
         }
         self.repository = repository; self.workout = workout; loaded = repository != nil
         if let workout, !AppTrainingCompatibility.supports(workout.snapshot) { self.workout = nil; readOnlyProgram = workout.snapshot }
@@ -173,6 +185,10 @@ import TrainingCore
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let repository = try await TrainingRepository.openInBackground(at: directory.appendingPathComponent("training.store"))
                 self.repository = repository
+                let localScratch = scratchDirectory ?? directory.appendingPathComponent("workout-scratch", isDirectory: true)
+                scratchDirectory = localScratch
+                scratchStoreID = scratchStoreID ?? directory.appendingPathComponent("training.store").standardizedFileURL.path
+                scratchStore = WorkoutScratchStore(directory: localScratch)
                 #if DEBUG
                 if uiTesting, ProcessInfo.processInfo.arguments.contains("-ui-slow-save") {
                     // Synthetic deterministic disk latency for visible busy-state UI tests.
@@ -406,9 +422,9 @@ import TrainingCore
                 #endif
                 let snapshot = try await repository.initialize(config: config, rules: initializationRules, firstWorkout: first)
                 #if DEBUG
-                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: !legacyRepairFixture)
+                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: !legacyRepairFixture, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
                 #else
-                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
+                workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
                 #endif
                 #if DEBUG
                 if legacyRepairFixture, let model = workout {
@@ -422,7 +438,7 @@ import TrainingCore
                     draft.logs[0].actualSets = [ActualSet(reps: 4, setIndex: draft.planned.exercises[0].sets.first?.targetReps != nil ? 0 : nil)]
                     draft.logs[0].problem = .pain; draft.workingSetsStarted = true
                     try await repository.saveDraft(draft)
-                    workout = WorkoutViewModel(repository: repository, snapshot: try await repository.snapshot(programID: model.programID), timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
+                    workout = WorkoutViewModel(repository: repository, snapshot: try await repository.snapshot(programID: model.programID), timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
                 }
                 #endif
             }
@@ -475,7 +491,9 @@ extension AppComposition {
         if let model = workout, model.snapshot.state.config.programID == snapshot.state.config.programID {
             try model.adoptRecoverySnapshot(snapshot, operation: operation)
         } else {
-            workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true)
+            workout = WorkoutViewModel(repository: repository, snapshot: snapshot, timeZoneID: timeZoneID, now: now, operations: operations, activatesExactPolicy: true, scratchStore: scratchStore, scratchStoreID: scratchStoreID)
+            do { try await workout?.restoreScratch() }
+            catch { errorText = "Saved workout input could not be opened. Local training is retained. \(error)" }
             showingWorkout = false
         }
         try await workout?.refreshWorkingAdmission(operation: operation)
@@ -610,6 +628,8 @@ extension AppComposition {
     }
     func retryCloudRecovery() async { await resumeRecovery() }
     func pauseRecoveryForBackground() async {
+        do { try await workout?.flushScratch() }
+        catch { errorText = "Workout input could not be saved locally. Entered text is retained. \(error)" }
         cloudGeneration += 1; verifiedCloudScope = nil
         let ticket = cloudGeneration
         await cloudCoordinator?.disable()

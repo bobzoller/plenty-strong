@@ -4,13 +4,13 @@ import TrainingCore
 
 /// Value snapshots only: the repository remains the sole owner/writer of models.
 @MainActor @Observable final class WorkoutViewModel {
-    private(set) var snapshot: StoreSnapshot
+    private(set) var snapshot: StoreSnapshot { didSet { scratchContextChanged() } }
     var errorText: String?
     private var runningUIAction = false
     let operations: TrainingOperationGate
     var busy: Bool { runningUIAction || operations.busy }
-    var reviewStep: WorkoutStep?
-    private var reconciledResumeStep: WorkoutStep?
+    var reviewStep: WorkoutStep? { didSet { scratchContextChanged() } }
+    private var reconciledResumeStep: WorkoutStep? { didSet { scratchContextChanged() } }
     var visibleStep: WorkoutStep? { reviewStep ?? snapshot.draft?.flow?.forward ?? reconciledResumeStep }
     private(set) var finished = false
     private var submitted: (CompletedWorkout, WorkoutSlot, Int)?
@@ -25,13 +25,132 @@ import TrainingCore
     var restoreBeforeAdoptionForTesting: (@MainActor () async throws -> Void)?
     #endif
 
-    init(repository: TrainingRepository, snapshot: StoreSnapshot, timeZoneID: String, now: @escaping () -> Date = Date.init, operations: TrainingOperationGate? = nil, activatesExactPolicy: Bool = false) {
+    init(repository: TrainingRepository, snapshot: StoreSnapshot, timeZoneID: String, now: @escaping () -> Date = Date.init, operations: TrainingOperationGate? = nil, activatesExactPolicy: Bool = false, scratchStore: WorkoutScratchStore? = nil, scratchStoreID: String? = nil) {
         self.repository = repository; self.snapshot = snapshot; self.timeZoneID = timeZoneID; self.now = now
         self.operations = operations ?? TrainingOperationGate()
         self.activatesExactPolicy = activatesExactPolicy
+        configureScratch(store: scratchStore, storeID: scratchStoreID)
         if let pending = snapshot.draft?.pendingFinish {
             submitted = (pending.event, pending.next, pending.expectedRevision)
         }
+    }
+    var entryDraft = SetEntryDraft() {
+        didSet {
+            guard !settingScratchEntry else { return }
+            guard submitted == nil, snapshot.draft?.pendingFinish == nil, operations.contextEnabled else {
+                settingScratchEntry = true; entryDraft = oldValue; settingScratchEntry = false
+                return
+            }
+            scratchGeneration += 1
+            queueScratchSave()
+        }
+    }
+    private var scratchStore: WorkoutScratchStore?
+    private var scratchStoreID: String?
+    private var scratchDraftID: UUID?
+    private var scratchContext: WorkoutScratchKey?
+    private var scratchGeneration: UInt64 = 0
+    private var scratchEpoch: UInt64 = 0
+    private var settingScratchEntry = false
+    private var scratchBase: Task<UInt64, any Error>?
+    private var scratchWrite: Task<Void, any Error>?
+
+    /// Configuration happens before a composition publishes a new model.
+    func configureScratch(store: WorkoutScratchStore?, storeID: String?) {
+        scratchStore = store; scratchStoreID = storeID
+        scratchEpoch += 1; scratchGeneration = 0
+        scratchDraftID = snapshot.draft?.id
+        scratchContext = currentScratchKey()
+        if let store, let id = snapshot.draft?.id {
+            scratchBase = Task { try await store.generation(draftID: id) }
+        } else { scratchBase = nil }
+    }
+    private func currentScratchKey() -> WorkoutScratchKey? {
+        guard let storeID = scratchStoreID, scratchStore != nil,
+              let draft = snapshot.draft, draft.pendingFinish == nil, submitted == nil,
+              case let .set(id, index) = visibleStep,
+              let row = draft.displayed.exercises.first(where: { $0.movementID == id }), row.sets.indices.contains(index),
+              let log = draft.logs.first(where: { $0.movementID == id }),
+              !(log.skippedSetIndices ?? []).contains(index) else { return nil }
+        let actual = log.actualSets.enumerated().first { ($0.element.setIndex ?? $0.offset) == index }?.element
+        guard reviewStep != nil || actual == nil else { return nil }
+        let roots = snapshot.history.filter {
+            guard $0.programID == draft.programID, $0.parentEnvelopeHash == nil, case .initialize = $0.command else { return false }
+            return true
+        }
+        guard roots.count == 1 else { return nil }
+        return WorkoutScratchKey(storeID: storeID, datasetID: roots[0].datasetID, programID: draft.programID,
+            draftID: draft.id, prescriptionID: draft.displayed.id, step: .set(movementID: id, index: index),
+            expectedObservationHash: actual.flatMap { try? BackupService.hash($0) })
+    }
+    private func scratchContextChanged() {
+        guard scratchStore != nil else { return }
+        // A frozen/ambiguous Finish locks edits, but a failed transaction must
+        // retain the visible text until accepted Finish removes this draft.
+        if snapshot.draft != nil, submitted != nil || snapshot.draft?.pendingFinish != nil { return }
+        let next = currentScratchKey()
+        guard next != scratchContext else { return }
+        let old = scratchContext
+        scratchEpoch += 1; scratchGeneration += 1
+        if let store = scratchStore, let old {
+            let base = scratchBase, generation = scratchGeneration
+            let task = Task { try await store.invalidate(draftID: old.draftID, throughGeneration: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: generation)) }
+            scratchWrite = task
+            surfaceScratchFailure(task, epoch: scratchEpoch)
+        }
+        scratchContext = next
+        if scratchDraftID != snapshot.draft?.id {
+            scratchDraftID = snapshot.draft?.id; scratchGeneration = 0
+            if let store = scratchStore, let draft = snapshot.draft {
+                scratchBase = Task { try await store.generation(draftID: draft.id) }
+            } else { scratchBase = nil }
+        }
+        settingScratchEntry = true; entryDraft = SetEntryDraft(); settingScratchEntry = false
+    }
+    private nonisolated static func scratchSequence(base: UInt64, ordinal: UInt64) throws -> UInt64 {
+        let (value, overflow) = base.addingReportingOverflow(ordinal)
+        guard !overflow else { throw EngineError(code: "scratch_generation_exhausted", field: "scratch") }
+        return value
+    }
+    private func queueScratchSave() {
+        guard scratchGeneration > 0, let store = scratchStore, let key = scratchContext, key == currentScratchKey() else { return }
+        let entry = entryDraft, ordinal = scratchGeneration, base = scratchBase
+        let task = Task { try await store.save(WorkoutScratch(generation: try Self.scratchSequence(base: try await base?.value ?? 0, ordinal: ordinal), key: key, entry: entry)) }
+        scratchWrite = task
+        surfaceScratchFailure(task, epoch: scratchEpoch)
+    }
+    private func surfaceScratchFailure(_ task: Task<Void, any Error>, epoch: UInt64) {
+        Task { [weak self] in
+            do { try await task.value }
+            catch {
+                guard let self, self.scratchEpoch == epoch else { return }
+                self.errorText = "Workout input could not be saved locally. Your entered text is retained. \(error)"
+            }
+        }
+    }
+    func flushScratch() async throws {
+        queueScratchSave()
+        do { try await scratchWrite?.value }
+        catch { errorText = "Workout input could not be saved locally. Your entered text is retained. \(error)"; throw error }
+    }
+    func suspendScratch() { scratchEpoch += 1 }
+    func restoreScratch() async throws {
+        guard let store = scratchStore, let key = currentScratchKey() else { return }
+        let epoch = scratchEpoch, ordinal = scratchGeneration
+        let restored = try await store.load(key: key)
+        guard operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key, let restored else { return }
+        // The persisted watermark was captured before any new text writes.
+        _ = try await scratchBase?.value
+        guard operations.contextEnabled, epoch == scratchEpoch, ordinal == scratchGeneration, currentScratchKey() == key else { return }
+        settingScratchEntry = true; entryDraft = restored.entry; settingScratchEntry = false
+    }
+    private func removeScratch(draftID: UUID) async {
+        guard let store = scratchStore else { return }
+        do {
+            try await store.remove(draftID: draftID)
+            settingScratchEntry = true; entryDraft = SetEntryDraft(); settingScratchEntry = false
+        }
+        catch { errorText = "Finished workout input could not be removed locally. \(error)" }
     }
     var hasAmbiguousFinish: Bool { submitted != nil && !finished }
     /// Read-only identity projection of this model's accepted frozen Finish.
@@ -158,6 +277,7 @@ import TrainingCore
         // A guided save binds the forward cursor/deadline to the captured draft,
         // including when another model has already committed this set.
         let expected = expectedExistingDraft ?? (draft.flow != nil ? snapshot.draft : nil)
+        if scratchContext != nil { try await flushScratch() }
         snapshot = try await repository.saveDraft(draft, expectedExistingDraft: expected)
     }
     /// Missed scheduling and interrupted-return preparation are explicit journal commands.
@@ -192,6 +312,7 @@ import TrainingCore
             guard canChangePreparation else { throw EngineError(code: "working_draft_locked", field: "draft") }
             guard !needsDateChoice else { throw EngineError(code: "date_choice_required", field: "date") }
             try await repository.discardDraft(id: existing.id)
+            await removeScratch(draftID: existing.id)
             snapshot = try await repository.snapshot(programID: programID)
         }
         guard !hasAmbiguousFinish, finishOperation == nil else { throw EngineError(code: "finish_in_flight", field: "policy") }
@@ -240,6 +361,7 @@ import TrainingCore
         if keepOriginal { retainedOriginalDate = true; return }
         guard canDiscardDraft else { throw EngineError(code: "problem_requires_finalization", field: "draft") }
         try await repository.discardDraft(id: draft.id)
+        await removeScratch(draftID: draft.id)
         snapshot = try await repository.snapshot(programID: programID)
         retainedOriginalDate = false; reviewStep = nil; reconciledResumeStep = nil
         try await prepareTodayBody()
@@ -266,6 +388,8 @@ import TrainingCore
                 }
             }
             reviewStep = nil
+            do { try await restoreScratch() }
+            catch { errorText = "Saved workout input could not be opened. The workout is retained. \(error)" }
         }
     }
     func beginMovement(movementID: String) async throws {
@@ -305,6 +429,7 @@ import TrainingCore
         try await operations.perform { _ in
             let draft = try await editableDraft()
             let hash = try await Task.detached(priority: .userInitiated) { try BackupService.hash(draft) }.value
+            try await flushScratch()
             snapshot = try await repository.correctDraftSet(programID: programID, expectedDraftHash: hash,
                 operationID: operationID, movementID: movementID, setIndex: index, replacement: replacement)
             reviewStep = .summary(movementID: movementID)
@@ -722,6 +847,7 @@ import TrainingCore
             snapshot = try await repository.freezeDraftFinish(programID: programID, expectedDraftHash: try await Task.detached { try BackupService.hash(draft) }.value,
                 submission: PendingWorkoutFinish(event: event, next: next, expectedRevision: revision))
         }
+        let ownedDraftID = snapshot.draft?.id
         let receipt = try await repository.finalize(programID: programID, expectedRevision: revision, event: event, next: next)
         if case let .rejected(_, errors) = receipt.result {
             if errors == ["invalid_sets"], receipt.snapshot.health == .ready,
@@ -742,6 +868,7 @@ import TrainingCore
             throw EngineError(code: errors.joined(separator: ", "), field: "finish")
         }
         snapshot = receipt.snapshot; finished = true; reviewStep = nil; reconciledResumeStep = nil
+        if let ownedDraftID { await removeScratch(draftID: ownedDraftID) }
         return receipt
     }
 }

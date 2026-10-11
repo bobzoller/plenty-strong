@@ -104,7 +104,11 @@ import TrainingCore
                         snapshot = try await DeveloperDemoSeed.create(in: opened, at: real.now(), timeZoneID: real.timeZoneID) { [weak self] text in self?.progressText = text }
                     }
                     let model = WorkoutViewModel(repository: opened, snapshot: snapshot, timeZoneID: real.timeZoneID, now: real.now, activatesExactPolicy: true)
-                    let candidate = AppComposition(repository: opened, workout: model, tipStore: real.tips)
+                    let candidate = AppComposition(repository: opened, workout: model, tipStore: real.tips,
+                        scratchDirectory: sandbox.appendingPathComponent("workout-scratch", isDirectory: true),
+                        scratchStoreID: sandbox.appendingPathComponent("training.store").standardizedFileURL.path)
+                    do { try await model.restoreScratch() }
+                    catch { candidate.errorText = "Saved demo input could not be opened. Demo workout is retained. \(error)" }
                     candidate.isDemoContext = true; candidate.now = real.now; candidate.timeZoneID = real.timeZoneID
                     progressText = "Checking demo history…"
                     try await model.prepareToday()
