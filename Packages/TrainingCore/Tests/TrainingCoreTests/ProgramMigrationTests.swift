@@ -20,20 +20,21 @@ struct ProgramMigrationTests {
         let workouts = [ExternalWorkoutObservation(date: try LocalDate(iso8601: "2025-04-06"), sourceKey: "day:1",
             rows: [ExternalExerciseObservation(sourceKey: "row:1", movementLabel: "Source label",
                 raw: ["reps": .string("5.5/BW"), "notes": .string("Synthetic original note")])])]
-        struct Original: Encodable { var baselines: [MigrationBaseline]; var workouts: [ExternalWorkoutObservation] }
+        let sourceState: [String: CanonicalValue] = ["qualifying": .integer(2), "phase": .string("source deload")]
+        struct Original: Encodable { var baselines: [MigrationBaseline]; var workouts: [ExternalWorkoutObservation]; var sourceState: [String: CanonicalValue] }
         let file = try ExternalSourceFile(name: "synthetic-original.json", mediaType: "application/json",
-            bytes: JSONEncoder().encode(Original(baselines: rows, workouts: workouts)))
+            bytes: JSONEncoder().encode(Original(baselines: rows, workouts: workouts, sourceState: sourceState)))
         var bindings: [MigrationSourceBinding] = []
         for (i, row) in rows.enumerated() {
-            var keys = ["targets", "sourceRepFloor", "sourceRepCeiling", "minimumRir", "safetyText", "reviewRequired", "paused", "recoveryRequired"]
+            var keys = ["baseMovementID", "variantID", "modifications", "recoveryStatus", "sourceKeys", "targets", "sourceRepFloor", "sourceRepCeiling", "minimumRir", "safetyText", "reviewRequired", "paused", "recoveryRequired"]
             if row.load != nil { keys += ["load/amount", "load/unit", "load/basis"] }
             for key in keys { let pointer = "/baselines/\(i)/\(key)"; bindings.append(MigrationSourceBinding(targetPointer: pointer, fileName: file.name, sourcePointer: pointer)) }
         }
-        for pointer in ["/workouts/0/date", "/workouts/0/rows/0/raw", "/workouts/0/rows/0/movementLabel"] {
+        for pointer in ["/baselines", "/workouts", "/sourceState", "/workouts/0/date", "/workouts/0/sourceKey", "/workouts/0/rows/0/sourceKey", "/workouts/0/rows/0/raw", "/workouts/0/rows/0/movementLabel"] {
             bindings.append(MigrationSourceBinding(targetPointer: pointer, fileName: file.name, sourcePointer: pointer))
         }
         let archive = try ExternalSourceArchive(files: [file], baselines: rows, workouts: workouts,
-            sourceState: ["qualifying": .integer(2), "phase": .string("source deload")], sourceBindings: bindings)
+            sourceState: sourceState, sourceBindings: bindings)
         let checkpoint = try ProgramMigrationCheckpoint(externalArchiveHash: archive.contentHash, baselines: rows,
             externalLastSessionDate: LocalDate(iso8601: "2025-04-06"),
             nextWorkout: WorkoutSlot(date: LocalDate(iso8601: "2025-04-08"), slotID: "TUE"))
@@ -198,5 +199,59 @@ struct ProgramMigrationTests {
         for row in doc.checkpoint.baselines {
             #expect(result.initialized.state.exercises[row.variantID]?.exactRepState?.normalTargets == row.targets)
         }
+    }
+
+    @Test(arguments: ["baseMovementID", "variantID", "modifications", "recoveryStatus", "sourceKeys", "sourceState", "workoutSourceKey", "rowSourceKey"])
+    func rehashedSourceLineageCannotChangeAgainstUnchangedOriginals(field: String) throws {
+        var (doc, selection, acceptance) = try fixture()
+        let originals = doc.source.files
+        doc.source.sourceBindings.removeAll { binding in
+            ["/baselines", "/workouts", "/sourceState"].contains(binding.targetPointer) ||
+                binding.targetPointer.hasSuffix("/" + field) || binding.targetPointer.hasSuffix("/sourceKey")
+        }
+        switch field {
+        case "baseMovementID":
+            let original = doc.source.baselines[0].baseMovementID
+            doc.source.baselines[0].baseMovementID = doc.source.baselines[2].baseMovementID
+            doc.source.baselines[2].baseMovementID = original
+        case "variantID": doc.source.baselines[0].variantID += "-forged"
+        case "modifications": doc.source.baselines[0].modifications = "Invented source setup"
+        case "recoveryStatus": doc.source.baselines[0].recoveryStatus = "cleared"
+        case "sourceKeys": doc.source.baselines[0].sourceKeys = ["invented-source-location"]
+        case "sourceState": doc.source.sourceState = [:]
+        case "workoutSourceKey": doc.source.workouts[0].sourceKey = "invented-day-key"
+        case "rowSourceKey": doc.source.workouts[0].rows[0].sourceKey = "invented-row-key"
+        default: Issue.record("Unknown test mutation"); return
+        }
+        doc.source.contentHash = try migrationHash(doc.source, excluding: "contentHash")
+        doc.checkpoint.externalArchiveHash = doc.source.contentHash
+        doc.checkpoint.baselines = doc.source.baselines
+        #expect(doc.source.files == originals)
+        #expect(throws: (any Error).self) {
+            _ = try previewProgramMigration(document: doc, selection: selection, acceptance: acceptance, programID: UUID())
+        }
+    }
+
+    @Test func deletingAllHistoryAndItsBindingsCannotEraseSourceObservations() throws {
+        var (doc, selection, acceptance) = try fixture()
+        let originals = doc.source.files
+        doc.source.workouts = []
+        doc.source.sourceBindings.removeAll { $0.targetPointer == "/workouts" || $0.targetPointer.hasPrefix("/workouts/") }
+        doc.source.contentHash = try migrationHash(doc.source, excluding: "contentHash")
+        doc.checkpoint.externalArchiveHash = doc.source.contentHash
+        doc.checkpoint.externalLastSessionDate = nil
+        #expect(doc.source.files == originals)
+        #expect(throws: (any Error).self) {
+            _ = try previewProgramMigration(document: doc, selection: selection, acceptance: acceptance, programID: UUID())
+        }
+    }
+
+    @Test(arguments: ["/baselines", "/workouts", "/sourceState"])
+    func aggregateExactProjectionBindingCannotBeOmitted(pointer: String) throws {
+        var (doc, _, _) = try fixture()
+        doc.source.sourceBindings.removeAll { $0.targetPointer == pointer }
+        doc.source.contentHash = try migrationHash(doc.source, excluding: "contentHash")
+        doc.checkpoint.externalArchiveHash = doc.source.contentHash
+        #expect(throws: (any Error).self) { try validateMigrationDocument(doc) }
     }
 }

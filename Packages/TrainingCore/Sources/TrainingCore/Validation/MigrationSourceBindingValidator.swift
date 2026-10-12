@@ -7,9 +7,11 @@ func validateMigrationSourceBindings(_ archive: ExternalSourceArchive) throws {
     let target = try JSONSerialization.jsonObject(with: JSONEncoder().encode(archive))
     var sources: [String: Any] = [:]
     var covered = Set<String>()
+    let aggregatePointers: Set<String> = ["/baselines", "/workouts", "/sourceState"]
     for binding in archive.sourceBindings {
         guard covered.insert(binding.targetPointer).inserted,
               let file = archive.files.first(where: { $0.name == binding.fileName }) else { throw invalid("identity") }
+        guard !aggregatePointers.contains(binding.targetPointer) || binding.conversion == "exact" else { throw invalid("aggregate_conversion") }
         if sources[file.name] == nil { sources[file.name] = try JSONSerialization.jsonObject(with: file.bytes) }
         let value = try migrationPointer(binding.sourcePointer, in: sources[file.name]!)
         let converted: Any
@@ -56,15 +58,19 @@ func validateMigrationSourceBindings(_ archive: ExternalSourceArchive) throws {
         let b = try JSONSerialization.data(withJSONObject: expected, options: [.sortedKeys, .fragmentsAllowed])
         guard a == b else { throw invalid("mismatch") }
     }
-    var required = Set<String>()
+    // Bind shape and completeness as well as individual typed values. Otherwise
+    // deleting a projection also deletes the fields from which coverage derives.
+    var required = aggregatePointers
     for (i, row) in archive.baselines.enumerated() {
-        for key in ["targets", "sourceRepFloor", "sourceRepCeiling", "minimumRir", "safetyText", "reviewRequired", "paused", "recoveryRequired"] { required.insert("/baselines/\(i)/\(key)") }
+        for key in ["baseMovementID", "variantID", "modifications", "recoveryStatus", "sourceKeys", "targets", "sourceRepFloor", "sourceRepCeiling", "minimumRir", "safetyText", "reviewRequired", "paused", "recoveryRequired"] { required.insert("/baselines/\(i)/\(key)") }
         if row.load != nil { for key in ["amount", "unit", "basis"] { required.insert("/baselines/\(i)/load/\(key)") } }
         if row.unresolvedLoadAmount != nil { required.insert("/baselines/\(i)/unresolvedLoadAmount") }
     }
     for (i, workout) in archive.workouts.enumerated() {
         required.insert("/workouts/\(i)/date")
+        required.insert("/workouts/\(i)/sourceKey")
         for j in workout.rows.indices {
+            required.insert("/workouts/\(i)/rows/\(j)/sourceKey")
             required.insert("/workouts/\(i)/rows/\(j)/raw")
             required.insert("/workouts/\(i)/rows/\(j)/movementLabel")
         }
