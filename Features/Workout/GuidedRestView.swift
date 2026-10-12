@@ -24,19 +24,35 @@ struct GuidedRestView: View {
                         .font(.largeTitle.bold()).monospacedDigit().accessibilityIdentifier("rest.remaining")
                 }
             }
-            Text("Continue when you are ready.").font(.caption).foregroundStyle(.secondary)
             if case let .rest(_, _, destination) = step {
                 switch destination {
-                case let .set(_, index): Text("Next: Set \(index + 1)").font(.headline)
+                case let .set(id, index):
+                    Text("Next: Set \(index + 1)").font(.headline)
+                    if let row = model.snapshot.draft?.displayed.exercises.first(where: { $0.movementID == id }), row.sets.indices.contains(index) {
+                        let movement = model.movement(for: row), goal = row.sets[index]
+                        Text("Goal: \(goal.targetReps.map(String.init) ?? "up to \(goal.repCeiling)") reps\(movement.repCounting == .perSide ? " per side" : "")")
+                            .accessibilityIdentifier("rest.next-goal")
+                        Text(model.log(for: id)?.actualLoad.map { "Weight: \(MovementPrescriptionSummary.load($0))" } ?? weightPlaceholder(movement.loadingMode))
+                            .accessibilityIdentifier("rest.next-weight")
+                        GuidedMovementCues(model: model, row: row)
+                    }
                 case let .introduction(id):
                     if let row = model.snapshot.draft?.displayed.exercises.first(where: { $0.movementID == id }) {
                         Text("Next: \(model.movement(for: row).name ?? "Movement")").font(.headline)
                         Text(row.modificationsSnapshot?.isEmpty == false ? row.modificationsSnapshot! : "Default setup")
-                        if let load = row.load { Text("Issued load: \(MovementPrescriptionSummary.load(load))") }
-                        else { Text("Bodyweight / your setup — no numeric load is inferred") }
+                        Text(row.load.map { "Issued load: \(MovementPrescriptionSummary.load($0))" } ?? weightPlaceholder(model.movement(for: row).loadingMode))
+                            .accessibilityIdentifier("rest.next-weight")
+                        GuidedMovementCues(model: model, row: row)
                     }
                 }
             }
+        }
+    }
+    private func weightPlaceholder(_ mode: LoadingMode) -> String {
+        switch mode {
+        case .externalLoad: "Weight: Unknown load"
+        case .bodyweight: "Bodyweight / your setup — no numeric load is inferred"
+        case .userManagedAssistance: "Your assistance setup — no numeric load is inferred"
         }
     }
 }

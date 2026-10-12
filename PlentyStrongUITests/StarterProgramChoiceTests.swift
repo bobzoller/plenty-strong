@@ -258,12 +258,27 @@ final class StarterProgramChoiceTests: XCTestCase {
         capture(app, "Bodyweight bridge history after upper program switch")
 
         app.terminate()
+        verifyReviewedStrengthLoadRecovery(inspectKeyboard: false)
+    }
+    @MainActor func testReviewedStrengthLoadRejectionAndRecoveryWithSetupKeyboard() {
+        verifyReviewedStrengthLoadRecovery(inspectKeyboard: true)
+    }
+    @MainActor private func verifyReviewedStrengthLoadRecovery(inspectKeyboard: Bool) {
         let strength = launch(); choice("whole_body_glutes", goal: "strength", in: strength); strength.buttons["onboarding.confirm"].tap()
         XCTAssertTrue(strength.buttons["today.start"].waitForExistence(timeout: 15)); openSettings(strength)
         let rowID = "chest_supported_db_row_30_neutral"
         strength.revealWorkoutControl(strength.staticTexts["settings.movement.\(rowID)"])
         strength.staticTexts["settings.movement.\(rowID)"].tap()
-        strength.tapWorkoutControl("settings.setup.\(rowID)"); strength.buttons["setup.handling.standard"].tap()
+        strength.tapWorkoutControl("settings.setup.\(rowID)")
+        if inspectKeyboard {
+            let modifications = strength.textFields["setup.modifications"]
+            strength.revealWorkoutControl(modifications); modifications.tap(); modifications.typeText(" synthetic reviewed load")
+            XCTAssertTrue(strength.keyboards.firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(strength.buttons["setup.keyboard-done"].isHittable)
+            capture(strength, "Setup modifications keyboard attribution and reachable Done")
+            strength.buttons["setup.keyboard-done"].tap()
+        }
+        strength.buttons["setup.handling.standard"].tap()
         XCTAssertTrue(strength.buttons["settings.setup.\(rowID)"].waitForExistence(timeout: 15))
         strength.tapWorkoutControl("settings.setup.\(rowID)")
         strength.buttons["setup.handling-load"].tap(); strength.buttons["15 lb per hand"].tap()
@@ -273,10 +288,15 @@ final class StarterProgramChoiceTests: XCTestCase {
         strength.selectNativeTab("Today", identifier: "tab.today"); strength.tapReadyWorkoutStart()
         for _ in 0..<2 { strength.tapWorkoutControl("movement.skip"); strength.confirmGuidedSummary() }
         XCTAssertEqual(strength.workoutText("movement.goal-reps").label, "4 / 4 reps")
-        strength.confirmGuidedWeight(amount: "20")
+        strength.selectGuidedWeight(amount: "20")
+        strength.tapWorkoutControl("load.confirm")
         XCTAssertTrue(strength.workoutText("save.error").label.contains("not been reviewed"))
         capture(strength, "Reviewed strength load gate retained error and action")
         strength.confirmGuidedWeight(amount: "15")
+        XCTAssertTrue(strength.buttons["guided.next"].isEnabled)
+        strength.beginGuidedMovement()
+        XCTAssertTrue(strength.textFields["set.reps"].waitForExistence(timeout: 15))
+        XCTAssertEqual(strength.staticTexts["set.weight"].label, "Weight: 15 lb per hand")
         capture(strength, "Reviewed load controls low-rep entry")
     }
     @MainActor func testIntroCompletionAndHistoryRemainPinnedAfterProgramChange() {

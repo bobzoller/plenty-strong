@@ -68,6 +68,8 @@ import TrainingCore
         #expect(model.hasAmbiguousFinish && !model.needsDateChoice && !model.canDiscardDraft)
         await #expect(throws: EngineError.self) { try await model.start(easierToday: false) }
         await #expect(throws: EngineError.self) { try await model.prepareToday() }
+        await #expect(throws: EngineError.self) { try await model.confirmWorkoutReviewSummary(movementID: draft.logs[0].movementID, effort: .tooEasy) }
+        #expect(try await reopenedRepository.exportBackup() == before)
         await #expect(throws: EngineError.self) { try await model.recordEffort(movementID: draft.logs[0].movementID, effort: .tooEasy) }
         let retried = try await model.finish().snapshot
         #expect(retried.history.filter { $0.eventID == frozen.event.eventID }.count == 1)

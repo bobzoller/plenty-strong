@@ -110,5 +110,13 @@ final class TipJarTests: XCTestCase {
         app.openWorkoutSkip()
         XCTAssertTrue(app.buttons["movement.partial-action"].exists)
         app.cancelWorkoutSkip()
+        app.enterPerformedReps("7"); app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("movement.partial-action")
+        XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 7 reps")
+        XCTAssertEqual(app.staticTexts["summary.actual-weight"].label, "Actual weight: 5 lb per hand")
+        app.tapWorkoutControl("effort.too_hard"); app.tapWorkoutControl("summary.confirm")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+
     }
 }

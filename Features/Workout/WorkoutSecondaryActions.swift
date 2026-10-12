@@ -52,10 +52,12 @@ struct WorkoutSecondaryActions: View {
     }
     var body: some View {
         if hasAvailableActions {
-            Button("Skip") {
+            Button {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 showingActions = true
-            }.accessibilityIdentifier("workout.skip").frame(maxWidth: .infinity, minHeight: 44)
+            } label: {
+                Text("Skip").frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing).contentShape(Rectangle())
+            }.accessibilityIdentifier("workout.skip")
                 .disabled(model.busy || model.snapshot.health != .ready || model.hasAmbiguousFinish || model.finished)
                 .confirmationDialog("Workout actions", isPresented: $showingActions, titleVisibility: .visible) {
                     if let target = skipTarget {

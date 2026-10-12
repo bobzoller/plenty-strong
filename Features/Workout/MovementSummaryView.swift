@@ -85,8 +85,9 @@ struct MovementSummaryView: View {
                 if reviewing {
                     WorkoutSecondaryActions(model: model, step: .summary(movementID: row.movementID), row: row, pendingActual: .constant(nil))
                 } else if !needsEffort || canReportSafety {
-                    Button("Stop workout") { showingStop = true }
-                        .accessibilityIdentifier("workout.stop").frame(maxWidth: .infinity, minHeight: 44)
+                    Button { showingStop = true } label: {
+                        Text("Stop workout").frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing).contentShape(Rectangle())
+                    }.accessibilityIdentifier("workout.stop")
                 }
             }
         }

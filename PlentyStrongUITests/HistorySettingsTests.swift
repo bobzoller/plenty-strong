@@ -177,31 +177,31 @@ final class HistorySettingsTests: XCTestCase {
         for _ in 0..<4 {
             app.continueGuidedRest(); app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
         }
-        let review = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch
-        app.revealWorkoutControl(review); review.tap()
-        let summary = app.scrollViews.containing(.staticText, identifier: "movement.summary").firstMatch
-        XCTAssertEqual(summary.staticTexts["set.actual.0"].label, "Set 1: 8 reps")
-        XCTAssertTrue(app.staticTexts["summary.corrected.0"].exists)
-        app.tapWorkoutControl("summary.corrections.0")
+        let actual = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", "set.actual.0")).firstMatch
+        app.revealWorkoutControl(actual)
+        let prefix = String(actual.identifier.dropLast("set.actual.0".count))
+        XCTAssertEqual(app.staticTexts[prefix + "set.actual.0"].label, "Set 1: 8 reps")
+        app.tapWorkoutControl(prefix + "corrections.0")
         let firstDetail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 1. Original:")).firstMatch
         app.revealWorkoutControl(firstDetail)
         XCTAssertTrue(firstDetail.label.contains("Original: 7"))
         XCTAssertTrue(firstDetail.label.contains("Replacement: 8"))
         XCTAssertTrue(firstDetail.label.contains("Time or interruption"))
-        app.tapWorkoutControl("summary.correct.0"); app.replacePerformedReps("9")
+        app.tapWorkoutControl(prefix + "correct.0"); app.replacePerformedReps("9")
         app.tapWorkoutControl("correction.save")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["correction.save"])], timeout: 15), .completed)
-        XCTAssertEqual(summary.staticTexts["set.actual.0"].label, "Set 1: 9 reps")
+        XCTAssertEqual(app.staticTexts[prefix + "set.actual.0"].label, "Set 1: 9 reps")
         let secondDetail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 2. Original:")).firstMatch
         app.revealWorkoutControl(secondDetail)
         XCTAssertTrue(secondDetail.label.contains("Original: 8"))
         XCTAssertTrue(secondDetail.label.contains("Replacement: 9"))
         let beforeFinish = XCTAttachment(screenshot: app.screenshot()); beforeFinish.name = "Before Finish ordered corrections and primary effective actual"; beforeFinish.lifetime = .keepAlways; add(beforeFinish)
-        app.navigationBars.buttons["BackButton"].tap()
-        app.tapWorkoutControl("workout.finish")
-        XCTAssertTrue(app.staticTexts["Confirm the pending movement summaries in Workout review before finishing."].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["workout.finish"].isEnabled)
+        XCTAssertTrue(app.staticTexts["workout.review-required"].exists)
         XCTAssertFalse(app.staticTexts["workout.saved"].exists)
-        app.revealWorkoutControl(review); review.tap(); app.confirmGuidedSummary()
+        app.tapWorkoutControl(prefix + "confirm")
+        let confirmed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons[prefix + "confirm"])
+        XCTAssertEqual(XCTWaiter.wait(for: [confirmed], timeout: 15), .completed)
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()
@@ -269,7 +269,7 @@ extension XCUIApplication {
                 if [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.height > 0, bounds.intersects(frame) { return bounds }
             }
             guard !buttons["workout.keep-original-date"].exists else { return nil }
-            for identifier in ["set.save", "summary.confirm", "correction.save", "guided.next", "problem.pain"] {
+            for identifier in ["set.save", "summary.confirm", "correction.save", "guided.next", "workout.finish", "problem.pain"] {
                 let candidate = buttons[identifier]
                 if candidate.exists {
                     let bounds = candidate.frame
@@ -286,7 +286,7 @@ extension XCUIApplication {
             let bounds = element.frame
             guard [bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite), bounds.width > 0, bounds.height > 0,
                   bounds.intersects(frame) else { return false }
-            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !(element.identifier.hasPrefix("effort.") && !["effort.picker", "effort.meanings-disclosure"].contains(element.identifier)), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "workout.skip", "workout.stop", "workout.stop-confirm", "set.skip", "movement.skip", "movement.partial-action", "movement.stop", "load.correct", "load.mixed", "BackButton"].contains(element.identifier) {
+            if (element.elementType == .textField || element.elementType == .button || element.identifier == "summary.outcome" || element.identifier.hasPrefix("summary.slot.")), !element.identifier.hasPrefix("problem."), !(element.identifier.hasPrefix("effort.") && !["effort.picker", "effort.meanings-disclosure"].contains(element.identifier)), !["set.save", "summary.confirm", "correction.save", "guided.next", "guided.back", "workout.review", "workout.close", "workout.finish", "workout.skip", "workout.stop", "workout.stop-confirm", "set.skip", "movement.skip", "movement.partial-action", "movement.stop", "load.correct", "load.mixed", "BackButton"].contains(element.identifier) {
                 // AX can expose a cached offscreen frame before a valid hit point.
                 // Check the complete control inside content before hittability.
                 let bottom = footerFrame().map { $0.minY - 32 } ?? frame.maxY
@@ -356,13 +356,13 @@ extension XCUIApplication {
             XCTAssertEqual(XCTWaiter.wait(for: [leftRest], timeout: 15), .completed, file: file, line: line)
         }
     }
-    @MainActor func confirmGuidedSummary(file: StaticString = #filePath, line: UInt = #line) {
+    @MainActor func confirmGuidedSummary(continueRest: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(buttons["summary.confirm"].waitForExistence(timeout: 15), file: file, line: line)
         if staticTexts["effort.question"].exists, !buttons["summary.confirm"].isEnabled { tapWorkoutControl("effort.unknown", file: file, line: line) }
         tapWorkoutControl("summary.confirm", file: file, line: line)
         let leftSummary = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: buttons["summary.confirm"])
         XCTAssertEqual(XCTWaiter.wait(for: [leftSummary], timeout: 15), .completed, file: file, line: line)
-        continueGuidedRest(file: file, line: line)
+        if continueRest { continueGuidedRest(file: file, line: line) }
     }
     /// The presented workout uses a native ScrollView. Today uses a CollectionView;
     /// XCTest still enumerates its obscured, unhittable comparison descendants.

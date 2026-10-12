@@ -12,6 +12,14 @@ final class OfflineAcceptanceTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [resumed], timeout: 15), .completed)
         XCTAssertEqual(app.buttons["today.start"].label, "Resume workout")
         app.tapReadyWorkoutStart(); app.revealWorkoutControl(app.textFields["set.reps"])
+        app.enterPerformedReps("7"); app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("movement.partial-action")
+        XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["set.actual.0"].label, "Set 1: 7 reps")
+        XCTAssertEqual(app.staticTexts["summary.actual-weight"].label, "Actual weight: 5 lb per hand")
+        app.tapWorkoutControl("effort.unknown"); app.tapWorkoutControl("summary.confirm")
+        XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+
     }
     @MainActor func testLargeTextOnboardingKeepsRestoreAndConfirmReachable() {
         let app = XCUIApplication()

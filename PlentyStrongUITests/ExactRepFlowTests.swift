@@ -102,14 +102,14 @@ final class ExactRepFlowTests: XCTestCase {
         }
         let finish = app.buttons["workout.finish"]; reveal(finish, in: app); finish.tap()
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.completed-goal.")).firstMatch.label.contains("10 / 10 / 10"))
-        let issuedLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.completed-issued-load.")).firstMatch
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.saved.", "summary.slot.0")).firstMatch.label.contains("goal 10"))
+        let issuedLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.saved.", "summary.goal-weight")).firstMatch
         XCTAssertTrue(issuedLoad.waitForExistence(timeout: 3))
         reveal(issuedLoad, in: app)
-        XCTAssertEqual(issuedLoad.label, "Issued load: 40 lb per hand")
-        let actualLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.completed-actual-load.")).firstMatch
+        XCTAssertEqual(issuedLoad.label, "Goal weight: 40 lb per hand")
+        let actualLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.saved.", "summary.actual-weight")).firstMatch
         reveal(actualLoad, in: app)
-        XCTAssertEqual(actualLoad.label, "Actual load: 40 lb per hand")
+        XCTAssertEqual(actualLoad.label, "Actual weight: 40 lb per hand")
         let savedNext = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.next-goal.")).firstMatch
         reveal(savedNext, in: app)
         let originalSavedNext = savedNext.label
@@ -123,8 +123,8 @@ final class ExactRepFlowTests: XCTestCase {
         app.tapWorkoutControl("today.saved-workout")
         reveal(savedNext, in: app)
         XCTAssertEqual(savedNext.label, originalSavedNext, "Completion keeps the exact next prescription saved by Finish")
-        reveal(issuedLoad, in: app); XCTAssertEqual(issuedLoad.label, "Issued load: 40 lb per hand")
-        reveal(actualLoad, in: app); XCTAssertEqual(actualLoad.label, "Actual load: 40 lb per hand")
+        reveal(issuedLoad, in: app); XCTAssertEqual(issuedLoad.label, "Goal weight: 40 lb per hand")
+        reveal(actualLoad, in: app); XCTAssertEqual(actualLoad.label, "Actual weight: 40 lb per hand")
         screenshot(app, "Exact saved independent issued goal and partial actual")
         let back = app.buttons["Back to Today"]; reveal(back, in: app); back.tap()
         app.selectNativeTab("History", identifier: "tab.history"); app.buttons["history.first-workout"].tap()

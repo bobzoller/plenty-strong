@@ -7,8 +7,7 @@ final class WorkoutFlowTests: XCTestCase {
         if reason.exists {
             app.revealWorkoutControl(reason); reason.tap()
         }
-        let save = app.buttons["set.save"]
-        app.revealWorkoutControl(save); save.tap()
+        app.tapWorkoutControl("set.save")
     }
 
     @MainActor func testEasierModeIsAvailableBeforeWorkingSetsAfterPerformedHistory() {
@@ -145,10 +144,10 @@ extension WorkoutFlowTests {
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["workout.next-prescription"].label, "Next: THU, 2026-10-08")
-        let actualLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.completed-actual-load.")).firstMatch
+        let actualLoad = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.saved.", "summary.actual-weight")).firstMatch
         app.revealWorkoutControl(actualLoad)
-        XCTAssertEqual(actualLoad.label, "Actual load: 5 lb per hand")
-        let bodyweightLoad = app.staticTexts["Actual load: bodyweight / your setup — no numeric load recorded"]
+        XCTAssertEqual(actualLoad.label, "Actual weight: 5 lb per hand")
+        let bodyweightLoad = app.staticTexts["Actual weight: Bodyweight"].firstMatch
         app.revealWorkoutControl(bodyweightLoad); XCTAssertTrue(bodyweightLoad.isHittable)
     }
     @MainActor func testTypedPendingRepsProblemMidnightCannotDiscardSafetyObservation() {
@@ -253,6 +252,10 @@ extension WorkoutFlowTests {
         XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
         app.tapWorkoutControl("workout.finish")
         XCTAssertTrue(app.buttons["workout.repair-completion"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.buttons["workout.finish"].label, "Retry Finish")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier CONTAINS %@", "workout.card.", ".correct.")).count, 0)
+        XCTAssertFalse(app.buttons["workout.review"].exists)
+        let frozen = XCTAttachment(screenshot: app.screenshot()); frozen.name = "Frozen Finish read only exact retry and repair"; frozen.lifetime = .keepAlways; add(frozen)
         app.buttons["workout.repair-completion"].tap()
         XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Affected movements:")).firstMatch.waitForExistence(timeout: 15))
         app.buttons["Cancel"].tap()
@@ -269,7 +272,7 @@ extension WorkoutFlowTests {
         XCTAssertEqual(app.buttons["summary.confirm"].label, "Return to review")
         app.tapWorkoutControl("effort.too_hard")
         app.tapWorkoutControl("summary.confirm")
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
         app.terminate()
         let resumed = start(reset: false)
         resumed.tapWorkoutControl("workout.review")
@@ -280,7 +283,7 @@ extension WorkoutFlowTests {
         resumed.navigationBars.buttons["BackButton"].tap()
         let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: resumed.buttons["summary.confirm"])
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 15), .completed)
-        let summaries = resumed.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).allElementsBoundByIndex.map(\.identifier)
+        let summaries = resumed.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", ".name")).allElementsBoundByIndex.map(\.identifier)
         XCTAssertEqual(summaries.count, 5)
         XCTAssertEqual(resumed.scrollViews.count, 1, "The active Workout review owns the scroll viewport")
         let reviewScroll = resumed.scrollViews.firstMatch
@@ -292,7 +295,7 @@ extension WorkoutFlowTests {
                 bounds.minY >= navigation.frame.maxY && bounds.maxY < finish.frame.minY && control.isHittable
         }
         for identifier in summaries.dropFirst() {
-            let control = resumed.buttons[identifier]
+            let control = resumed.staticTexts[identifier]
             for _ in 0..<24 {
                 if fullyVisible(control) { break }
                 if control.frame.minY < navigation.frame.maxY { reviewScroll.swipeDown() }
@@ -302,7 +305,7 @@ extension WorkoutFlowTests {
             XCTAssertTrue(reviewScroll.frame.contains(control.frame))
             XCTAssertGreaterThanOrEqual(control.frame.minY, navigation.frame.maxY)
             XCTAssertLessThan(control.frame.maxY, finish.frame.minY)
-            resumed.tapWorkoutControl(identifier); resumed.confirmGuidedSummary()
+
         }
         resumed.tapWorkoutControl("workout.finish")
         XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 15))

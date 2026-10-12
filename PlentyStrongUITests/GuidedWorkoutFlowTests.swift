@@ -1,6 +1,221 @@
 import XCTest
 
 final class GuidedWorkoutFlowTests: XCTestCase {
+    @MainActor func testFinalCardsKeepGoalsActualsAndConfirmCorrectionsInline() { finalCards(extra: []) }
+    @MainActor func testFinalCardsAccessibilityStackedComparisonsAndSavedResults() { finalCards(extra: ["-ui-large-text", "-ui-dark"]) }
+    @MainActor private func finalCards(extra: [String]) {
+        let app = launch(extra: extra)
+        capture(app, "Final matrix introduction " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.confirmGuidedWeight(amount: "20"); app.beginGuidedMovement()
+        app.revealWorkoutControl(app.textFields["set.reps"]); app.textFields["set.reps"].tap()
+        capture(app, "Final matrix set keyboard " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.buttons["keyboard.done"].tap()
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        capture(app, "Final matrix within-movement rest " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.tapWorkoutControl("movement.partial-action")
+        capture(app, "Final matrix movement summary " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.tapWorkoutControl("effort.unknown")
+        app.tapWorkoutControl("workout.stop"); app.buttons["workout.stop-confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
+        let actualWeight = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", "summary.actual-weight")).firstMatch
+        app.revealWorkoutControl(actualWeight)
+        XCTAssertEqual(actualWeight.label, "Actual weight: 20 lb per hand")
+        let prefix = String(actualWeight.identifier.dropLast("summary.actual-weight".count))
+        XCTAssertEqual(app.staticTexts[prefix + "summary.goal-weight"].label, "Goal weight: 40 lb per hand")
+        XCTAssertEqual(app.staticTexts[prefix + "set.actual.0"].label, "Set 1: 10 reps")
+        XCTAssertEqual(app.staticTexts[prefix + "set.unrecorded.1"].label, "Set 2: unrecorded")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).count, 0)
+        XCTAssertFalse(app.buttons["workout.review"].exists)
+        capture(app, "Final cards goal40 actual20 distinct and no routine Review " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.revealWorkoutControl(app.buttons[prefix + "correct.0"])
+        XCTAssertGreaterThanOrEqual(app.buttons[prefix + "correct.0"].frame.height, 44)
+        app.tapWorkoutControl(prefix + "correct.0"); app.replacePerformedReps("7")
+        app.tapWorkoutControl("reason.effort_limit"); app.tapWorkoutControl("correction.save")
+        waitForCorrectionReturn(app)
+        XCTAssertFalse(app.staticTexts["movement.summary"].exists)
+        app.revealWorkoutControl(app.staticTexts[prefix + "set.actual.0"])
+        XCTAssertEqual(app.staticTexts[prefix + "set.actual.0"].label, "Set 1: 7 reps")
+        XCTAssertEqual(app.staticTexts[prefix + "outcome"].label, "Outcome: partial")
+        XCTAssertFalse(app.buttons["workout.finish"].isEnabled)
+        app.revealWorkoutControl(app.buttons[prefix + "effort.picker"])
+        XCTAssertTrue(app.buttons[prefix + "effort.picker"].label.hasSuffix("I'm not sure"), "Known explicit local answer survives correction")
+        app.tapWorkoutControl(prefix + "corrections.0")
+        let detail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 1. Original:")).firstMatch
+        app.revealWorkoutControl(detail)
+        XCTAssertTrue(detail.label.contains("Original: 10 reps") && detail.label.contains("Replacement: 7 reps"))
+        capture(app, "Final inline correction provenance and explicit confirmation " + (extra.isEmpty ? "normal" : "accessibility5"))
+        app.revealWorkoutControl(app.buttons[prefix + "confirm"])
+        XCTAssertGreaterThanOrEqual(app.buttons[prefix + "confirm"].frame.height, 44)
+        XCTAssertTrue(app.buttons[prefix + "confirm"].isHittable)
+        app.terminate()
+        let resumed = launch(reset: false, extra: extra)
+        resumed.revealWorkoutControl(resumed.buttons[prefix + "effort.picker"])
+        XCTAssertTrue(resumed.buttons[prefix + "effort.picker"].label.hasSuffix("Choose effort…"), "Pending unknown after relaunch is not an explicit answer")
+        XCTAssertFalse(resumed.buttons[prefix + "confirm"].isEnabled)
+        XCTAssertFalse(resumed.buttons["workout.finish"].isEnabled)
+        resumed.tapWorkoutControl(prefix + "effort.picker"); resumed.buttons[prefix + "effort.unknown"].firstMatch.tap()
+        resumed.tapWorkoutControl(prefix + "confirm")
+        let confirmed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: resumed.buttons[prefix + "confirm"])
+        XCTAssertEqual(XCTWaiter.wait(for: [confirmed], timeout: 15), .completed)
+        XCTAssertTrue(resumed.buttons["workout.finish"].isEnabled)
+        resumed.tapWorkoutControl("workout.finish")
+        XCTAssertTrue(resumed.staticTexts["workout.saved"].waitForExistence(timeout: 15))
+        let savedPrefix = prefix.replacingOccurrences(of: "workout.card.", with: "workout.saved.")
+        resumed.revealWorkoutControl(resumed.staticTexts[savedPrefix + "summary.actual-weight"])
+        XCTAssertEqual(resumed.staticTexts[savedPrefix + "summary.goal-weight"].label, "Goal weight: 40 lb per hand")
+        XCTAssertEqual(resumed.staticTexts[savedPrefix + "summary.actual-weight"].label, "Actual weight: 20 lb per hand")
+        XCTAssertEqual(resumed.staticTexts[savedPrefix + "set.actual.0"].label, "Set 1: 7 reps")
+        capture(resumed, "Accepted same goal actual comparison " + (extra.isEmpty ? "normal" : "accessibility5"))
+        XCTAssertTrue(resumed.buttons[savedPrefix + "corrections.0"].exists)
+        resumed.tapWorkoutControl(savedPrefix + "corrections.0")
+        let retained = resumed.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Correction 1. Original:")).firstMatch
+        resumed.revealWorkoutControl(retained)
+        XCTAssertTrue(retained.label.contains("Original: 10 reps") && retained.label.contains("Replacement: 7 reps"))
+        capture(resumed, "Accepted collapsed audit expanded " + (extra.isEmpty ? "normal" : "accessibility5"))
+    }
+
+    @MainActor func testFinalPerSideCardsKeepSkippedUnrecordedAndStoppedRawSlots() {
+        let app = launch(mode: "per-side")
+        for _ in 0..<2 { app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary() }
+        app.beginGuidedMovement(weight: "5")
+        app.tapWorkoutControl("set.skip")
+        app.enterPerformedReps("0", field: "set.left-reps")
+        app.tapWorkoutControl("problem.pain")
+        XCTAssertEqual(app.staticTexts["set.actual.1"].label, "Set 2: left 0, right unrecorded")
+        app.tapWorkoutControl("effort.unknown")
+        app.tapWorkoutControl("workout.stop"); app.buttons["workout.stop-confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
+        let actual = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", "set.actual.1")).firstMatch
+        app.revealWorkoutControl(actual)
+        let prefix = String(actual.identifier.dropLast("set.actual.1".count))
+        XCTAssertEqual(actual.label, "Set 2: left 0, right unrecorded")
+        XCTAssertEqual(app.staticTexts[prefix + "set.skipped.0"].label, "Set 1: skipped")
+        XCTAssertEqual(app.staticTexts[prefix + "set.unrecorded.2"].label, "Set 3: unrecorded")
+        XCTAssertTrue(app.staticTexts[prefix + "summary.slot.1"].label.contains("goal 8 reps per side"))
+        XCTAssertEqual(app.staticTexts[prefix + "summary.goal-weight"].label, "Goal weight: Unknown load")
+        XCTAssertEqual(app.staticTexts[prefix + "outcome"].label, "Outcome: stopped")
+        XCTAssertEqual(app.staticTexts[prefix + "problem"].label, "Safety: pain")
+        capture(app, "Final per side raw zero missing right skipped versus unrecorded slots")
+        app.tapWorkoutControl("workout.finish")
+        XCTAssertTrue(app.staticTexts["workout.saved"].waitForExistence(timeout: 15))
+        let savedPrefix = prefix.replacingOccurrences(of: "workout.card.", with: "workout.saved.")
+        app.revealWorkoutControl(app.staticTexts[savedPrefix + "set.actual.1"])
+        XCTAssertEqual(app.staticTexts[savedPrefix + "set.actual.1"].label, "Set 2: left 0, right unrecorded")
+        XCTAssertEqual(app.staticTexts[savedPrefix + "set.skipped.0"].label, "Set 1: skipped")
+        XCTAssertEqual(app.staticTexts[savedPrefix + "set.unrecorded.2"].label, "Set 3: unrecorded")
+        capture(app, "Accepted per side raw slots retain immutable goal and no invented numeric load")
+    }
+
+    @MainActor func testBetweenMovementRestNormalAndAccessibilityActionsReachable() {
+        for extra in [[], ["-ui-large-text", "-ui-dark"]] {
+            let app = launch(extra: extra)
+            app.confirmGuidedWeight(); app.beginGuidedMovement()
+            app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+            XCTAssertTrue(app.staticTexts["rest.next-goal"].waitForExistence(timeout: 5))
+            app.revealWorkoutControl(app.staticTexts["rest.next-goal"])
+            XCTAssertEqual(app.staticTexts["rest.next-goal"].label, "Goal: 10 reps")
+            XCTAssertEqual(app.staticTexts["rest.next-weight"].label, "Weight: 40 lb per hand")
+            XCTAssertGreaterThanOrEqual(app.buttons["workout.skip"].frame.height, 44)
+            capture(app, "Final rebuilt within-movement goal and confirmed weight " + (extra.isEmpty ? "normal" : "accessibility5"))
+            app.tapWorkoutControl("movement.partial-action")
+            XCTAssertTrue(app.buttons["summary.confirm"].waitForExistence(timeout: 15))
+            app.revealWorkoutControl(app.staticTexts["summary.goal-weight"])
+            XCTAssertGreaterThanOrEqual(app.buttons["workout.stop"].frame.height, 44)
+            XCTAssertTrue(app.buttons["workout.stop"].isHittable)
+            capture(app, "Final rebuilt movement summary and trailing Stop " + (extra.isEmpty ? "normal" : "accessibility5"))
+            app.confirmGuidedSummary(continueRest: false)
+            XCTAssertTrue(app.staticTexts["rest.remaining"].waitForExistence(timeout: 15))
+            app.revealWorkoutControl(app.staticTexts["rest.next-weight"])
+            XCTAssertEqual(app.staticTexts["rest.next-weight"].label, "Your assistance setup — no numeric load is inferred")
+            XCTAssertTrue(app.buttons["guided.next"].isHittable)
+            XCTAssertTrue(app.buttons["workout.skip"].isHittable)
+            capture(app, "Final matrix between-movement rest " + (extra.isEmpty ? "normal" : "accessibility5"))
+            app.openWorkoutSkip()
+            XCTAssertTrue(app.buttons["movement.skip"].firstMatch.waitForExistence(timeout: 5))
+            capture(app, "Final matrix native between-movement Skip " + (extra.isEmpty ? "normal" : "accessibility5"))
+            app.cancelWorkoutSkip(); app.terminate()
+        }
+    }
+
+    @MainActor func testRestPreviewDistinguishesUnknownExternalLoadFromBodyweight() {
+        let app = launch(mode: "per-side", extra: ["-ui-large-text", "-ui-dark"])
+        app.tapWorkoutControl("movement.skip"); app.confirmGuidedSummary()
+        app.beginGuidedMovement(weight: "5")
+        app.enterPerformedReps("8"); app.tapWorkoutControl("set.save")
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary(continueRest: false)
+        revealRestPreview(app, identifier: "rest.next-weight")
+        XCTAssertEqual(app.staticTexts["rest.next-weight"].label, "Weight: Unknown load")
+        XCTAssertTrue(app.buttons["guided.next"].isHittable)
+        XCTAssertTrue(app.buttons["workout.skip"].isHittable)
+        capture(app, "Final accessibility5 external unknown load full-width rest preview")
+        app.continueGuidedRest(); app.beginGuidedMovement(weight: "5")
+        app.enterPerformedReps("8", field: "set.left-reps"); app.enterPerformedReps("8", field: "set.right-reps")
+        app.tapWorkoutControl("set.save")
+        revealRestPreview(app, identifier: "rest.next-goal")
+        XCTAssertEqual(app.staticTexts["rest.next-goal"].label, "Goal: 8 reps per side")
+        capture(app, "Final accessibility5 visible within-rest exact per-side goal")
+        revealRestPreview(app, identifier: "rest.next-weight")
+        XCTAssertEqual(app.staticTexts["rest.next-weight"].label, "Weight: 5 lb per hand")
+        capture(app, "Final accessibility5 visible within-rest confirmed actual weight")
+        app.tapWorkoutControl("movement.partial-action"); app.confirmGuidedSummary(continueRest: false)
+        revealRestPreview(app, identifier: "rest.next-weight")
+        XCTAssertEqual(app.staticTexts["rest.next-weight"].label, "Bodyweight / your setup — no numeric load is inferred")
+        capture(app, "Final accessibility5 bodyweight rest preview distinct from unknown external load")
+    }
+
+    @MainActor func testRestNextLabelAfterPreviewScroll() {
+        let app = launch(extra: ["-ui-large-text", "-ui-dark"])
+        app.confirmGuidedWeight(); app.beginGuidedMovement()
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        XCTAssertTrue(app.staticTexts["rest.next-weight"].waitForExistence(timeout: 5))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.otherElements["workout.busy"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+        capture(app, "Stable final accessibility rest Next before preview scroll")
+        revealRestPreview(app, identifier: "rest.next-weight")
+        let next = app.buttons["guided.next"]
+        XCTAssertEqual(next.label, "Next")
+        XCTAssertTrue(next.isEnabled && next.isHittable)
+        XCTContext.runActivity(named: "Stable final rest Next after preview scroll") { activity in
+            let hierarchy = XCTAttachment(string: app.debugDescription); hierarchy.name = "Stable Next rest AX"; hierarchy.lifetime = .keepAlways; activity.add(hierarchy)
+            let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Stable final accessibility rest Next after preview scroll"; screenshot.lifetime = .keepAlways; activity.add(screenshot)
+        }
+        app.tapWorkoutControl("guided.next")
+        XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 15))
+    }
+
+    @MainActor func testFinalCardCompactCorrectionAndConfirmationTouchTargets() {
+        let app = launch()
+        XCTAssertTrue(app.buttons["workout.skip"].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.buttons["workout.skip"].frame.height, 44)
+        XCTAssertTrue(app.buttons["workout.skip"].isHittable)
+        app.confirmGuidedWeight(); app.beginGuidedMovement()
+        XCTAssertGreaterThanOrEqual(app.buttons["workout.skip"].frame.height, 44)
+        app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
+        XCTAssertGreaterThanOrEqual(app.buttons["workout.skip"].frame.height, 44)
+        app.tapWorkoutControl("movement.partial-action"); app.tapWorkoutControl("effort.unknown")
+        XCTAssertGreaterThanOrEqual(app.buttons["workout.stop"].frame.height, 44)
+        XCTAssertTrue(app.buttons["workout.stop"].isHittable)
+        app.tapWorkoutControl("workout.stop"); app.buttons["workout.stop-confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["workout.finish"].waitForExistence(timeout: 15))
+        let correct = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", ".correct.0")).firstMatch
+        app.revealWorkoutControl(correct)
+        XCTAssertGreaterThanOrEqual(correct.frame.height, 44)
+        XCTAssertTrue(correct.isHittable)
+        let prefix = String(correct.identifier.dropLast("correct.0".count))
+        correct.tap(); app.replacePerformedReps("9"); app.tapWorkoutControl("reason.effort_limit")
+        app.tapWorkoutControl("correction.save"); waitForCorrectionReturn(app)
+        let confirm = app.buttons[prefix + "confirm"]
+        app.revealWorkoutControl(confirm)
+        XCTAssertGreaterThanOrEqual(confirm.frame.height, 44)
+        XCTAssertTrue(confirm.isHittable)
+        XCTAssertFalse(app.buttons["workout.finish"].isEnabled)
+        capture(app, "Final normal compact native correction and inline Confirm 44-point targets")
+        confirm.tap()
+        let confirmed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: confirm)
+        XCTAssertEqual(XCTWaiter.wait(for: [confirmed], timeout: 15), .completed)
+        XCTAssertTrue(app.buttons["workout.finish"].isEnabled)
+    }
+
     @MainActor func testSummaryRequiresNativeExplicitEffortAndAtomicStop() {
         let app = launch(); begin(app)
         app.enterPerformedReps("10"); app.tapWorkoutControl("set.save")
@@ -44,12 +259,13 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         app.terminate()
         let resumed = launch(reset: false)
         XCTAssertTrue(resumed.buttons["workout.finish"].waitForExistence(timeout: 15))
-        let summary = resumed.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout.summary.")).firstMatch
-        resumed.revealWorkoutControl(summary); summary.tap()
-        XCTAssertTrue(resumed.buttons["effort.picker"].waitForExistence(timeout: 15))
-        XCTAssertTrue(resumed.buttons["effort.picker"].label.hasSuffix("I'm not sure"))
-        XCTAssertTrue(resumed.buttons["summary.confirm"].isEnabled)
-        XCTAssertFalse(resumed.buttons["workout.stop"].exists, "Backward summary cannot terminate remaining work")
+        let effort = resumed.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "workout.card.", ".effort-saved")).firstMatch
+        resumed.revealWorkoutControl(effort)
+        XCTAssertEqual(effort.label, "Effort: I'm not sure")
+        XCTAssertFalse(resumed.buttons["workout.review"].exists)
+        XCTAssertFalse(resumed.buttons["summary.confirm"].exists)
+        XCTAssertFalse(resumed.buttons["workout.stop"].exists)
+
     }
 
     @MainActor func testSummaryStopSafetySavesWithoutInventedEffort() {
@@ -294,12 +510,47 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         app.beginGuidedMovement()
         XCTAssertTrue(app.textFields["set.reps"].waitForExistence(timeout: 15))
     }
+    /// Preview captures require visible pixels above the actual pinned footer;
+    /// AX can report an obscured static label as hittable before it is readable.
+    @MainActor private func revealRestPreview(_ app: XCUIApplication, identifier: String) {
+        let text = app.staticTexts[identifier], footer = app.buttons["guided.next"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        let deadline = app.staticTexts["rest.remaining"].label
+        func visible() -> Bool {
+            let bounds = text.frame
+            let top = app.navigationBars.allElementsBoundByIndex.map(\.frame.maxY).max() ?? app.frame.minY
+            return bounds.minY >= top + 8 && bounds.maxY <= footer.frame.minY - 16 && text.isHittable
+        }
+        for _ in 0..<12 {
+            if visible() { break }
+            let bounds = text.frame
+            let top = (app.navigationBars.allElementsBoundByIndex.map(\.frame.maxY).max() ?? app.frame.minY) + 16
+            let bottom = footer.frame.minY - 32
+            let above = bounds.minY < top
+            let shift = above ? top - bounds.minY : bounds.maxY - (bottom + 16)
+            let distance = min(bottom - top - 32, max(24, shift + 12))
+            XCTAssertGreaterThan(distance, 0)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let startY = above ? top : bottom
+            let endY = above ? top + distance : bottom - distance
+            origin.withOffset(CGVector(dx: app.frame.midX, dy: startY)).press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: app.frame.midX, dy: endY)))
+        }
+        XCTAssertTrue(visible(), "Show the complete preview between navigation and the pinned Next")
+        XCTAssertEqual(app.staticTexts["rest.remaining"].label, deadline, "Inspection does not restart the original deadline")
+    }
     @MainActor private func launch(mode: String = "normal", reset: Bool = true, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-fixture-exact-reps", "-fixture-exact-mode", mode, "-cloud-disabled", "-products-unavailable"] + (reset ? ["-reset-local-store"] : []) + extra
         app.launch()
-        if extra.contains("-ui-large-text") { app.revealWorkoutControl(app.buttons["today.start"]) }
-        app.tapReadyWorkoutStart()
+        if extra.contains("-ui-large-text"), mode == "per-side" || !reset {
+            // This restored synthetic draft parks behind the actual Resume
+            // affordance; Today Start is absent at this text size.
+            XCTAssertTrue(app.buttons["workout.resume"].waitForExistence(timeout: 15))
+            app.tapWorkoutControl("workout.resume")
+        } else {
+            if extra.contains("-ui-large-text") { app.revealWorkoutControl(app.buttons["today.start"]) }
+            app.tapReadyWorkoutStart()
+        }
         XCTAssertTrue(app.buttons["workout.close"].waitForExistence(timeout: 15))
         if app.buttons["workout.keep-original-date"].exists { app.tapWorkoutControl("workout.keep-original-date") }
         return app

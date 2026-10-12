@@ -501,7 +501,26 @@ import TrainingCore
             try await flushScratch()
             snapshot = try await repository.correctDraftSet(programID: programID, expectedDraftHash: hash,
                 operationID: operationID, movementID: movementID, setIndex: index, replacement: replacement)
-            reviewStep = .summary(movementID: movementID)
+            reviewStep = snapshot.draft?.flow?.forward == .workoutReview ? nil : .summary(movementID: movementID)
+        }
+    }
+    /// Final review confirms only an already acknowledged outcome. It never
+    /// changes disposition, rewinds the cursor, or qualifies a demoted completion.
+    func confirmWorkoutReviewSummary(movementID: String, effort: Effort?) async throws {
+        try await operations.perform { _ in
+            let original = try await editableDraft()
+            guard reviewStep == nil, original.flow?.forward == .workoutReview,
+                  (original.acknowledgedMovementIDs ?? []).contains(movementID) else {
+                throw EngineError(code: "invalid_workout_step", field: "review")
+            }
+            let i = try index(movementID, draft: original), log = original.logs[i]
+            try await validateSummary(movementID: movementID, effort: effort, status: log.status, draft: original, requiresExplicitEffort: true)
+            var draft = original
+            if let effort { draft.logs[i].finalEffort = effort }
+            if draft.flow?.reviewedSummaryMovementIDs.contains(movementID) != true {
+                draft.flow?.reviewedSummaryMovementIDs.append(movementID)
+            }
+            if draft != original { try await save(draft, expectedExistingDraft: original) }
         }
     }
     func confirmMovementSummary(movementID: String, effort: Effort?, status: LogStatus, reviewing: Bool) async throws {
