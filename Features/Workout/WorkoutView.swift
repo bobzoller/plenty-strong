@@ -283,7 +283,7 @@ struct WorkoutView: View {
             ForEach(Array((log?.actualSets ?? []).enumerated()), id: \.offset) { offset, actual in
                 let index = actual.setIndex ?? offset
                 if !row.sets.indices.contains(index) { Text("Retained extra observation \(index + 1): \(actual.reps) reps") }
-                if !frozen {
+                if !frozen, row.sets.indices.contains(index) {
                     Button { pushCorrection(id, index: index) } label: {
                         Text("Correct Set \(index + 1)").frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
                     }.accessibilityIdentifier(prefix + "correct.\(index)").disabled(model.busy)
