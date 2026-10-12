@@ -473,7 +473,7 @@ final class GuidedWorkoutFlowTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["set.actual.1"].exists, "Rest shows a compact next preview")
         app.tapWorkoutControl("workout.skip"); app.buttons["set.skip"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["movement.summary"].waitForExistence(timeout: 15))
-        XCTAssertEqual(app.staticTexts["set.skipped.0"].label, "Set 1: skipped")
+        XCTAssertEqual(app.staticTexts["set.skipped.0"].label, "Skipped")
         XCTAssertEqual(app.staticTexts["set.actual.1"].label, "10 reps")
         XCTAssertEqual(app.staticTexts["set.skipped.2"].label, "Skipped")
     }
