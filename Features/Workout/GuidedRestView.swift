@@ -20,7 +20,7 @@ struct GuidedRestView: View {
             Text("Rest").font(.largeTitle)
             if let deadline = model.snapshot.draft?.restDeadline {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    Text("Rest: \(RestTimer(deadline: deadline).remaining(at: model.now())) seconds remaining")
+                    Text("Rest: \(RestTimer(deadline: deadline).formattedRemaining(at: model.now()))")
                         .font(.largeTitle.bold()).monospacedDigit().accessibilityIdentifier("rest.remaining")
                 }
             }

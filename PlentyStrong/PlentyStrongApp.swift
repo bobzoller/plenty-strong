@@ -41,7 +41,11 @@ import TrainingCore
                             .disabled(model.busy || model.snapshot.health != .ready).padding(.horizontal).padding(.bottom, 6)
                         }
                     }
-                    .modifier(WorkoutSheetPresentationModifier(owner: owner, model: model))
+                    .modifier(WorkoutSheetPresentationModifier(owner: owner, model: model, completed: { receipt in
+                        guard owner.acceptsWorkoutCompletion(model: model, receipt: receipt, current: composition) else { return }
+                        owner.showingWorkout = false
+                        selectedTab = .today
+                    }))
                     .id([ObjectIdentifier(owner), ObjectIdentifier(model)])
                 } else if let snapshot = composition.readOnlyProgram {
                     NavigationStack { ArchivedProgramView(composition: composition, snapshot: snapshot) }
@@ -91,9 +95,10 @@ import TrainingCore
 private struct WorkoutSheetPresentationModifier: ViewModifier {
     let owner: AppComposition
     let model: WorkoutViewModel
+    let completed: (FinalizationReceipt) -> Void
     @State private var navigation: WorkoutReviewNavigation
-    init(owner: AppComposition, model: WorkoutViewModel) {
-        self.owner = owner; self.model = model
+    init(owner: AppComposition, model: WorkoutViewModel, completed: @escaping (FinalizationReceipt) -> Void) {
+        self.owner = owner; self.model = model; self.completed = completed
         _navigation = State(initialValue: WorkoutReviewNavigation(model: model))
     }
     func body(content: Content) -> some View {
@@ -104,7 +109,11 @@ private struct WorkoutSheetPresentationModifier: ViewModifier {
                 Task { await navigation.dismissed(attempt: attempt, isCurrentOwner: { owner.workout === model }, isStillDismissed: { !owner.showingWorkout }, restorePresentation: { owner.showingWorkout = true }) }
             }
         })) {
-            WorkoutView(model: model, close: { navigation.clearReview(); owner.showingWorkout = false }, navigation: navigation)
+            WorkoutView(model: model, close: { navigation.clearReview(); owner.showingWorkout = false }, navigation: navigation, completed: { receipt in
+                guard model.acceptsCompletion(receipt), owner.workout === model else { return }
+                navigation.clearReview()
+                completed(receipt)
+            })
                 .modifier(SyntheticAccessibilityOverrides())
                 .presentationDetents([.large]).presentationDragIndicator(.visible)
         }

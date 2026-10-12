@@ -61,15 +61,22 @@ enum WorkoutFlowResolver {
         let row = draft.displayed.exercises[sourceIndex], log = draft.logs[sourceIndex]
         if case let .introduction(nextID) = next, draft.displayed.exercises.indices.contains(sourceIndex + 1),
            draft.displayed.exercises[sourceIndex + 1].movementID == nextID,
-           log.problem == .none, log.status != .stopped, log.status != .skipped, draft.restDeadline != nil,
+           row.kind != .paused, row.kind != .setupReview,
+           log.problem == .none, log.status != .stopped, log.status != .skipped, draft.restDeadline != nil, draft.restStartedAt != nil,
            let last = log.actualSets.enumerated().map({ $0.element.setIndex ?? $0.offset }).max(),
-           row.sets.indices.contains(last), last == (log.actualSets.enumerated().map({ $0.element.setIndex ?? $0.offset }) + (log.skippedSetIndices ?? [])).max() {
+           row.sets.indices.contains(last) {
             return .rest(sourceMovementID: row.movementID, sourceSetIndex: last, destination: .introduction(movementID: nextID))
         }
         return next
     }
 
     static func validate(_ draft: WorkoutDraft) throws {
+        if let anchor = draft.restStartedAt {
+            guard anchor.timeIntervalSince1970.isFinite, WorkoutDraft.supportedRestDeadlineRange.contains(anchor),
+                  let deadline = draft.restDeadline, deadline.timeIntervalSince1970.isFinite,
+                  WorkoutDraft.supportedRestDeadlineRange.contains(deadline),
+                  [120.0, 180.0].contains(deadline.timeIntervalSince(anchor)) else { throw invalid("rest_anchor") }
+        }
         let rows = draft.displayed.exercises
         let ids = rows.map(\.movementID)
         let acknowledged = Set(draft.acknowledgedMovementIDs ?? [])
@@ -116,17 +123,18 @@ enum WorkoutFlowResolver {
                 guard let deadline = draft.restDeadline, deadline.timeIntervalSince1970.isFinite,
                       WorkoutDraft.supportedRestDeadlineRange.contains(deadline),
                       row.sets.indices.contains(sourceIndex), performedIndices(log).contains(sourceIndex),
-                      occupiedIndices(log).max() == sourceIndex,
                       log.problem == .none, log.status != .stopped, log.status != .skipped,
                       row.kind != .paused, row.kind != .setupReview else { throw invalid("rest_source") }
                 switch destination {
                 case let .set(id, index):
-                    guard id == source, source == firstUnhandled, log.status == .partial,
+                    guard occupiedIndices(log).max() == sourceIndex, id == source, source == firstUnhandled, log.status == .partial,
                           !hasDemotedCompletion(log, draft: draft), nextIndex(log, row: row) == index, index > sourceIndex else { throw invalid("rest_destination") }
                 case let .introduction(id):
                     let (destinationRow, destinationLog) = try binding(id, draft: draft)
                     // Corrections can invalidate source review while retaining this cursor.
-                    guard acknowledged.contains(source), id == firstUnhandled,
+                    guard performedIndices(log).max() == sourceIndex,
+                          occupiedIndices(log).max() == sourceIndex || draft.restStartedAt != nil,
+                          acknowledged.contains(source), id == firstUnhandled,
                           let sourcePosition = ids.firstIndex(of: source), let destinationPosition = ids.firstIndex(of: id),
                           destinationPosition == sourcePosition + 1,
                           occupiedIndices(destinationLog).isEmpty, destinationLog.problem == .none,

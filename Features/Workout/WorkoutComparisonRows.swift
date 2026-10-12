@@ -1,68 +1,81 @@
 import SwiftUI
 import TrainingCore
 
-/// Immutable issued goals alongside independently recorded observations. This is
-/// also the shared comparison presentation for final review; it never replans.
+/// Immutable issued goals alongside raw observations; editing belongs to callers.
 struct WorkoutComparisonRows: View {
     let row: ExercisePrescription
     let log: ExerciseLog?
     let repCounting: RepCounting
     let loadingMode: LoadingMode
     var identifierPrefix = ""
+    var editSet: ((Int) -> Void)? = nil
+    var editingDisabled = false
     @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
         if textSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 12) {
-                goalWeight
-                actualWeight
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Weight").font(.subheadline.bold())
+                VStack(alignment: .leading) { Text("Goal").bold(); goalWeight; Text("Actual").bold(); actualWeight }
                 ForEach(Array(row.sets.enumerated()), id: \.offset) { index, goal in
-                    VStack(alignment: .leading, spacing: 4) {
-                        goalText(goal, index: index)
-                        actualText(index: index)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack { Text("Set \(index + 1)").bold(); Spacer(); editButton(index: index) }
+                        Text("Goal").bold(); goalText(goal, index: index)
+                        Text("Actual").bold(); actualText(index: index)
                     }
                 }
             }.font(.subheadline)
         } else {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                GridRow {
-                    Text("Goal").font(.subheadline.bold())
-                    Text("Actual").font(.subheadline.bold())
-                }
-                GridRow { goalWeight; actualWeight }.font(.subheadline)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow { Text("Set"); Text("Goal"); Text("Actual"); Text("Edit") }.font(.subheadline.bold())
+                GridRow { Text("Weight"); goalWeight; actualWeight; Text("") }
                 ForEach(Array(row.sets.enumerated()), id: \.offset) { index, goal in
-                    GridRow { goalText(goal, index: index); actualText(index: index) }.font(.subheadline)
+                    GridRow { Text("\(index + 1)"); goalText(goal, index: index); actualText(index: index); editButton(index: index) }
                 }
-            }
+            }.font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+    @ViewBuilder private func editButton(index: Int) -> some View {
+        if let editSet, actual(index: index) != nil {
+            Button { editSet(index) } label: { Image(systemName: "pencil").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                .buttonStyle(.plain).foregroundStyle(.primary).disabled(editingDisabled)
+                .accessibilityLabel("Correct Set \(index + 1)")
+                .accessibilityIdentifier((identifierPrefix.isEmpty ? "summary." : identifierPrefix) + "correct.\(index)")
+        } else { Text("") }
+    }
     private var goalWeight: some View {
-        Text("Goal weight: \(weight(row.load))").accessibilityIdentifier(identifierPrefix + "summary.goal-weight")
+        Text(weight(row.load)).accessibilityIdentifier(identifierPrefix + "summary.goal-weight")
     }
     private var actualWeight: some View {
-        Text("Actual weight: \(weight(log?.actualLoad))").accessibilityIdentifier(identifierPrefix + "summary.actual-weight")
+        Text(weight(log?.actualLoad)).accessibilityIdentifier(identifierPrefix + "summary.actual-weight")
     }
     private func goalText(_ goal: SetPrescription, index: Int) -> some View {
-        Text("Set \(index + 1) · goal \(goal.targetReps.map(String.init) ?? "up to \(goal.repCeiling)") reps\(repCounting == .perSide ? " per side" : "")")
+        Text("\(goal.targetReps.map(String.init) ?? "Up to \(goal.repCeiling)") reps\(repCounting == .perSide ? " per side" : "")")
             .accessibilityIdentifier(identifierPrefix + "summary.slot.\(index)")
     }
+    private func actual(index: Int) -> ActualSet? {
+        log?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element
+    }
     @ViewBuilder private func actualText(index: Int) -> some View {
-        if let actual = log?.actualSets.enumerated().first(where: { ($0.element.setIndex ?? $0.offset) == index })?.element {
-            Text(actualText(actual, index: index)).accessibilityIdentifier(identifierPrefix + "set.actual.\(index)")
+        if let actual = actual(index: index) {
+            Text(actualText(actual)).accessibilityIdentifier(identifierPrefix + "set.actual.\(index)")
         } else if log?.skippedSetIndices?.contains(index) == true {
-            Text("Set \(index + 1): skipped").accessibilityIdentifier(identifierPrefix + "set.skipped.\(index)")
+            Text("Skipped").accessibilityIdentifier(identifierPrefix + "set.skipped.\(index)")
         } else {
-            Text("Set \(index + 1): unrecorded").accessibilityIdentifier(identifierPrefix + "set.unrecorded.\(index)")
+            Text("Unrecorded").accessibilityIdentifier(identifierPrefix + "set.unrecorded.\(index)")
         }
     }
     private func weight(_ load: Load?) -> String {
         if loadingMode == .bodyweight { return "Bodyweight" }
         return load.map(MovementPrescriptionSummary.load) ?? "Unknown load"
     }
-    private func actualText(_ actual: ActualSet, index: Int) -> String {
+    private func actualText(_ actual: ActualSet) -> String {
         if repCounting == .perSide || actual.leftReps != nil || actual.rightReps != nil {
-            return "Set \(index + 1): left \(actual.leftReps.map(String.init) ?? "unrecorded"), right \(actual.rightReps.map(String.init) ?? "unrecorded")"
+            if actual.leftReps == nil && actual.rightReps == nil {
+                return "Recorded \(actual.reps) reps; left unrecorded, right unrecorded"
+            }
+            return "Left \(actual.leftReps.map(String.init) ?? "unrecorded"), right \(actual.rightReps.map(String.init) ?? "unrecorded")"
         }
-        return "Set \(index + 1): \(actual.reps) reps"
+        return "\(actual.reps) reps"
     }
 }

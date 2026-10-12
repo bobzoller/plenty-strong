@@ -4,6 +4,191 @@ import TrainingCore
 @testable import PlentyStrong
 
 @MainActor @Suite(.serialized) struct GuidedWorkoutModelTests {
+    @Test func polishLookupTimingAndRestBoundary() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3, goal: .strength)
+        var instant = f.model.now()
+        let anchor = instant
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID, now: { instant })
+        let row = model.snapshot.draft!.displayed.exercises[0]
+        let clock = ContinuousClock(), start = clock.now
+        for _ in 0..<100 { _ = model.movement(for: row) }
+        print("POLISH lookup100 duration=\(start.duration(to: clock.now)) resolutions=\(model.movementPresentationResolutionCount)")
+        try await confirmLoad(model, row: row)
+        try await model.beginMovement(movementID: row.movementID)
+        try await model.recordSet(movementID: row.movementID, index: 0, actual: actual(model, row: row, index: 0, reps: row.sets[0].targetReps!))
+        #expect(model.snapshot.draft!.restDeadline == anchor.addingTimeInterval(120))
+        instant = instant.addingTimeInterval(37)
+        try await model.recordStatus(movementID: row.movementID, status: .partial)
+        #expect(model.snapshot.draft!.restStartedAt == anchor)
+        #expect(model.snapshot.draft!.restDeadline == anchor.addingTimeInterval(180))
+        instant = instant.addingTimeInterval(19)
+        try await model.confirmMovementSummary(movementID: row.movementID, effort: .unknown, status: .partial, reviewing: false)
+        #expect(model.snapshot.draft!.restDeadline == anchor.addingTimeInterval(180))
+        #expect(RestTimer(deadline: model.snapshot.draft!.restDeadline).remaining(at: instant) == 124)
+        #expect(model.visibleStep == .rest(sourceMovementID: row.movementID, sourceSetIndex: 0, destination: .introduction(movementID: model.snapshot.draft!.logs[1].movementID)))
+        await f.repository.close()
+    }
+
+    @Test func polishRestDefaultsAndDurableAnchor() async throws {
+        for goal in Goal.allCases {
+            for easier in [false, true] {
+                let f = try await GuidedWorkoutFixture.make(schemaVersion: 3, goal: goal)
+                if easier { try await f.model.start(easierToday: true) }
+                let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+                try await confirmLoad(model, row: row); try await model.beginMovement(movementID: row.movementID)
+                for index in row.sets.indices {
+                    try await model.recordSet(movementID: row.movementID, index: index, actual: actual(model, row: row, index: index, reps: row.sets[index].targetReps!))
+                    let draft = try #require(model.snapshot.draft)
+                    #expect(draft.restStartedAt == model.now())
+                    #expect(draft.restDeadline == model.now().addingTimeInterval(index == row.sets.indices.last ? 180 : 120))
+                    if index != row.sets.indices.last { try await model.advanceRest() }
+                }
+                let timed = try #require(model.snapshot.draft)
+                try await model.confirmMovementSummary(movementID: row.movementID, effort: .unknown, status: .completed, reviewing: false)
+                #expect(model.snapshot.draft!.restDeadline == timed.restDeadline)
+                let reopenedSnapshot = try await f.repository.snapshot(programID: model.programID)
+                let resumed = WorkoutViewModel(repository: f.repository, snapshot: reopenedSnapshot, timeZoneID: model.timeZoneID, now: { model.now().addingTimeInterval(37) })
+                try await resumed.resumeGuidedWorkout()
+                #expect(resumed.snapshot.draft!.restDeadline == timed.restDeadline)
+                #expect(RestTimer(deadline: timed.restDeadline).remaining(at: resumed.now()) == 143)
+                _ = try BackupService.validate(await f.repository.exportBackup())
+                await f.repository.close()
+            }
+        }
+    }
+
+    @Test func polishPendingPartialVersusSafetyAndLegacyAnchor() async throws {
+        for safety in [false, true] {
+            let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+            let row = f.model.snapshot.draft!.displayed.exercises[0]
+            try await confirmLoad(f.model, row: row); try await f.model.beginMovement(movementID: row.movementID)
+            let raw = ActualSet(reps: 0)
+            if safety {
+                try await f.model.recordProblem(movementID: row.movementID, problem: .pain, pendingActual: raw)
+                #expect(f.model.snapshot.draft!.restDeadline == nil && f.model.snapshot.draft!.restStartedAt == nil)
+                try await f.model.confirmMovementSummary(movementID: row.movementID, effort: .unknown, status: .stopped, reviewing: false)
+                if case .rest = f.model.visibleStep { Issue.record("Safety cannot force Rest") }
+            } else {
+                try await f.model.recordStatus(movementID: row.movementID, status: .partial, pendingActual: raw)
+                #expect(f.model.snapshot.draft!.restDeadline == f.model.now().addingTimeInterval(180))
+                #expect(f.model.snapshot.draft!.restStartedAt == f.model.now())
+            }
+            #expect(f.model.log(for: row.movementID)!.actualSets.first?.reps == 0)
+            await f.repository.close()
+        }
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        var legacy = f.model.snapshot.draft!
+        #expect(!String(decoding: try BackupService.bytes(legacy), as: UTF8.self).contains("restStartedAt"))
+        legacy.restDeadline = f.model.now().addingTimeInterval(77)
+        let originalBytes = try BackupService.bytes(legacy)
+        #expect(try BackupService.bytes(JSONDecoder().decode(WorkoutDraft.self, from: originalBytes)) == originalBytes)
+        legacy.restStartedAt = f.model.now()
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(legacy) }
+        legacy.restDeadline = legacy.restStartedAt!.addingTimeInterval(180)
+        try WorkoutFlowResolver.validate(legacy)
+        // An unbound legacy deadline cannot manufacture a new rest source.
+        legacy.restStartedAt = nil
+        legacy.logs[0].actualSets = [ActualSet(reps: legacy.displayed.exercises[0].sets[0].targetReps!, setIndex: 0)]
+        legacy.logs[0].status = .partial; legacy.workingSetsStarted = true
+        legacy.acknowledgedMovementIDs = [legacy.logs[0].movementID]
+        legacy.flow = WorkoutFlow(forward: .summary(movementID: legacy.logs[0].movementID), reviewedSummaryMovementIDs: [legacy.logs[0].movementID])
+        let next = try WorkoutFlowResolver.afterSummary(legacy, sourceIndex: 0)
+        #expect(next == .introduction(movementID: legacy.logs[1].movementID))
+        legacy.acknowledgedMovementIDs = []
+        let oldRest = WorkoutStep.rest(sourceMovementID: legacy.logs[0].movementID, sourceSetIndex: 0, destination: .set(movementID: legacy.logs[0].movementID, index: 1))
+        legacy.flow = WorkoutFlow(forward: oldRest, reviewedSummaryMovementIDs: [])
+        let saved = try await f.repository.saveDraft(legacy)
+        let resumed = WorkoutViewModel(repository: f.repository, snapshot: saved, timeZoneID: f.model.timeZoneID, now: f.model.now)
+        try await resumed.resumeGuidedWorkout()
+        #expect(resumed.visibleStep == oldRest && resumed.snapshot.draft!.restStartedAt == nil)
+        try await resumed.advanceRest()
+        #expect(resumed.snapshot.draft!.restDeadline == legacy.restDeadline && resumed.snapshot.draft!.restStartedAt == nil)
+        var trailing = legacy
+        trailing.logs[0].skippedSetIndices = Array(trailing.displayed.exercises[0].sets.indices.dropFirst())
+        trailing.acknowledgedMovementIDs = [trailing.logs[0].movementID]
+        trailing.flow = WorkoutFlow(forward: .rest(sourceMovementID: trailing.logs[0].movementID, sourceSetIndex: 0, destination: .introduction(movementID: trailing.logs[1].movementID)), reviewedSummaryMovementIDs: [trailing.logs[0].movementID])
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(trailing) }
+        trailing.restStartedAt = f.model.now(); trailing.restDeadline = f.model.now().addingTimeInterval(180)
+        try WorkoutFlowResolver.validate(trailing)
+        legacy.restStartedAt = .distantFuture; legacy.restDeadline = .distantPast
+        #expect(throws: EngineError.self) { try WorkoutFlowResolver.validate(legacy) }
+        await f.repository.close()
+    }
+
+    @Test func polishPresentationInvalidatesOnRecoveryConfigurationAndUnsupportedRoot() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        let model = f.model, row = model.snapshot.draft!.displayed.exercises[0]
+        let originalSnapshot = model.snapshot
+        let original = model.movement(for: row), resolved = model.movementPresentationResolutionCount
+        for _ in 0..<10 { #expect(model.movement(for: row) == original) }
+        #expect(model.movementPresentationResolutionCount == resolved)
+        try await model.operations.perform { lease in
+            var recovered = model.snapshot
+            recovered.state.config.movements[0].name = "Recovered synthetic name"
+            try model.adoptRecoverySnapshot(recovered, operation: lease)
+        }
+        // Changing pinned profile metadata is invalid; it must not serve cached valid metadata.
+        #expect(model.movement(for: row).name == (row.baseMovementID ?? row.movementID))
+        #expect(model.movementPresentationResolutionCount == resolved + 1)
+        try await model.operations.perform { lease in try model.adoptRecoverySnapshot(originalSnapshot, operation: lease) }
+        #expect(model.movement(for: row) == original)
+        #expect(model.movementPresentationResolutionCount == resolved + 2)
+        try await model.operations.perform { lease in
+            var recovered = model.snapshot; recovered.state.rulesetHash = "unsupported"
+            try model.adoptRecoverySnapshot(recovered, operation: lease)
+        }
+        #expect(model.movement(for: row).name == (row.baseMovementID ?? row.movementID))
+        let unavailable = model.movementPresentationResolutionCount
+        _ = model.movement(for: row); #expect(model.movementPresentationResolutionCount == unavailable)
+        // Cached presentation never admits a write against an unsupported snapshot.
+        await #expect(throws: (any Error).self) { try await model.recordSet(movementID: row.movementID, index: 0, actual: ActualSet(reps: 10)) }
+        #expect(model.log(for: row.movementID)!.actualSets.isEmpty)
+        await f.repository.close()
+    }
+
+    @Test func polishAcceptedReceiptOwnerAndNextStart() async throws {
+        let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
+        var instant = f.model.now()
+        let model = WorkoutViewModel(repository: f.repository, snapshot: f.model.snapshot, timeZoneID: f.model.timeZoneID, now: { instant })
+        let owner = AppComposition(repository: f.repository, workout: model)
+        for row in model.snapshot.draft!.displayed.exercises {
+            try await model.recordStatus(movementID: row.movementID, status: .skipped)
+            try await model.confirmMovementSummary(movementID: row.movementID, effort: nil, status: .skipped, reviewing: false)
+        }
+        let before = model.snapshot
+        await f.repository.failNextSave()
+        await #expect(throws: (any Error).self) { _ = try await model.finish() }
+        #expect(!model.finished && model.completedEnvelope == nil)
+        let accepted = try await model.finish()
+        #expect(owner.acceptsWorkoutCompletion(model: model, receipt: accepted, current: owner))
+        let replay = try await model.finish()
+        #expect(owner.acceptsWorkoutCompletion(model: model, receipt: replay, current: owner))
+        #expect(model.snapshot.history.count == before.history.count + 1 && model.snapshot.state.revision == before.state.revision + 1)
+        let other = AppComposition(repository: f.repository, workout: model)
+        #expect(!owner.acceptsWorkoutCompletion(model: model, receipt: replay, current: other))
+        #expect(!owner.acceptsWorkoutCompletion(model: f.model, receipt: replay, current: owner))
+        model.operations.contextEnabled = false
+        #expect(!owner.acceptsWorkoutCompletion(model: model, receipt: replay, current: owner))
+        model.operations.contextEnabled = true
+        let rejected = FinalizationReceipt(result: .rejected(nextState: model.snapshot.state, errors: ["synthetic"]), snapshot: model.snapshot)
+        #expect(!model.acceptsCompletion(rejected))
+        instant = instant.addingTimeInterval(86400 * 2)
+        try await model.start(easierToday: false)
+        #expect(!model.finished && model.completedEnvelope == nil && model.snapshot.draft != nil)
+        #expect(!model.acceptsCompletion(replay))
+        await f.repository.close()
+    }
+
+    @Test func polishRestFormatterBounds() {
+        let now = Date(timeIntervalSince1970: 0)
+        for (seconds, text) in [(0, "00:00"), (36, "00:36"), (100, "01:40"), (120, "02:00"), (180, "03:00"), (3601, "60:01")] {
+            #expect(RestTimer(deadline: now.addingTimeInterval(Double(seconds))).formattedRemaining(at: now) == text)
+        }
+        #expect(RestTimer(deadline: now.addingTimeInterval(0.1)).formattedRemaining(at: now) == "00:01")
+        #expect(RestTimer(deadline: now.addingTimeInterval(Double(Int.max))).formattedRemaining(at: now) == "\(Int.max / 60):07")
+        #expect(RestTimer(deadline: nil).formattedRemaining(at: now) == "00:00")
+    }
+
     @Test func inlineReviewRequiresExplicitEffortAndSavesOnlyReviewAtomically() async throws {
         let f = try await GuidedWorkoutFixture.make(schemaVersion: 3)
         var draft = try #require(f.model.snapshot.draft)
@@ -425,9 +610,10 @@ import TrainingCore
         try await model.advanceRest()
         for index in row.sets.indices.dropFirst() { try await model.skipSet(movementID: row.movementID, index: index) }
         #expect(model.snapshot.draft?.flow?.forward == .summary(movementID: row.movementID))
-        #expect(model.snapshot.draft?.restDeadline == saved.restDeadline)
+        #expect(model.snapshot.draft?.restDeadline == saved.restStartedAt?.addingTimeInterval(180))
         try await model.confirmMovementSummary(movementID: row.movementID, effort: .unknown, status: .partial, reviewing: false)
-        #expect(model.snapshot.draft?.restDeadline == saved.restDeadline)
+        #expect(model.snapshot.draft?.restDeadline == saved.restStartedAt?.addingTimeInterval(180))
+        #expect(model.visibleStep == .rest(sourceMovementID: row.movementID, sourceSetIndex: 0, destination: .introduction(movementID: saved.logs[1].movementID)))
         #expect(model.snapshot.draft?.flow?.reviewedSummaryMovementIDs == [row.movementID])
         await f.repository.close()
     }

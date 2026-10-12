@@ -23,8 +23,8 @@ struct EffortPicker: View {
                      "For the final working set: Too easy means you could have done several more good reps. About right means challenging, with roughly two good reps left. Too hard means you reached your limit or could not leave a couple of good reps. I'm not sure means you cannot judge.")
                     .accessibilityIdentifier(identifierPrefix + "effort.meanings")
             } label: {
-                Text("What do these mean?").accessibilityIdentifier(identifierPrefix + "effort.meanings-disclosure")
-            }
+                Text("What do these mean?").foregroundStyle(.primary).accessibilityIdentifier(identifierPrefix + "effort.meanings-disclosure")
+            }.tint(.primary)
         }
     }
 }

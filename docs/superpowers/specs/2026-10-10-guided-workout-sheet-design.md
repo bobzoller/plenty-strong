@@ -19,12 +19,12 @@ Non-goals: historical workout editing, per-set effort, new prescribed rest durat
 | Forward state | Primary action and durable result |
 |---|---|
 | Introduction | Start confirms required setup/load and persists Set for the first available index. |
-| Set | Next atomically appends that actual, records its existing `row.restSeconds` deadline, and persists Rest or Summary. Duplicate invocation cannot append twice. |
+| Set | Next atomically appends that actual, records an app-flow 120s within-movement or 180s between-movement deadline anchored to the performed set, and persists Rest or Summary. Duplicate invocation cannot append twice. |
 | Rest between sets | Next persists the next Set, including early or at zero. Skipping a set occupies its index without an actual or a new timer. |
 | Movement summary | Confirm effort and truthful outcome atomically; persist summary acknowledgement and Rest toward the next movement, or Workout review for the final movement. |
 | Rest between movements | Show unchanged remaining deadline and next equipment/movement/cues. Next persists the next Introduction. |
 | Workout review | Review original goals, effective actuals, outcomes and corrections; Finish freezes the exact event. |
-| Saved summary | Present accepted receipt and original-issued versus actual versus saved-next values; Back to Today closes the sheet. |
+| Accepted Finish | After the accepted exact receipt, dismiss and select Today immediately; History retains original-issued goals, actuals and audit. |
 
 The last occupied set opens Summary immediately. Its timer continues during review/effort entry. Entering/exiting summary, correcting results or navigating backward never restarts rest. Both rest screens use the same existing prescription duration. Next is always available while no save is running; zero never automatically advances.
 
@@ -69,3 +69,9 @@ Move presentation/resume to the active composition's tab container; bind flow, s
 | UI and isolation | Keyboard/Dynamic Type/VoiceOver; explicit/native Back; Reduce Motion; accessible pinned safety/action; active real/demo resume isolation; no main-thread CPU regression. |
 
 Source anchors: `WorkoutViewModel.swift:238-343,345-412,539-580`; `SetEntryView.swift:21-79`; `TrainingRepository.swift:403-419,459-509`; `BackupDocument.swift:36-55`; `BackupService.swift:117-173,218-256`; `Observation.swift:28-85,148-176`; `RecoveryVerifier.swift:99-105`; `MovementPrescriptionSummary.swift:26-79`. These establish existing load/reason/rest/outcome guards, immutable prefixes, canonical/replay checks and goal/actual separation. This document selects architecture; subsequent implementation planning and code require Bob's design approval.
+
+## 2026-10-11 final build 12 feedback override
+
+The authorized workout polish supersedes the original rest-presentation and saved-summary clauses above. App rest uses 120s within a movement and 180s between movements for every goal/easier mode, leaving immutable issued `restSeconds` and archived policy hashes unchanged. New optional UI `restStartedAt` pairs with integer-second deadlines; nil retains legacy canonical bytes. Forward early-end/last-remaining-slot skip extends a new 120s deadline to 180s from the same anchor in that authoritative save, before Summary appears. Confirmation retains the deadline. Review, correction, retry and background never restart it. Legacy/unproven nil-anchor deadlines remain exact without an archived-duration fallback. Fresh ordinary pending partial work creates its own anchor at its authoritative save; stopped/pain-only work cannot create Rest.
+
+The shared review table uses Set/Goal/Actual/Edit, concise weight/rep values and native 44pt neutral pencils only for editable performed issued slots; accessibility sizes stack complete rows. Rep-entry reasons appear when focus leaves the whole editor or Next commits it; raw drafts and scratch writes remain immediate. Presentation metadata is cached per adopted state and invalidated when that state changes; write admission still resolves and validates independently. Accepted/replayed Finish navigation requires the frozen envelope, nil draft, enabled context, current composition and current model. It clears transient presentation only and makes no Home preparation/journal mutation.

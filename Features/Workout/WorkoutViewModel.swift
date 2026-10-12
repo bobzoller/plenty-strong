@@ -4,7 +4,17 @@ import TrainingCore
 
 /// Value snapshots only: the repository remains the sole owner/writer of models.
 @MainActor @Observable final class WorkoutViewModel {
-    private(set) var snapshot: StoreSnapshot { didSet { scratchContextChanged() } }
+    private(set) var snapshot: StoreSnapshot {
+        didSet {
+            if snapshot.state != oldValue.state { presentedMovements = [:]; unavailablePresentedMovements = [] }
+            scratchContextChanged()
+        }
+    }
+    @ObservationIgnored private var presentedMovements: [String: Movement] = [:]
+    @ObservationIgnored private var unavailablePresentedMovements: Set<String> = []
+    #if DEBUG
+    @ObservationIgnored private(set) var movementPresentationResolutionCount = 0
+    #endif
     var errorText: String?
     private var runningUIAction = false
     let operations: TrainingOperationGate
@@ -206,6 +216,15 @@ import TrainingCore
         guard value.state.config.programID == snapshot.state.config.programID, value.draft == snapshot.draft else { throw EngineError(code: "recovery_draft_binding", field: "draft") }
         snapshot = value
     }
+    func acceptsCompletion(_ receipt: FinalizationReceipt) -> Bool {
+        switch receipt.result {
+        case .applied, .noOp(_, .eventReplayed): break
+        default: return false
+        }
+        guard operations.contextEnabled, finished, snapshot.draft == nil,
+              receipt.snapshot == snapshot, let envelope = completedEnvelope else { return false }
+        return receipt.snapshot.history.filter { $0 == envelope }.count == 1
+    }
     var programID: UUID { UUID(uuidString: snapshot.state.config.programID)! }
     var canDiscardDraft: Bool { submitted == nil && snapshot.draft?.logs.contains { $0.problem != .none } != true }
     var canChangePreparation: Bool { (submitted == nil || finished) && !(snapshot.draft?.hasObservations ?? false) }
@@ -222,7 +241,18 @@ import TrainingCore
         return today != draft.date
     }
     func movement(for row: ExercisePrescription) -> Movement {
-        if let movement = MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID) { return movement }
+        let state = snapshot.state // Retain SwiftUI's dependency even on a cache hit.
+        if let movement = presentedMovements[row.movementID] { return movement }
+        if !unavailablePresentedMovements.contains(row.movementID) {
+            #if DEBUG
+            movementPresentationResolutionCount += 1
+            #endif
+            if let movement = MovementPrescriptionSummary.effectiveMovement(state: state, variantID: row.movementID) {
+                presentedMovements[row.movementID] = movement
+                return movement
+            }
+            unavailablePresentedMovements.insert(row.movementID)
+        }
         // Unsupported roots never enter training, but rendering remains defensive.
         return Movement(id: row.baseMovementID ?? row.movementID, name: row.baseMovementID ?? row.movementID,
             primaryMuscles: [], secondaryMuscles: [], minimumRir: 2, availableLoads: [])
@@ -468,6 +498,7 @@ import TrainingCore
             try await reconcileActionFlow(&draft)
             guard reviewStep == nil, draft.flow?.forward == .introduction(movementID: movementID) else { throw EngineError(code: "invalid_workout_step", field: "flow") }
             let i = try index(movementID, draft: draft), row = draft.displayed.exercises[i]
+            draft.restStartedAt = nil // A previous movement cannot own this movement's timer.
             guard !handled(movementID), draft.logs[i].problem == .none else { throw EngineError(code: "movement_stopped", field: "movementID") }
             if row.sets.isEmpty || row.kind == .paused || row.kind == .setupReview {
                 draft.flow?.forward = .summary(movementID: movementID)
@@ -624,11 +655,35 @@ import TrainingCore
             if let performedIndex {
                 draft.flow?.forward = .rest(sourceMovementID: row.movementID, sourceSetIndex: performedIndex, destination: .set(movementID: row.movementID, index: next))
             } else { draft.flow?.forward = .set(movementID: row.movementID, index: next) }
-        } else { draft.flow?.forward = .summary(movementID: row.movementID) }
+        } else {
+            extendRestForForwardBoundary(&draft, at: i)
+            draft.flow?.forward = .summary(movementID: row.movementID)
+        }
     }
     private func routeSummary(_ id: String, draft: inout WorkoutDraft) {
+        if let index = draft.logs.firstIndex(where: { $0.movementID == id }) {
+            extendRestForForwardBoundary(&draft, at: index)
+        }
         draft.flow?.forward = .summary(movementID: id)
         draft.flow?.reviewedSummaryMovementIDs.removeAll { $0 == id }
+    }
+    /// Only an owned forward boundary may extend a newly paired timed set.
+    /// The anchor is retained; review, safety and legacy unbound dates never promote.
+    private func extendRestForForwardBoundary(_ draft: inout WorkoutDraft, at index: Int) {
+        guard reviewStep == nil, let anchor = draft.restStartedAt,
+              draft.displayed.exercises.indices.contains(index + 1) else { return }
+        let row = draft.displayed.exercises[index], log = draft.logs[index]
+        let source: String?
+        switch draft.flow?.forward {
+        case let .introduction(id), let .set(id, _), let .summary(id): source = id
+        case let .rest(id, _, _): source = id
+        default: source = nil
+        }
+        guard source == row.movementID, row.kind != .paused, row.kind != .setupReview,
+              log.problem == .none, log.status != .stopped, log.status != .skipped,
+              let last = log.actualSets.enumerated().map({ $0.element.setIndex ?? $0.offset }).max(),
+              row.sets.indices.contains(last) else { return }
+        draft.restDeadline = anchor.addingTimeInterval(180)
     }
     private func index(_ id: String, draft: WorkoutDraft) throws -> Int {
         guard let index = draft.logs.firstIndex(where: { $0.movementID == id }) else { throw EngineError(code: "unknown_movement", field: "movementID") }
@@ -732,10 +787,14 @@ import TrainingCore
         draft.logs[i].actualSets.append(indexedActual); draft.workingSetsStarted = true
         // Canonical archives store integer seconds. Round only the UI deadline up
         // (less than one extra rest second), never the clock/date or performed data.
-        let deadline = now().addingTimeInterval(TimeInterval(row.restSeconds))
-        draft.restDeadline = Date(timeIntervalSinceReferenceDate: ceil(deadline.timeIntervalSinceReferenceDate))
+        setRest(&draft, betweenMovements: nextSetIndex(log: draft.logs[i], row: row) == nil && draft.displayed.exercises.indices.contains(i + 1))
         routeOccupiedSet(&draft, at: i, performedIndex: setIndex)
         try await save(draft)
+    }
+    private func setRest(_ draft: inout WorkoutDraft, betweenMovements: Bool) {
+        let anchor = Date(timeIntervalSinceReferenceDate: ceil(now().timeIntervalSinceReferenceDate))
+        draft.restStartedAt = anchor
+        draft.restDeadline = anchor.addingTimeInterval(betweenMovements ? 180 : 120)
     }
     func recordEffort(movementID: String, effort: Effort) async throws {
         try await operations.perform { _ in try await recordEffortBody(movementID: movementID, effort: effort) }
@@ -777,6 +836,8 @@ import TrainingCore
             retained.setIndex = slot
         }
         draft.logs[index].actualSets.append(retained); draft.workingSetsStarted = true
+        // Untimed raw/safety observations do not inherit an earlier timer's source.
+        draft.restStartedAt = nil
     }
     private func acknowledge(_ id: String, draft: inout WorkoutDraft) {
         if draft.acknowledgedMovementIDs == nil { draft.acknowledgedMovementIDs = [] }
@@ -799,6 +860,9 @@ import TrainingCore
         if log.problem != .none && status != .stopped { throw EngineError(code: "movement_stopped", field: "status") }
         if status == .completed, !(await validCompletion(log, row: row)) { throw EngineError(code: "incomplete_sets", field: "status") }
         guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
+        if pendingActual != nil, status == .partial, log.problem == .none {
+            setRest(&draft, betweenMovements: draft.displayed.exercises.indices.contains(i + 1))
+        }
         draft.logs[i].status = status; acknowledge(movementID, draft: &draft)
         routeSummary(movementID, draft: &draft)
         try await save(draft, authoritativeOutcome: status == .partial || status == .stopped)

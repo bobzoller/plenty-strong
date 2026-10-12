@@ -15,6 +15,9 @@ import TrainingCore
     private(set) var readOnlyProgram: StoreSnapshot?
     var errorText: String?
     var showingWorkout = false
+    func acceptsWorkoutCompletion(model: WorkoutViewModel, receipt: FinalizationReceipt, current: AppComposition) -> Bool {
+        current === self && workout === model && model.acceptsCompletion(receipt)
+    }
     private(set) var loaded = false
     private(set) var optionalServicesUnavailable = false
     private var uiTesting = false

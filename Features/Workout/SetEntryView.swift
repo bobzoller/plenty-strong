@@ -26,11 +26,13 @@ struct SetEntryView: View {
         let acknowledged = model.snapshot.draft?.acknowledgedMovementIDs?.contains(row.movementID) == true
         return log.problem == .none && (log.status == .completed || !acknowledged)
     }
-    private var valid: Bool {
+    private var parseable: Bool {
         guard let observation else { return false }
-        let positive = exact || observation.reps > 0 || (observation.leftReps ?? 0) > 0 || (observation.rightReps ?? 0) > 0
-        return positive && (!requiresReason || model.entryDraft.reason != nil)
+        return exact || observation.reps > 0 || (observation.leftReps ?? 0) > 0 || (observation.rightReps ?? 0) > 0
     }
+    private var valid: Bool { parseable && (!requiresReason || model.entryDraft.reason != nil) }
+    // During editing, Next commits the complete editor before asking for a reason.
+    private var canCommit: Bool { parseable && (focused != nil || valid) }
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 12) {
             WorkoutSessionModeLabel(model: model)
@@ -51,9 +53,10 @@ struct SetEntryView: View {
                 } else {
                     TextField("Reps performed", text: entry.reps).focused($focused, equals: .reps).accessibilityLabel("Reps performed").accessibilityIdentifier("set.reps")
                 }
-                if belowGoal { MissedGoalReasonPicker(selection: entry.reason, required: requiresReason) }
+                if belowGoal && focused == nil { MissedGoalReasonPicker(selection: entry.reason, required: requiresReason) }
             }
         }.padding() }
+        .scrollDismissesKeyboard(.interactively)
         .disabled(model.busy || model.snapshot.health != .ready)
         .textFieldStyle(.roundedBorder).keyboardType(.numberPad)
         .onChange(of: [model.entryDraft.reps, model.entryDraft.left, model.entryDraft.right]) {
@@ -72,10 +75,10 @@ struct SetEntryView: View {
         }
         .safeAreaInset(edge: .bottom) {
             GuidedWorkoutFooter(model: model) {
-                HStack(spacing: 12) {
-                Button(correctionIndex == nil ? "Next" : (textSize.isAccessibilitySize ? "Save" : "Save correction")) {
-                    guard let observation, let index else { return }
+                VStack(spacing: 8) {
+                Button {
                     focused = nil
+                    guard valid, let observation, let index else { return }
                     Task { await model.run {
                         if correctionIndex != nil {
                             try await model.correctSet(movementID: row.movementID, index: index, replacement: observation, operationID: operationID)
@@ -83,14 +86,19 @@ struct SetEntryView: View {
                         } else { try await model.recordSet(movementID: row.movementID, index: index, actual: observation) }
                         pendingActual = nil
                     } }
+                } label: {
+                    Text(correctionIndex == nil ? "Next" : (textSize.isAccessibilitySize ? "Save" : "Save correction"))
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                .disabled(!valid || model.busy || model.snapshot.health != .ready || model.hasAmbiguousFinish || (correctionIndex == nil && (model.blockedWorkingMovementIDs.contains(row.movementID) || (movement.loadingMode == .externalLoad && model.log(for: row.movementID)?.actualLoad == nil))))
+                .disabled(!canCommit || model.busy || model.snapshot.health != .ready || model.hasAmbiguousFinish || (correctionIndex == nil && (model.blockedWorkingMovementIDs.contains(row.movementID) || (movement.loadingMode == .externalLoad && model.log(for: row.movementID)?.actualLoad == nil))))
                 .accessibilityLabel(correctionIndex == nil ? "Next" : "Save correction")
                 .accessibilityIdentifier(correctionIndex == nil ? "set.save" : "correction.save")
                 if focused != nil {
-                    Button { focused = nil } label: { Image(systemName: "keyboard.chevron.compact.down") }
-                        .buttonStyle(.bordered).controlSize(.large).frame(minWidth: 44, minHeight: 44)
+                    Button { focused = nil } label: {
+                        Image(systemName: "keyboard.chevron.compact.down").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    }
+                        .buttonStyle(.plain).foregroundStyle(.primary)
                         .accessibilityLabel("Done").accessibilityIdentifier("keyboard.done")
                 }
                 }

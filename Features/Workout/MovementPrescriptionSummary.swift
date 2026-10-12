@@ -70,7 +70,6 @@ struct MovementPrescriptionSummary {
                     previous.modificationsSnapshot == row.modificationsSnapshot && previous.baseMovementID == row.baseMovementID && issued.state.rulesetHash == state.rulesetHash &&
                     issued.displayed.exercises.firstIndex(where: { $0.movementID == row.movementID }) == (draft?.displayed ?? state.activePrescription).exercises.firstIndex(where: { $0.movementID == row.movementID })
             }
-            if !comparable, labels.isEmpty { labels.append("Context only — comparison conditions differ") }
             prior = PriorPerformance(date: event.date, actualSets: log.actualSets, actualLoad: log.actualLoad, sessionMode: event.sessionMode,
                 phase: priorRow?.phase, effortScope: log.effortScope, status: log.status, skippedSetIndices: log.skippedSetIndices, contextLabels: labels)
         }

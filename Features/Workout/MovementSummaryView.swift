@@ -30,13 +30,13 @@ struct MovementSummaryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let deadline = model.snapshot.draft?.restDeadline {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text("Rest: \(RestTimer(deadline: deadline).remaining(at: model.now())) seconds remaining").accessibilityIdentifier("rest.remaining")
+                        Text("Rest: \(RestTimer(deadline: deadline).formattedRemaining(at: model.now()))").accessibilityIdentifier("rest.remaining")
                     }
                 }
                 WorkoutSessionModeLabel(model: model)
                 Text("Movement summary").font(.title2).accessibilityIdentifier("movement.summary")
                 Text(model.movement(for: row).name ?? "Movement").font(.headline)
-                WorkoutComparisonRows(row: row, log: log, repCounting: model.movement(for: row).repCounting, loadingMode: model.movement(for: row).loadingMode)
+                WorkoutComparisonRows(row: row, log: log, repCounting: model.movement(for: row).repCounting, loadingMode: model.movement(for: row).loadingMode, editSet: model.hasAmbiguousFinish ? nil : reviewCorrection, editingDisabled: model.busy || model.snapshot.health != .ready)
                 ForEach(Array(row.sets.enumerated()), id: \.offset) { index, _ in
                     if log?.actualSets.enumerated().contains(where: { ($0.element.setIndex ?? $0.offset) == index }) == true {
                         let corrections = WorkoutDetailView.corrections(audit: model.snapshot.draft?.observationAudit, movementID: row.movementID, setIndex: index)
@@ -49,8 +49,6 @@ struct MovementSummaryView: View {
                                 }
                             }.accessibilityIdentifier("summary.corrections.\(index)")
                         }
-                        Button("Correct Set \(index + 1)") { reviewCorrection?(index) }
-                            .accessibilityIdentifier("summary.correct.\(index)").disabled(model.busy || model.hasAmbiguousFinish)
                     }
                 }
                 ForEach(Array((log?.actualSets ?? []).enumerated()).filter { !row.sets.indices.contains($0.element.setIndex ?? $0.offset) }, id: \.offset) { offset, actual in

@@ -39,9 +39,6 @@ struct TodayView: View {
                 }
             }.disabled(model.busy || model.snapshot.health != .ready)
                 .accessibilityIdentifier("today.start")
-            if model.finished {
-                Button("View saved workout", action: start).accessibilityIdentifier("today.saved-workout")
-            }
             if model.busy { ProgressView("Preparing workout…").accessibilityIdentifier("today.busy") }
             Section("Prescription") {
                 ForEach((model.snapshot.draft?.displayed ?? model.snapshot.state.activePrescription).exercises, id: \.movementID) { row in

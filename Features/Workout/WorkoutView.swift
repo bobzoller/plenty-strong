@@ -89,15 +89,16 @@ import TrainingCore
 struct WorkoutView: View {
     let model: WorkoutViewModel
     let close: () -> Void
+    let completed: (FinalizationReceipt) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var textSize
     @State private var navigation: WorkoutReviewNavigation
     init(model: WorkoutViewModel, close: @escaping () -> Void) {
-        self.model = model; self.close = close
+        self.model = model; self.close = close; self.completed = { _ in }
         _navigation = State(initialValue: WorkoutReviewNavigation(model: model))
     }
-    init(model: WorkoutViewModel, close: @escaping () -> Void, navigation: WorkoutReviewNavigation) {
-        self.model = model; self.close = close
+    init(model: WorkoutViewModel, close: @escaping () -> Void, navigation: WorkoutReviewNavigation, completed: @escaping (FinalizationReceipt) -> Void = { _ in }) {
+        self.model = model; self.close = close; self.completed = completed
         _navigation = State(initialValue: navigation)
     }
     private var path: [WorkoutReviewRoute] { navigation.path }
@@ -126,7 +127,7 @@ struct WorkoutView: View {
         @Bindable var navigation = navigation
         NavigationStack(path: $navigation.path) {
             Group {
-                if model.finished { ScrollView { VStack(alignment: .leading, spacing: 20) { saved }.padding() } }
+                if model.finished { ProgressView("Opening Today…") }
                 else if model.snapshot.draft == nil { ContentUnavailableView("No saved workout", systemImage: "figure.strengthtraining.traditional") }
                 else if model.needsDateChoice { dateChoice }
                 else if frozen { workoutReview }
@@ -253,6 +254,7 @@ struct WorkoutView: View {
             Text(frozen ? "Finish pending — retry the exact saved workout" : "Workout review").font(.title2)
             ForEach(rows, id: \.movementID) { row in
                 workoutCard(row)
+                if row.movementID != rows.last?.movementID { Divider().padding(.vertical, 8) }
             }
             if !frozen, hasPendingReviews {
                 Text("Confirm changes and choose effort for each pending movement before finishing.")
@@ -262,7 +264,10 @@ struct WorkoutView: View {
         .safeAreaInset(edge: .bottom) {
             GuidedWorkoutFooter(model: model) {
             if model.canRecoverRejectedCompletion { Button(textSize.isAccessibilitySize ? "Repair" : "Repair unaccepted completion") { repairingCompletion = true }.accessibilityLabel("Repair unaccepted completion").accessibilityIdentifier("workout.repair-completion").disabled(model.busy) }
-            Button(frozen ? "Retry Finish" : "Finish workout") { Task { await model.run { _ = try await model.finish() } } }
+            Button(frozen ? "Retry Finish" : "Finish workout") { Task { await model.run {
+                let receipt = try await model.finish()
+                if model.acceptsCompletion(receipt) { completed(receipt) }
+            } } }
                 .buttonStyle(.borderedProminent).controlSize(.large).accessibilityIdentifier("workout.finish").disabled(model.busy || model.snapshot.health != .ready || (!frozen && hasPendingReviews))
             }
         }
@@ -277,17 +282,12 @@ struct WorkoutView: View {
         let pending = model.snapshot.draft?.flow?.reviewedSummaryMovementIDs.contains(id) == false
         VStack(alignment: .leading, spacing: 12) {
             Text(metadata.name ?? "Movement").font(.headline).accessibilityIdentifier(prefix + "name")
-            WorkoutComparisonRows(row: row, log: log, repCounting: metadata.repCounting, loadingMode: metadata.loadingMode, identifierPrefix: prefix)
+            WorkoutComparisonRows(row: row, log: log, repCounting: metadata.repCounting, loadingMode: metadata.loadingMode, identifierPrefix: prefix, editSet: frozen ? nil : { pushCorrection(id, index: $0) }, editingDisabled: model.busy || model.snapshot.health != .ready)
             Text("Outcome: \(log?.status.rawValue ?? "unrecorded")").accessibilityIdentifier(prefix + "outcome")
             if let problem = log?.problem, problem != .none { Text("Safety: \(problem.rawValue)").accessibilityIdentifier(prefix + "problem") }
             ForEach(Array((log?.actualSets ?? []).enumerated()), id: \.offset) { offset, actual in
                 let index = actual.setIndex ?? offset
                 if !row.sets.indices.contains(index) { Text("Retained extra observation \(index + 1): \(actual.reps) reps") }
-                if !frozen, row.sets.indices.contains(index) {
-                    Button { pushCorrection(id, index: index) } label: {
-                        Text("Correct Set \(index + 1)").frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
-                    }.accessibilityIdentifier(prefix + "correct.\(index)").disabled(model.busy)
-                }
                 let corrections = WorkoutDetailView.corrections(audit: model.snapshot.draft?.observationAudit, movementID: id, setIndex: index)
                 if !corrections.isEmpty {
                     DisclosureGroup {
@@ -309,7 +309,7 @@ struct WorkoutView: View {
             } else if log?.actualSets.isEmpty == false {
                 Text("Effort: \(log?.finalEffort.title ?? "unrecorded")").accessibilityIdentifier(prefix + "effort-saved")
             }
-        }.padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        }.frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             // Only an existing review acknowledgement establishes an explicit
             // saved answer. A pending stored unknown is still ambiguous.
@@ -444,57 +444,4 @@ struct WorkoutView: View {
         else { Task { do { try await model.flushScratch(); if model.operations.contextEnabled { close() } } catch {} } }
     }
     private func dismissKeyboard() { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-    @ViewBuilder private var saved: some View {
-                    Text("Workout saved on this device").font(.title2).accessibilityIdentifier("workout.saved")
-                    if let envelope = model.completedEnvelope, case let .workout(event, _) = envelope.command {
-                        let issued = MovementPrescriptionSummary.issuedWorkout(envelope: envelope, history: model.snapshot.history)
-                        ForEach(event.exercises, id: \.movementID) { log in
-                            VStack(alignment: .leading) {
-                                Text(MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.name ?? "Movement").font(.headline)
-                                if let row = issued?.displayed.exercises.first(where: { $0.movementID == log.movementID }) {
-                                    let issuedMovement = issued.flatMap { MovementPrescriptionSummary.effectiveMovement(state: $0.state, variantID: row.movementID) }
-                                    if let issuedMovement {
-                                        WorkoutComparisonRows(row: row, log: log, repCounting: issuedMovement.repCounting, loadingMode: issuedMovement.loadingMode, identifierPrefix: "workout.saved.\(log.movementID).")
-                                    } else { Text("Recorded goal unavailable — movement metadata unverified") }
-                                } else {
-                                    Text("Recorded goal unavailable — original prescription unverified")
-                                    Text("Actual: \(WorkoutDetailView.reps(log))")
-                                    Text(log.actualLoad.map(MovementPrescriptionSummary.load) ?? "Actual load: unknown")
-                                }
-                                Text("Outcome: \(log.status.rawValue)")
-                                if log.problem != .none { Text("Safety: \(log.problem.rawValue)") }
-                                if !log.actualSets.isEmpty { Text("Effort: \(log.finalEffort.title)") }
-                                ForEach(Array(log.actualSets.enumerated()), id: \.offset) { offset, actual in
-                                    let index = actual.setIndex ?? offset
-                                    let corrections = WorkoutDetailView.corrections(event: event, movementID: log.movementID, setIndex: index)
-                                    if !corrections.isEmpty {
-                                        DisclosureGroup {
-                                            ForEach(Array(corrections.enumerated()), id: \.element.operationID) { order, correction in
-                                                Text("Correction \(order + 1). \(WorkoutDetailView.correctionDetail(correction, repCounting: MovementPrescriptionSummary.effectiveMovement(state: issued?.state ?? envelope.returnedState, variantID: log.movementID)?.repCounting ?? .total))")
-                                            }
-                                        } label: { Text("Set \(index + 1) corrections").accessibilityIdentifier("workout.saved.\(log.movementID).corrections.\(index)") }
-                                    }
-                                }
-                                if envelope.returnedState.exercises[log.movementID]?.starterState?.doseStage == .established,
-                                   issued?.displayed.exercises.first(where: { $0.movementID == log.movementID })?.sets.count == 2 {
-                                    Text("Ready for 3 sets; keep the same weight and establish your baseline.").accessibilityIdentifier("workout.completed-set-growth")
-                                }
-                            }.padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        Text("Next saved prescription").font(.headline)
-                        Text("Its calendar date is a suggestion. This workout stays next until completed.")
-                        Text("Next: \(envelope.returnedPrescription.slotID), \(envelope.returnedPrescription.date.iso8601)").accessibilityIdentifier("workout.next-prescription")
-                        ForEach(envelope.returnedPrescription.exercises, id: \.movementID) { row in
-                            VStack(alignment: .leading) {
-                                Text(MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: row.movementID)?.name ?? "Movement").font(.headline)
-                                if row.kind == .paused { Text("Paused") }
-                                else { Text(MovementPrescriptionSummary.goal(row, policy: MovementPrescriptionSummary.make(row: row, state: envelope.returnedState, history: model.snapshot.history, draft: nil).policy, repCounting: MovementPrescriptionSummary.effectiveMovement(state: envelope.returnedState, variantID: row.movementID)?.repCounting ?? .total)).accessibilityIdentifier("workout.next-goal.\(row.movementID)") }
-                                if let load = row.load { Text("Prescription: \(load.amount) \(load.unit.rawValue) \(load.basis == .perImplement ? "per hand" : "total")") }
-                            }
-                        }
-                    } else {
-                        Text("Saved completion details unavailable — open History to view the retained original record.")
-                    }
-                    Button("Back to Today", action: close)
-    }
 }
