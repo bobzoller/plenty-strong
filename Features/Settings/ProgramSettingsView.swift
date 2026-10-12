@@ -18,6 +18,12 @@ struct ProgramSettingsView: View {
                 Text("A saved workout or Finish retry is protected. Return to Today and finish safely. Use an explicit discard only where the workout offers it; a recorded problem must be finalized with its original observations.").accessibilityIdentifier("settings.draft-lock")
             }
             if let error = model.errorText { Text(error).foregroundStyle(.red).accessibilityIdentifier("save.error") }
+            if model.snapshot.state.schemaVersion == 5 {
+                Section("Imported continuation") {
+                    Text("Your established set counts and mapped rep ranges continue under Plenty's exact progression. Source history, calendar, calibration and qualifying counters are archived; counters no longer drive training.")
+                    Text("Future rest: \(model.snapshot.state.activePrescription.exercises.first?.restSeconds ?? 120) seconds. Source recovery status and stricter safeguards remain retained.")
+                }
+            }
             Section("Goal") {
                 Text(model.snapshot.state.config.goal.title).accessibilityIdentifier("settings.current-goal")
                 ForEach(Goal.allCases, id: \.self) { goal in
@@ -34,8 +40,9 @@ struct ProgramSettingsView: View {
                 }
                 Button("Change training emphasis") {
                     programChoice = nil; programGoal = nil; choosingProgram = true
-                }.disabled(!model.canEditProgramSettings || model.busy).accessibilityIdentifier("settings.change-program")
-                Text("Program changes preserve original history, usable known loads, and stricter safety restrictions. The selected program restarts its initial dose and baselines.")
+                }.disabled(!model.canEditProgramSettings || model.busy || model.snapshot.state.schemaVersion == 5).accessibilityIdentifier("settings.change-program")
+                if model.snapshot.state.schemaVersion == 5 { Text("Changing emphasis is unavailable for imported continuation. The original program and safeguards remain intact.") }
+                else { Text("Program changes preserve original history, usable known loads, and stricter safety restrictions. The selected program restarts its initial dose and baselines.") }
             }
             Section("Fixed routine") { Text("Sunday · Tuesday · Thursday. Dumbbells 5–80 lb in 5 lb steps; adjustable bench. The upper-body program also requires a pull-up bar.") }
             Section("Saved setups and safety") {

@@ -95,8 +95,8 @@ import TrainingCore
         let actual = log.actualSets.enumerated().first { ($0.element.setIndex ?? $0.offset) == index }?.element
         guard reviewStep != nil || actual == nil else { return nil }
         let roots = snapshot.history.filter {
-            guard $0.programID == draft.programID, $0.parentEnvelopeHash == nil, case .initialize = $0.command else { return false }
-            return true
+            guard $0.programID == draft.programID, $0.parentEnvelopeHash == nil else { return false }
+            switch $0.command { case .initialize, .migrateProgram: return true; default: return false }
         }
         guard roots.count == 1 else { return nil }
         return WorkoutScratchKey(storeID: storeID, datasetID: roots[0].datasetID, programID: draft.programID,
@@ -229,7 +229,9 @@ import TrainingCore
     var canDiscardDraft: Bool { submitted == nil && snapshot.draft?.logs.contains { $0.problem != .none } != true }
     var canChangePreparation: Bool { (submitted == nil || finished) && !(snapshot.draft?.hasObservations ?? false) }
     var canOfferEasierWorkout: Bool {
-        canChangePreparation && snapshot.history.contains { envelope in
+        if canChangePreparation, snapshot.state.schemaVersion == 5,
+           snapshot.state.activePrescription.exercises.contains(where: { $0.phase == .normal && !$0.sets.isEmpty }) { return true }
+        return canChangePreparation && snapshot.history.contains { envelope in
             guard envelope.programID == snapshot.state.config.programID,
                   case let .workout(event, _) = envelope.command else { return false }
             return event.exercises.contains { !$0.actualSets.isEmpty }
@@ -281,17 +283,31 @@ import TrainingCore
     private nonisolated static func workingRestrictions(snapshot: StoreSnapshot, roots: [StoreSnapshot], rules: Ruleset) throws -> Set<String> {
         let rows = snapshot.draft?.displayed.exercises ?? snapshot.state.activePrescription.exercises
         var restrictions: [String: MovementSafetyState] = [:]
+        let migrated = snapshot.state.schemaVersion == 5
+        let offeredFamilies = Set(snapshot.state.config.movements.map { starterSafetyFamily(for: $0.id) })
         for current in roots {
+            if migrated, current.state.config.programID == snapshot.state.config.programID { continue }
+            if migrated, current.health != .ready { return Set(rows.map(\.movementID)) }
+            if migrated {
+                for (family, restriction) in current.state.retainedSafety ?? [:] {
+                    guard offeredFamilies.contains(family) else { return Set(rows.map(\.movementID)) }
+                    let previous = restrictions[family]
+                    restrictions[family] = MovementSafetyState(paused: restriction.paused || previous?.paused == true,
+                        minimumRir: max(restriction.minimumRir, previous?.minimumRir ?? 0), sourceEventIDs: [])
+                }
+            }
             // Only verified current ready projections contribute safety. Cleared
             // ancestors and unrelated corrupt roots never become inferred pauses.
             guard current.health == .ready else { continue }
             for movement in current.state.config.movements {
                 let base = movement.id, safety = current.state.baseSafety?[movement.id]
+                let key = migrated ? starterSafetyFamily(for: base) : base
+                if migrated, !offeredFamilies.contains(key) { return Set(rows.map(\.movementID)) }
                 let paused = safety?.paused == true || current.state.exercises.contains { key, value in
                     (current.state.config.variants?[key]?.baseMovementID ?? key) == base && value.mode == .paused
                 } || current.draft?.logs.contains { ($0.baseMovementID ?? $0.movementID) == base && $0.problem != .none } == true
-                let old = restrictions[base]
-                restrictions[base] = MovementSafetyState(paused: paused || old?.paused == true,
+                let old = restrictions[key]
+                restrictions[key] = MovementSafetyState(paused: paused || old?.paused == true,
                     minimumRir: max(movement.minimumRir, max(safety?.minimumRir ?? 0, old?.minimumRir ?? 0)), sourceEventIDs: [])
             }
         }
@@ -300,7 +316,7 @@ import TrainingCore
             let base = row.baseMovementID ?? row.movementID
             let localFloor = max(MovementPrescriptionSummary.effectiveMovement(state: snapshot.state, variantID: row.movementID)?.minimumRir ?? 2, max(snapshot.state.baseSafety?[base]?.minimumRir ?? 0,
                 snapshot.draft?.sessionMode == .easier ? parameters.easierMinimumRir : parameters.normalMinimumRir))
-            guard let restriction = restrictions[base], restriction.paused || restriction.minimumRir > localFloor else { return nil }
+            guard let restriction = restrictions[migrated ? starterSafetyFamily(for: base) : base], restriction.paused || restriction.minimumRir > localFloor else { return nil }
             return row.movementID
         })
     }
@@ -323,6 +339,7 @@ import TrainingCore
             return "Confirm the pending movement summaries in Workout review before finishing."
         }
         return switch error.code {
+        case "source_recovery_review_required": "Review recovery at the movement introduction before adding working sets. Skip or stop the movement if you have not recovered; saved safeguards remain."
         case "retained_safety_restriction": "A saved program has a pause or stricter effort reserve for this movement. Additional working sets are unavailable. Keep recorded actuals and choose partial or stopped, then finish safely. Changing programs does not clear safety."
         case "unsupported_training": "This archived program is available for viewing and export. Training is unavailable in the fixed routine."
         case "incomplete_workout": "Choose performed, partial, skipped, or stopped for every movement before finishing."
@@ -431,7 +448,10 @@ import TrainingCore
         try await prepareTodayBody(asOf: today)
         let flexible = snapshot.state.schedulingPolicy == .flexibleV1
         guard flexible || snapshot.state.activePrescription.date <= today else { throw EngineError(code: "future_workout", field: "date") }
-        guard snapshot.state.lastSessionDate == nil || today > snapshot.state.lastSessionDate! else { throw EngineError(code: "session_already_recorded", field: "date") }
+        guard snapshot.state.lastSessionDate == nil || today > snapshot.state.lastSessionDate!,
+              snapshot.state.migration?.externalLastSessionDate == nil || today > snapshot.state.migration!.externalLastSessionDate! else {
+            throw EngineError(code: "session_already_recorded", field: "date")
+        }
         let state = snapshot.state
         let displayed = try await Task.detached(priority: .userInitiated) {
             try prepareWorkout(state: state, rules: RulesetCatalog.resolve(version: state.rulesetVersion, hash: state.rulesetHash), easierToday: easierToday)
@@ -439,9 +459,9 @@ import TrainingCore
         let logs = displayed.exercises.map {
             ExerciseLog(movementID: $0.movementID, prescriptionID: displayed.id, status: .partial, actualLoad: nil,
                 actualSets: [], finalEffort: .unknown, problem: .none, baseMovementID: $0.baseMovementID, modificationsSnapshot: $0.modificationsSnapshot,
-                effortScope: [3, 4].contains(snapshot.state.schemaVersion) ? .allWorkingSets : nil,
-                skippedSetIndices: [3, 4].contains(snapshot.state.schemaVersion) ? [] : nil,
-                mixedLoads: [3, 4].contains(snapshot.state.schemaVersion) ? false : nil)
+                effortScope: [3, 4, 5].contains(snapshot.state.schemaVersion) ? .allWorkingSets : nil,
+                skippedSetIndices: [3, 4, 5].contains(snapshot.state.schemaVersion) ? [] : nil,
+                mixedLoads: [3, 4, 5].contains(snapshot.state.schemaVersion) ? false : nil)
         }
         try await save(WorkoutDraft(id: UUID(), programID: snapshot.state.config.programID, expectedRevision: snapshot.state.revision,
             planned: snapshot.state.activePrescription, displayed: displayed, date: flexible ? today : displayed.date, timeZoneID: timeZoneID,
@@ -491,6 +511,37 @@ import TrainingCore
             catch { errorText = "Saved workout input could not be opened. The workout is retained. \(error)" }
         }
     }
+    func requiresMigrationRecovery(_ movementID: String) -> Bool {
+        guard let base = snapshot.state.config.variants?[movementID]?.baseMovementID else { return false }
+        return snapshot.state.migration?.baselines.first { $0.baseMovementID == base }?.recoveryRequired == true
+    }
+    func migrationRecoveryConfirmed(_ movementID: String) -> Bool {
+        snapshot.draft?.migrationRecoveryAttestations?.contains { $0.movementID == movementID && $0.externalArchiveHash == snapshot.state.migration?.externalArchiveHash } == true
+    }
+    private func requireMigrationRecovery(_ movementID: String, draft: WorkoutDraft) throws {
+        guard !requiresMigrationRecovery(movementID) || draft.migrationRecoveryAttestations?.contains(where: {
+            $0.movementID == movementID && $0.externalArchiveHash == snapshot.state.migration?.externalArchiveHash
+        }) == true else { throw EngineError(code: "source_recovery_review_required", field: "movementID") }
+    }
+    func confirmMigrationRecovery(movementID: String) async throws {
+        try await operations.perform { _ in
+            let original = try await editableDraft()
+            var draft = original
+            let i = try index(movementID, draft: draft)
+            guard requiresMigrationRecovery(movementID), reviewStep == nil,
+                  draft.flow?.forward == .introduction(movementID: movementID),
+                  draft.logs[i].actualSets.isEmpty, draft.logs[i].problem == .none,
+                  !handled(movementID), let source = snapshot.state.migration,
+                  let start = draft.startedAtMilliseconds else { throw EngineError(code: "source_recovery_review_required", field: "movementID") }
+            if migrationRecoveryConfirmed(movementID) { return }
+            let checked = try SessionTiming.milliseconds(at: now())
+            guard checked >= start else { throw EngineError(code: "invalid_session_timing", field: "recovery_review") }
+            var reviewed = draft.migrationRecoveryAttestations ?? []
+            reviewed.append(MigrationRecoveryAttestation(movementID: movementID, checkedAtMilliseconds: checked, externalArchiveHash: source.externalArchiveHash))
+            draft.migrationRecoveryAttestations = reviewed
+            try await save(draft, expectedExistingDraft: original)
+        }
+    }
     func beginMovement(movementID: String) async throws {
         try await operations.perform { _ in
             let original = try await editableDraft()
@@ -504,6 +555,7 @@ import TrainingCore
                 draft.flow?.forward = .summary(movementID: movementID)
             } else {
                 try await requireWorkingExposure(row)
+                try requireMigrationRecovery(movementID, draft: draft)
                 let movement = try await admittedMovement(for: row)
                 guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
                 try requireReviewedHandling(movementID: movementID, load: draft.logs[i].actualLoad)
@@ -635,7 +687,7 @@ import TrainingCore
         if status == .completed, !(await validCompletion(log, row: row)) { throw EngineError(code: "incomplete_sets", field: "status") }
         guard status != .skipped || log.actualSets.isEmpty else { throw EngineError(code: "partial_required", field: "status") }
         if !log.actualSets.isEmpty, effort == nil,
-           requiresExplicitEffort || ([3, 4].contains(snapshot.state.schemaVersion) && log.effortScope == .allWorkingSets) {
+           requiresExplicitEffort || ([3, 4, 5].contains(snapshot.state.schemaVersion) && log.effortScope == .allWorkingSets) {
             throw EngineError(code: "effort_required", field: "finalEffort")
         }
     }
@@ -720,7 +772,7 @@ import TrainingCore
         return nextSetIndex(log: draft.logs[i], row: draft.displayed.exercises[i])
     }
     private func nextSetIndex(log: ExerciseLog, row: ExercisePrescription) -> Int? {
-        if ![3, 4].contains(snapshot.state.schemaVersion) { return log.actualSets.count < row.sets.count ? log.actualSets.count : nil }
+        if ![3, 4, 5].contains(snapshot.state.schemaVersion) { return log.actualSets.count < row.sets.count ? log.actualSets.count : nil }
         let occupied = Set(log.actualSets.compactMap(\.setIndex)).union(log.skippedSetIndices ?? [])
         return row.sets.indices.first { !occupied.contains($0) }
     }
@@ -730,7 +782,7 @@ import TrainingCore
     private func skipSetBody(movementID: String, index setIndex: Int) async throws {
         var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         let row = draft.displayed.exercises[i]
-        guard [3, 4].contains(snapshot.state.schemaVersion), row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
+        guard [3, 4, 5].contains(snapshot.state.schemaVersion), row.sets.indices.contains(setIndex) else { throw EngineError(code: "invalid_set", field: "setIndex") }
         if draft.logs[i].skippedSetIndices?.contains(setIndex) == true { return }
         guard !handled(movementID), draft.logs[i].problem == .none, row.kind != .paused else { throw EngineError(code: "movement_stopped", field: "set") }
         guard reviewStep == nil, nextSetIndex(log: draft.logs[i], row: row) == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
@@ -745,7 +797,7 @@ import TrainingCore
     }
     private func recordMixedLoadsBody(movementID: String) async throws {
         var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
-        guard [3, 4].contains(snapshot.state.schemaVersion) else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
+        guard [3, 4, 5].contains(snapshot.state.schemaVersion) else { throw EngineError(code: "unsupported_policy", field: "mixedLoads") }
         if draft.logs[i].mixedLoads == true { return }
         guard !handled(movementID), draft.logs[i].problem == .none, draft.displayed.exercises[i].kind != .paused else { throw EngineError(code: "movement_stopped", field: "load") }
         draft.logs[i].mixedLoads = true
@@ -755,7 +807,7 @@ import TrainingCore
         try await save(draft)
     }
     private func requireMissReason(_ actual: ActualSet, row: ExercisePrescription, index: Int) throws {
-        guard [3, 4].contains(snapshot.state.schemaVersion) else { return }
+        guard [3, 4, 5].contains(snapshot.state.schemaVersion) else { return }
         if let target = row.sets[index].targetReps, [actual.reps, actual.leftReps, actual.rightReps].compactMap({ $0 }).contains(where: { $0 < target }), actual.missedGoalReason == nil {
             throw EngineError(code: "missed_goal_reason_required", field: "missedGoalReason")
         }
@@ -766,23 +818,24 @@ import TrainingCore
     private func recordSetBody(movementID: String, index setIndex: Int, actual: ActualSet) async throws {
         var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         var indexedActual = actual
-        if [3, 4].contains(snapshot.state.schemaVersion) {
+        if [3, 4, 5].contains(snapshot.state.schemaVersion) {
             guard actual.setIndex == nil || actual.setIndex == setIndex else { throw EngineError(code: "invalid_set", field: "setIndex") }
             indexedActual.setIndex = setIndex
         }
         let row = draft.displayed.exercises[i]; let movement = try await admittedMovement(for: row)
         guard row.kind != .paused, draft.logs[i].problem == .none, !handled(movementID) else { throw EngineError(code: "movement_stopped", field: "set") }
-        if [3, 4].contains(snapshot.state.schemaVersion) {
+        if [3, 4, 5].contains(snapshot.state.schemaVersion) {
             if draft.logs[i].actualSets.first(where: { $0.setIndex == setIndex }) == indexedActual { return }
         } else if setIndex >= 0, setIndex < draft.logs[i].actualSets.count, draft.logs[i].actualSets[setIndex] == indexedActual { return }
         guard reviewStep == nil, row.sets.indices.contains(setIndex), nextSetIndex(log: draft.logs[i], row: row) == setIndex,
               actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
-              [3, 4].contains(snapshot.state.schemaVersion) || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
+              [3, 4, 5].contains(snapshot.state.schemaVersion) || actual.reps > 0 || (actual.leftReps ?? 0) > 0 || (actual.rightReps ?? 0) > 0 else { throw EngineError(code: "invalid_set", field: "reps") }
         if movement.repCounting == .total, actual.leftReps != nil || actual.rightReps != nil { throw EngineError(code: "unexpected_side_reps", field: "set") }
         guard movement.loadingMode != .externalLoad || draft.logs[i].actualLoad != nil else { throw EngineError(code: "load_confirmation_required", field: "load") }
         try requireReviewedHandling(movementID: movementID, load: draft.logs[i].actualLoad)
         try requireMissReason(indexedActual, row: row, index: setIndex)
         try await requireWorkingExposure(row)
+        try requireMigrationRecovery(movementID, draft: draft)
         if reconciledResumeStep != nil { try await reconcileActionFlow(&draft) }
         draft.logs[i].actualSets.append(indexedActual); draft.workingSetsStarted = true
         // Canonical archives store integer seconds. Round only the UI deadline up
@@ -802,7 +855,7 @@ import TrainingCore
     private func recordEffortBody(movementID: String, effort: Effort) async throws {
         var draft = try await editableDraft(); let i = try index(movementID, draft: draft)
         draft.logs[i].finalEffort = effort
-        if [3, 4].contains(snapshot.state.schemaVersion) { draft.logs[i].effortScope = .allWorkingSets }
+        if [3, 4, 5].contains(snapshot.state.schemaVersion) { draft.logs[i].effortScope = .allWorkingSets }
         try await save(draft)
     }
     func recordProblem(movementID: String, problem: Problem, pendingActual: ActualSet? = nil) async throws {
@@ -831,7 +884,7 @@ import TrainingCore
         }
         // Unknown load/missing side remain unknown. Raw set and outcome commit together.
         var retained = actual
-        if [3, 4].contains(snapshot.state.schemaVersion) {
+        if [3, 4, 5].contains(snapshot.state.schemaVersion) {
             guard actual.setIndex == nil || actual.setIndex == slot else { throw EngineError(code: "invalid_set", field: "setIndex") }
             retained.setIndex = slot
         }
@@ -852,6 +905,7 @@ import TrainingCore
         if handled(movementID), draft.logs[i].status == status, pendingActual == nil { return }
         if reconciledResumeStep != nil { try await reconcileActionFlow(&draft) }
         guard !handled(movementID) || status == draft.logs[i].status else { throw EngineError(code: "movement_stopped", field: "status") }
+        if status == .completed { try requireMigrationRecovery(movementID, draft: draft) }
         if status == .completed, let pendingActual, let slot = nextSetIndex(log: draft.logs[i], row: row) {
             try requireMissReason(pendingActual, row: row, index: slot)
         }
@@ -962,6 +1016,7 @@ import TrainingCore
     func changeStarterProgram(choice: StarterProgramChoice, goal: Goal) async throws {
         try await operations.perform { _ in
             try await requireReady()
+            guard snapshot.state.schemaVersion != 5 else { throw EngineError(code: "unsupported_policy", field: "training_emphasis") }
             guard canEditProgramSettings else { throw EngineError(code: "working_draft_locked", field: "settings") }
             let config = try selectStarterProgram(choice: choice, goal: goal, programID: programID)
             let today = try CalendarContext(timeZoneID: timeZoneID).localDate(at: now())
@@ -1021,6 +1076,7 @@ import TrainingCore
                 var event = CompletedWorkout(eventID: draft.id.uuidString.lowercased(), date: draft.date, slotID: draft.displayed.slotID,
                     prescriptionID: draft.displayed.id, plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode,
                     exercises: draft.logs, observationAudit: draft.observationAudit)
+                event.migrationRecoveryAttestations = draft.migrationRecoveryAttestations
                 let finish = try SessionTiming.milliseconds(at: capturedNow)
                 let today = try SessionTiming.localDate(milliseconds: finish, timeZoneID: draft.timeZoneID)
                 let next: WorkoutSlot

@@ -48,7 +48,7 @@ struct WorkoutSecondaryActions: View {
     private var hasAvailableActions: Bool {
         if canEndSource || canCorrectLoad || model.log(for: row.movementID)?.problem == Problem.none { return true }
         guard let target = skipTarget else { return false }
-        return target.index == nil || [3, 4].contains(model.snapshot.state.schemaVersion)
+        return target.index == nil || [3, 4, 5].contains(model.snapshot.state.schemaVersion)
     }
     var body: some View {
         if hasAvailableActions {
@@ -61,7 +61,7 @@ struct WorkoutSecondaryActions: View {
                 .disabled(model.busy || model.snapshot.health != .ready || model.hasAmbiguousFinish || model.finished)
                 .confirmationDialog("Workout actions", isPresented: $showingActions, titleVisibility: .visible) {
                     if let target = skipTarget {
-                        if let index = target.index, [3, 4].contains(model.snapshot.state.schemaVersion) {
+                        if let index = target.index, [3, 4, 5].contains(model.snapshot.state.schemaVersion) {
                             Button("Skip Set \(index + 1)") { perform { try await model.skipSet(movementID: target.row.movementID, index: index) } }
                                 .accessibilityIdentifier("set.skip")
                         } else if target.index == nil {
@@ -79,7 +79,7 @@ struct WorkoutSecondaryActions: View {
                         .disabled(model.log(for: row.movementID)?.problem != Problem.none)
                     if canCorrectLoad {
                         Button("Incorrect load — keep observations and stop") { correctingLoad = true }.accessibilityIdentifier("load.correct")
-                        if [3, 4].contains(model.snapshot.state.schemaVersion), model.log(for: row.movementID)?.actualSets.isEmpty == false, !hasTypedInput, pendingActual == nil {
+                        if [3, 4, 5].contains(model.snapshot.state.schemaVersion), model.log(for: row.movementID)?.actualSets.isEmpty == false, !hasTypedInput, pendingActual == nil {
                             Button("Different loads used — keep as partial") { perform { try await model.recordMixedLoads(movementID: row.movementID) } }
                                 .accessibilityIdentifier("load.mixed")
                         }

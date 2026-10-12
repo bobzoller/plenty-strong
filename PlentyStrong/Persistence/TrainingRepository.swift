@@ -7,6 +7,7 @@ import TrainingCore
 @ModelActor actor TrainingRepository {
     private var lease: StoreLease?
     private var archiveDirectory: URL?
+    private var migrationAdmissionCache = MigrationAdmissionCache()
     #if DEBUG
     private var failSave = false
     private var commitObserver: (@Sendable (String) -> Void)?
@@ -36,6 +37,16 @@ import TrainingCore
     }
     nonisolated func exportBackup() async throws -> BackupDocument {
         try await offMain { try $0.exportBackupBody() }
+    }
+    /// Recovery selection shares the same byte-bound immutable evidence cache as
+    /// snapshots. Full admission stays off the presentation thread.
+    nonisolated func verifiedRecoveryProof() async throws -> VerifiedCloudBatch {
+        try await offMain { repository in
+            let document = try repository.admittedBackup().document
+            return try RecoveryVerifier().verify(
+                BackupService.recoveryRecords(document, migrationCache: repository.migrationAdmissionCache),
+                migrationCache: repository.migrationAdmissionCache)
+        }
     }
     nonisolated func snapshot(programID: UUID) async throws -> StoreSnapshot {
         try await offMain { try $0.snapshotBody(programID: programID) }
@@ -88,7 +99,7 @@ import TrainingCore
     nonisolated func prepareReturn(programID: UUID, expectedRevision: Int, asOf: LocalDate) async throws -> StoreSnapshot {
         try await offMain { try $0.prepareReturnBody(programID: programID, expectedRevision: expectedRevision, asOf: asOf) }
     }
-    func close() { modelContext.rollback(); lease = nil }
+    func close() { modelContext.rollback(); migrationAdmissionCache = MigrationAdmissionCache(); lease = nil }
     private func requireOpen() throws {
         guard lease != nil else { throw EngineError(code: "repository_closed", field: "store") }
         modelContext.autosaveEnabled = false
@@ -159,6 +170,7 @@ import TrainingCore
         case "general-fitness-exact-v1": name = "ruleset-exact-v1"
         case "general-fitness-upper-exact-v2": name = "ruleset-upper-exact-v2"
         case "general-fitness-glute-exact-v1": name = "ruleset-glute-exact-v1"
+        case "general-fitness-migrated-exact-v1": name = "ruleset-migrated-exact-v1"
         default: throw EngineError(code: "unsupported_version", field: "rules")
         }
         let rules = try archiveData(name, relative: "Packages/TrainingCore/Sources/TrainingCore/Resources/\(name).json")
@@ -281,8 +293,8 @@ import TrainingCore
         let legacyOriginals = try quarantines.filter { $0.reason == "backup_branch_conflict" }.flatMap {
             try BackupService.recoveryRecords(JSONDecoder().decode(BackupDocument.self, from: $0.bytes))
         }
-        let originals = try Dictionary((recovery.originals + legacyOriginals).map { (try $0.key, $0) }, uniquingKeysWith: { first, _ in first }).sorted { $0.key < $1.key }.map(\.value)
-        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(document) + originals)
+        let originals = try Dictionary((recovery.originals + legacyOriginals).map { (try migrationAdmissionCache.recordKey($0), $0) }, uniquingKeysWith: { first, _ in first }).sorted { $0.key < $1.key }.map(\.value)
+        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache) + originals, migrationCache: migrationAdmissionCache)
         let branched = batch.heads.values.contains { $0.count > 1 }
         let resolutions = batch.envelopes.values.contains { if case .resolveConflict = $0.command { return true }; return false }
         if datasets.count > 1 || branched || resolutions || !recovery.originals.isEmpty || !quarantines.isEmpty || recovery.graphRequired == true {
@@ -295,7 +307,7 @@ import TrainingCore
         try requireOpen()
         let captured = try capturedBackup()
         let document = captured.document
-        let replay = try captured.batch.map { try BackupService.validateCapturedGraph(document, batch: $0) } ?? BackupService.validate(document)
+        let replay = try captured.batch.map { try BackupService.validateCapturedGraph(document, batch: $0, migrationCache: migrationAdmissionCache) } ?? BackupService.validate(document, migrationCache: migrationAdmissionCache)
         let heads = try modelContext.fetch(FetchDescriptor<ProgramHeadRecord>())
         guard heads.count == replay.heads.count else { throw BackupService.invalid("head_count") }
         for head in heads {
@@ -328,7 +340,10 @@ import TrainingCore
             guard let batch = replay.recoveryBatch else { throw BackupService.invalid("missing_recovery_admission") }
             health = try recoveryHealth(programID: id, batch: batch)
         }
-        return StoreSnapshot(state: head.returnedState, draft: draft, history: history, decisions: history.flatMap(\.decisions), health: health)
+        let externalSource = try history.first.flatMap { envelope in
+            try BackupService.migrationArchiveHash(envelope.command).map { try BackupService.externalSource(document.profiles, hash: $0, migrationCache: migrationAdmissionCache) }
+        }
+        return StoreSnapshot(state: head.returnedState, draft: draft, history: history, decisions: history.flatMap(\.decisions), health: health, externalSource: externalSource)
     }
     /// Exact archive lookup; original drafts and repair commands use their own policy.
     private func rulesBody(for state: ProgramState) throws -> Ruleset {
@@ -349,7 +364,7 @@ import TrainingCore
             let source = try rulesBody(for: current.state)
             let destination = try RulesetCatalog.exactV1()
             if current.state.schemaVersion == 3, source == destination { return }
-            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(rawBackup()))
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(rawBackup(), migrationCache: migrationAdmissionCache))
             let prefix = try RecoveryVerifier.ancestors(parent.envelopeHash, envelopes: proof.envelopes).compactMap { proof.envelopes[$0] }
             let evidence = try policyActivationEvidenceEventIDs(state: current.state, history: prefix)
             let pending = current.state.activePrescription
@@ -379,7 +394,7 @@ import TrainingCore
             guard current.draft == nil else { throw EngineError(code: "program_switch_draft_locked", field: "draft") }
             guard next.date >= current.state.activePrescription.date else { throw EngineError(code: "backdated_date", field: "next") }
             let document = try rawBackup()
-            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache), migrationCache: migrationAdmissionCache)
             let prefix = try RecoveryVerifier.ancestors(parent.envelopeHash, envelopes: proof.envelopes).compactMap { proof.envelopes[$0] }
             let destination = try RulesetCatalog.starter(choice)
             let archives = try bundledArchives(ruleset: destination)
@@ -400,7 +415,8 @@ import TrainingCore
     }
     private func finalizeBody(programID: UUID, expectedRevision: Int, event: CompletedWorkout, next: WorkoutSlot) throws -> FinalizationReceipt {
         let result: AdvanceResult = try transaction {
-            let current = try snapshotBody(programID: programID)
+            let admitted = try admittedBackup()
+            let current = try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
             let command = JournalCommand.workout(completedWorkout: event, next: next)
             let originals = current.history.filter { UUID(uuidString: $0.eventID) == UUID(uuidString: event.eventID) }
             if !originals.isEmpty {
@@ -437,7 +453,10 @@ import TrainingCore
             }
             let rules = try rule(current.state.rulesetHash)
             let result: ConfigurationResult
-            do { result = try BackupService.transition(state: current.state, command: command, rules: rules) }
+            do {
+                if current.state.schemaVersion == 5 { try validateMigrationPriorCompletion(state: current.state, event: event, rules: rules, admission: admitted) }
+                result = try BackupService.transition(state: current.state, command: command, rules: rules)
+            }
             catch let error as EngineError { return .rejected(nextState: current.state, errors: [error.code]) }
             let accepted = try envelope(programID: current.state.config.programID, eventID: event.eventID,
                 datasetID: current.history[0].datasetID, command: command, parent: try projectedEnvelope(current.state.config.programID), result: result, rules: rules)
@@ -517,10 +536,13 @@ import TrainingCore
                       existing.planned == draft.planned, existing.displayed == draft.displayed,
                       (!existing.workingSetsStarted || draft.workingSetsStarted),
                       (!existing.hasObservations || draft.hasObservations) else { throw BackupService.invalid("draft_identity") }
+                guard (existing.migrationRecoveryAttestations ?? []).allSatisfy({ (draft.migrationRecoveryAttestations ?? []).contains($0) }) else {
+                    throw BackupService.invalid("draft_recovery_attestation_changed")
+                }
                 // Ordinary saves may append performed sets and update effort/status,
                 // but cannot rewrite recorded reps/sides/load or remove a safety flag.
                 // Corrections require an explicit path that retains the originals.
-                if [3, 4].contains(current.state.schemaVersion) {
+                if [3, 4, 5].contains(current.state.schemaVersion) {
                     guard Set(existing.acknowledgedMovementIDs ?? []).isSubset(of: Set(draft.acknowledgedMovementIDs ?? [])) else { throw BackupService.invalid("draft_observation_changed") }
                 }
                 for original in existing.logs {
@@ -536,7 +558,7 @@ import TrainingCore
                         guard updated.actualSets.count == original.actualSets.count,
                               updated.status != .completed else { throw BackupService.invalid("draft_observation_changed") }
                     }
-                    if [3, 4].contains(current.state.schemaVersion) {
+                    if [3, 4, 5].contains(current.state.schemaVersion) {
                         guard let originalSkipped = original.skippedSetIndices, let updatedSkipped = updated.skippedSetIndices,
                               updatedSkipped.starts(with: originalSkipped),
                               original.mixedLoads != true || updated.mixedLoads == true,
@@ -621,7 +643,7 @@ import TrainingCore
             var current = try projectSnapshot(programID: programID.uuidString.lowercased(), document: admitted.document, replay: admitted.replay)
             guard var draft = current.draft else { throw BackupService.invalid("draft_missing") }
             var actual = replacement
-            if current.state.schemaVersion >= 3 {
+            if [3, 4, 5].contains(current.state.schemaVersion) {
                 guard actual.setIndex == nil || actual.setIndex == setIndex else { throw BackupService.invalid("draft_set_index") }
                 actual.setIndex = setIndex
             }
@@ -654,12 +676,12 @@ import TrainingCore
             let position = positions[0], before = log.actualSets[position]
             guard actual.reps >= 0, (actual.leftReps ?? 0) >= 0, (actual.rightReps ?? 0) >= 0,
                   movement.repCounting == .perSide || (actual.leftReps == nil && actual.rightReps == nil),
-                  current.state.schemaVersion >= 3 || (actual.setIndex == nil && actual.missedGoalReason == nil) else {
+                  [3, 4, 5].contains(current.state.schemaVersion) || (actual.setIndex == nil && actual.missedGoalReason == nil) else {
                 throw BackupService.invalid("draft_correction_actual")
             }
             if try BackupService.bytes(before) == BackupService.bytes(actual) { return current }
             let acknowledged = draft.acknowledgedMovementIDs?.contains(movementID) == true
-            if current.state.schemaVersion >= 3, log.problem == .none, log.status == .completed || !acknowledged,
+            if [3, 4, 5].contains(current.state.schemaVersion), log.problem == .none, log.status == .completed || !acknowledged,
                let target = row.sets[setIndex].targetReps,
                [actual.reps, actual.leftReps, actual.rightReps].compactMap({ $0 }).contains(where: { $0 < target }),
                actual.missedGoalReason == nil {
@@ -700,9 +722,9 @@ import TrainingCore
     func importBackup(_ document: BackupDocument) throws -> ImportReceipt {
         return try transaction {
             if document.formatVersion == 2 { return try importGraph(document) }
-            let incoming = try BackupService.validate(document)
+            let incoming = try BackupService.validate(document, migrationCache: migrationAdmissionCache)
             let original = try exportBackupBody()
-            let local = try BackupService.validate(original)
+            let local = try BackupService.validate(original, migrationCache: migrationAdmissionCache)
             let sameDataset = original.journal.isEmpty || original.datasetID == document.datasetID
             let localObjects = Dictionary(uniqueKeysWithValues: original.journal.map { ($0.id, $0) })
             var identical = 0
@@ -745,7 +767,7 @@ import TrainingCore
                     if !merged.drafts.contains(where: { $0.id == item.id }) { merged.drafts.append(item) }
                 }
             }
-            _ = try BackupService.validate(merged)
+            _ = try BackupService.validate(merged, migrationCache: migrationAdmissionCache)
             do {
                 try putArchives(rules: document.rules, profiles: document.profiles)
                 for envelope in accepted.sorted(by: { ($0.programID, $0.returnedState.revision) < ($1.programID, $1.returnedState.revision) }) { try persist(envelope) }
@@ -797,8 +819,8 @@ extension TrainingRepository {
             guard rows.allSatisfy({ $0.accountScope == nil || $0.accountScope == scope.key }) else { throw BackupService.invalid("dataset_binding") }
             if rows.isEmpty {
                 let document = try rawBackup()
-                let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
-                guard proof.envelopes.values.contains(where: { $0.parentEnvelopeHash == nil && $0.datasetID == id && { if case .initialize = $0.command { return true }; return false }($0) }) else { throw BackupService.invalid("dataset_binding") }
+                let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache), migrationCache: migrationAdmissionCache)
+                guard proof.envelopes.values.contains(where: { $0.parentEnvelopeHash == nil && $0.datasetID == id && { switch $0.command { case .initialize, .migrateProgram: return true; default: return false } }($0) }) else { throw BackupService.invalid("dataset_binding") }
             }
             bindings.datasets[id] = scope.key
             for row in rows { row.accountScope = scope.key }
@@ -833,6 +855,7 @@ extension TrainingRepository {
                   journal.bytes == (try CloudRecordCodec.canonicalBytes(journal.bytes)) else { throw BackupService.invalid("cloud_journal_integrity") }
             var hashes = [envelope.rulesetHash, envelope.profileHash, envelope.sourceProfileHash]
             if case let .resolveConflict(_, _, originals, _) = envelope.command { hashes += originals }
+            if let hash = BackupService.migrationArchiveHash(envelope.command) { hashes.append(hash) }
             var references: [String] = []
             for hash in hashes {
                 let name = try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: hash)
@@ -954,7 +977,7 @@ extension TrainingRepository {
     private func projectedEnvelope(_ programID: String) throws -> JournalEnvelope {
         let saved = try head(programID)
         let document = try rawBackup()
-        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let batch = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache), migrationCache: migrationAdmissionCache)
         guard let envelope = batch.envelopes[saved.headHash] else { throw BackupService.invalid("projection_head") }
         return envelope
     }
@@ -1094,7 +1117,7 @@ extension TrainingRepository {
         try transaction {
             let id = programID.uuidString.lowercased()
             let document = try rawBackup()
-            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache), migrationCache: migrationAdmissionCache)
             let heads = proof.heads[id, default: []]
             guard Set(expectedHeadHashes).count == expectedHeadHashes.count, expectedHeadHashes.sorted() == heads,
                   let parent = proof.envelopes[selection.selectedHeadHash], parent.programID == id else { throw BackupService.invalid("stale_resolution_heads") }
@@ -1138,10 +1161,10 @@ private extension Array {
 
 extension TrainingRepository {
     private func importGraph(_ document: BackupDocument) throws -> ImportReceipt {
-        let incoming = try BackupService.validate(document)
+        let incoming = try BackupService.validate(document, migrationCache: migrationAdmissionCache)
         let original = try rawBackup()
         let representedRecords = try BackupService.recoveryRecords(original)
-        let incomingRecords = try BackupService.recoveryRecords(document)
+        let incomingRecords = try BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache)
         let proof = try RecoveryVerifier().verify(representedRecords + incomingRecords)
         var state = try recoveryState()
         state.graphRequired = true
@@ -1212,7 +1235,7 @@ extension TrainingRepository {
     /// commands. It is never a fabricated acknowledgement of an occupied name.
     private func cloudSourceCoverage(scope: CloudScope) throws -> (covered: Set<String>, completed: Int, pendingCompleted: Int, incomplete: Bool) {
         let document = try rawBackup()
-        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache), migrationCache: migrationAdmissionCache)
         let state = try recoveryState()
         let metadata = try cloudMetadata(scope: scope)
         let bindings = try cloudBindings()
@@ -1257,7 +1280,7 @@ extension TrainingRepository {
             if let cached = cache[key] { return cached }
             guard !visiting.contains(hash), let envelope = proof.envelopes[hash],
                   directAvailable(envelope) || (wrappersAllowed && wrapperAvailable(envelope)),
-                  [envelope.rulesetHash, envelope.profileHash, envelope.sourceProfileHash].allSatisfy({ archiveAvailable($0, dataset: envelope.datasetID) }) else { cache[key] = false; return false }
+                  ([envelope.rulesetHash, envelope.profileHash, envelope.sourceProfileHash] + (BackupService.migrationArchiveHash(envelope.command).map { [$0] } ?? [])).allSatisfy({ archiveAvailable($0, dataset: envelope.datasetID) }) else { cache[key] = false; return false }
             var allowSources = wrappersAllowed
             if case let .resolveConflict(_, _, originals, _) = envelope.command {
                 guard !originals.isEmpty, originals.allSatisfy({ archiveAvailable($0, dataset: envelope.datasetID) }) else { cache[key] = false; return false }
@@ -1303,10 +1326,13 @@ extension TrainingRepository {
 extension TrainingRepository {
     /// C3 selects an active program explicitly. This query exposes every known
     /// program, including unsupported/incomplete roots without a projection.
-    func recoveryPrograms() throws -> [RecoveryProgramSummary] {
+    nonisolated func recoveryPrograms() async throws -> [RecoveryProgramSummary] {
+        try await offMain { try $0.recoveryProgramsBody() }
+    }
+    private func recoveryProgramsBody() throws -> [RecoveryProgramSummary] {
         let document = try rawBackup()
-        let records = try BackupService.recoveryRecords(document)
-        let proof = try RecoveryVerifier().verify(records)
+        let records = try BackupService.recoveryRecords(document, migrationCache: migrationAdmissionCache)
+        let proof = try RecoveryVerifier().verify(records, migrationCache: migrationAdmissionCache)
         var datasets: [String: Set<String>] = [:]
         for record in proof.originals {
             guard record.recordType == CloudRecordKind.journal.recordType,
@@ -1342,7 +1368,7 @@ struct StagedRecoveryOriginalsExport: Codable, Sendable {
 extension TrainingRepository {
     func stagedRecoveryOriginals() throws -> StagedRecoveryOriginalsExport {
         try requireOpen()
-        let adopted = Set(try BackupService.recoveryRecords(rawBackup()).map { try $0.key })
+        let adopted = Set(try BackupService.recoveryRecords(rawBackup(), migrationCache: migrationAdmissionCache).map { try $0.key })
         let rows = try modelContext.fetch(FetchDescriptor<CloudCursorRecord>()).filter { $0.accountScope.hasPrefix("cloud-v1:") }
         var originals: [String: ArchivedRecord] = [:]
         for row in rows {
@@ -1354,5 +1380,142 @@ extension TrainingRepository {
             }
         }
         return .init(originals: originals.sorted { $0.key < $1.key }.map(\.value))
+    }
+}
+
+// Program migration is a new root in this store; it never rewrites a head or a
+// historical event. All dependencies and the root commit in the sole transaction.
+extension TrainingRepository {
+    nonisolated func previewMigration(document: ProgramMigrationDocument, selection: MigrationSelection,
+                                     acceptance: MigrationAcceptance? = nil) async throws -> MigrationPreviewReceipt {
+        try await offMain { repository in
+            try repository.migrationPreviewBody(document: document, selection: selection,
+                acceptance: acceptance ?? MigrationAcceptance(acceptedAtMilliseconds: Int64(Date().timeIntervalSince1970 * 1000), timeZoneID: TimeZone.current.identifier))
+        }
+    }
+    nonisolated func importMigration(document: ProgramMigrationDocument, selection: MigrationSelection,
+                                    expectedStoreFingerprint: String, acceptance: MigrationAcceptance? = nil) async throws -> MigrationImportReceipt {
+        try await offMain { repository in
+            try repository.importMigrationBody(document: document, selection: selection,
+                expectedStoreFingerprint: expectedStoreFingerprint,
+                acceptance: acceptance ?? MigrationAcceptance(acceptedAtMilliseconds: Int64(Date().timeIntervalSince1970 * 1000), timeZoneID: TimeZone.current.identifier))
+        }
+    }
+    nonisolated func externalSourceArchive(hash: String) async throws -> ExternalSourceArchive {
+        try await offMain { try BackupService.externalSource($0.admittedBackup().document.profiles, hash: hash, migrationCache: $0.migrationAdmissionCache) }
+    }
+    private func validateMigrationPriorCompletion(state: ProgramState, event: CompletedWorkout, rules: Ruleset,
+        admission: (document: BackupDocument, replay: BackupService.Replay)) throws {
+        let completed = event.exercises.filter { $0.status == .completed && !$0.actualSets.isEmpty }
+        guard !completed.isEmpty else { return } // Raw stops/partial observations receive no qualifying credit.
+        var retained: [String: MovementSafetyState] = [:]
+        for id in admission.replay.heads.keys where id != state.config.programID {
+            let root = try projectSnapshot(programID: id, document: admission.document, replay: admission.replay)
+            guard root.health == .ready else { throw EngineError(code: "retained_safety_restriction", field: "prior_program") }
+            for (family, safety) in root.state.retainedSafety ?? [:] {
+                let previous = retained[family]
+                retained[family] = MovementSafetyState(paused: safety.paused || previous?.paused == true,
+                    minimumRir: max(safety.minimumRir, previous?.minimumRir ?? 0), sourceEventIDs: [])
+            }
+            for movement in root.state.config.movements {
+                let family = starterSafetyFamily(for: movement.id), safety = root.state.baseSafety?[movement.id]
+                let paused = safety?.paused == true || root.state.exercises.contains { variant, value in
+                    (root.state.config.variants?[variant]?.baseMovementID ?? variant) == movement.id && value.mode == .paused
+                } || root.draft?.logs.contains { ($0.baseMovementID ?? $0.movementID) == movement.id && $0.problem != .none } == true
+                let previous = retained[family]
+                retained[family] = MovementSafetyState(paused: paused || previous?.paused == true,
+                    minimumRir: max(movement.minimumRir, max(safety?.minimumRir ?? 0, previous?.minimumRir ?? 0)), sourceEventIDs: [])
+            }
+        }
+        let families = Set(state.config.movements.map { starterSafetyFamily(for: $0.id) })
+        guard Set(retained.keys).isSubset(of: families) else { throw EngineError(code: "retained_safety_restriction", field: "unmapped_prior_family") }
+        let nativeFloor = event.sessionMode == .easier ? try rules.resolvedParameters.easierMinimumRir : try rules.resolvedParameters.normalMinimumRir
+        for log in completed {
+            guard let base = state.config.variants?[log.movementID]?.baseMovementID,
+                  let movement = state.config.movements.first(where: { $0.id == base }) else { throw BackupService.invalid("migration_movement") }
+            let offered = max(nativeFloor, max(movement.minimumRir, state.baseSafety?[base]?.minimumRir ?? 0))
+            if let prior = retained[starterSafetyFamily(for: base)], prior.paused || prior.minimumRir > offered {
+                throw EngineError(code: "retained_safety_restriction", field: base)
+            }
+        }
+    }
+    private func migrationIdentity(document: ProgramMigrationDocument, selection: MigrationSelection) throws -> (String, UUID, UUID, UUID) {
+        let identity = try migrationImportIdentity(document: document, selection: selection)
+        func uuid(_ purpose: String) throws -> UUID {
+            let digest = try BackupService.hash(["plenty-strong-program-migration-v1", purpose, identity])
+            let raw = Array(digest.prefix(32))
+            let text = [String(raw[0..<8]), String(raw[8..<12]), String(raw[12..<16]), String(raw[16..<20]), String(raw[20..<32])].joined(separator: "-")
+            guard let id = UUID(uuidString: text) else { throw BackupService.invalid("migration_identity") }
+            return id
+        }
+        return try (identity, uuid("program"), uuid("dataset"), uuid("root"))
+    }
+    private func migrationPreviewBody(document: ProgramMigrationDocument, selection: MigrationSelection,
+                                      acceptance: MigrationAcceptance) throws -> MigrationPreviewReceipt {
+        try validateMigrationDocument(document)
+        let admitted = try admittedBackup()
+        let store = admitted.document
+        guard store.drafts.isEmpty else { throw EngineError(code: "protected_workout", field: "migration") }
+        guard try admitted.replay.heads.keys.allSatisfy({
+            try projectSnapshot(programID: $0, document: store, replay: admitted.replay).health == .ready
+        }) else { throw EngineError(code: "store_requires_review", field: "migration") }
+        let (identity, id, _, event) = try migrationIdentity(document: document, selection: selection)
+        let existing = admitted.replay.histories[id.uuidString.lowercased()]?.first
+        var accepted = acceptance
+        if let existing {
+            guard existing.eventID == event.uuidString.lowercased(),
+                  case let .migrateProgram(checkpoint, originalSelection, originalAcceptance, hash) = existing.command,
+                  checkpoint == document.checkpoint, originalSelection == selection, hash == document.source.contentHash,
+                  try BackupService.externalSource(store.profiles, hash: hash, migrationCache: migrationAdmissionCache) == document.source else { throw BackupService.invalid("migration_identity_conflict") }
+            accepted = originalAcceptance
+        }
+        let preview = try previewProgramMigration(document: document, selection: selection, acceptance: accepted, programID: id)
+        let state = try existing.map { _ in try projectSnapshot(programID: id.uuidString.lowercased(), document: store, replay: admitted.replay).state } ?? preview.initialized.state
+        return MigrationPreviewReceipt(programID: id, importIdentity: identity,
+            storeFingerprint: try BackupService.migrationStoreFingerprint(store), documentDigest: try BackupService.hash(document),
+            selectionDigest: try BackupService.hash(selection), proposedAcceptance: accepted, preview: preview, state: state,
+            existingRootHash: existing?.envelopeHash)
+    }
+    private func importMigrationBody(document: ProgramMigrationDocument, selection: MigrationSelection,
+                                     expectedStoreFingerprint: String, acceptance: MigrationAcceptance) throws -> MigrationImportReceipt {
+        let result: (UUID, String, Int, Int) = try transaction {
+            try validateMigrationDocument(document)
+            let admitted = try admittedBackup()
+            let before = admitted.document
+            guard before.drafts.isEmpty else { throw EngineError(code: "protected_workout", field: "migration") }
+            guard try admitted.replay.heads.keys.allSatisfy({
+                try projectSnapshot(programID: $0, document: before, replay: admitted.replay).health == .ready
+            }) else { throw EngineError(code: "store_requires_review", field: "migration") }
+            guard try BackupService.migrationStoreFingerprint(before) == expectedStoreFingerprint else { throw EngineError(code: "stale_migration_preview", field: "store") }
+            let (_, id, dataset, event) = try migrationIdentity(document: document, selection: selection)
+            let programID = id.uuidString.lowercased()
+            let archive = try BackupService.object(document.source, id: document.source.contentHash)
+            if before.heads[programID] != nil {
+                let history = admitted.replay.histories[programID] ?? []
+                guard let root = history.first, root.eventID == event.uuidString.lowercased(),
+                      case let .migrateProgram(checkpoint, priorSelection, _, hash) = root.command,
+                      checkpoint == document.checkpoint, priorSelection == selection,
+                      hash == document.source.contentHash,
+                      before.profiles.contains(archive) else { throw BackupService.invalid("migration_identity_conflict") }
+                return (id, root.envelopeHash, 0, 1)
+            }
+            let preview = try previewProgramMigration(document: document, selection: selection, acceptance: acceptance, programID: id)
+            let rules = try RulesetCatalog.migratedExactV1()
+            let initialized = preview.initialized
+            let archives = try bundledArchives(ruleset: rules)
+            let root = try envelope(programID: programID, eventID: event.uuidString.lowercased(), datasetID: dataset.uuidString.lowercased(),
+                command: .migrateProgram(checkpoint: document.checkpoint, selection: selection, acceptance: acceptance, externalArchiveHash: archive.id), parent: nil,
+                result: ConfigurationResult(state: initialized.state, workout: initialized.workout, decisions: []), rules: rules)
+            _ = try BackupService.validate(BackupDocument(datasetID: root.datasetID, heads: [programID: root.envelopeHash],
+                journal: [BackupService.object(root, id: root.eventID)], rules: [archives.0], profiles: archives.1 + [archive], drafts: []))
+            try putArchives(rules: [archives.0], profiles: archives.1 + [archive])
+            try persist(root)
+            // Admit the complete union while save can still roll back, including
+            // different-dataset roots and every pre-existing portable original.
+            _ = try BackupService.validate(rawBackup(), migrationCache: migrationAdmissionCache)
+            return (id, root.envelopeHash, 1, 0)
+        }
+        return MigrationImportReceipt(programID: result.0, rootHash: result.1, accepted: result.2, identical: result.3,
+            snapshot: try snapshotBody(programID: result.0))
     }
 }

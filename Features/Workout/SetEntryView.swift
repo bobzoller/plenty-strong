@@ -15,7 +15,7 @@ struct SetEntryView: View {
     private var entry: Binding<SetEntryDraft> { Binding(get: { model.entryDraft }, set: { model.entryDraft = $0 }) }
     private var movement: Movement { model.movement(for: row) }
     private var index: Int? { correctionIndex ?? model.nextSetIndex(for: row.movementID) }
-    private var exact: Bool { [3, 4].contains(model.snapshot.state.schemaVersion) }
+    private var exact: Bool { [3, 4, 5].contains(model.snapshot.state.schemaVersion) }
     private var target: Int? { index.flatMap { row.sets.indices.contains($0) ? row.sets[$0].targetReps : nil } }
     private var observation: ActualSet? { model.entryDraft.observation(target: target, repCounting: movement.repCounting, exact: exact) }
     private var belowGoal: Bool { exact && model.entryDraft.requiresReason(target: target, repCounting: movement.repCounting) }

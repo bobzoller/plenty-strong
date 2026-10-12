@@ -40,12 +40,15 @@ struct VerifiedCloudBatch: Sendable {
 }
 
 struct RecoveryVerifier {
-    func verify(_ records: [ArchivedRecord]) throws -> VerifiedCloudBatch {
+    func verify(_ records: [ArchivedRecord], migrationCache: MigrationAdmissionCache? = nil) throws -> VerifiedCloudBatch {
+        let migrationCache = migrationCache ?? MigrationAdmissionCache()
         var supplied = records
-        for record in records {
-            if let archive = try? CausalOriginalArchive.validate(record) { supplied.append(archive.record) }
+        for record in records where record.recordType == CloudRecordKind.archive.recordType {
+            if migrationCache.source(bytes: record.bytes) != nil { continue }
+            let fields = (try? JSONSerialization.jsonObject(with: record.bytes)) as? [String: Any]
+            if fields?["archiveKind"] as? String == "causal-original-v1", let archive = try? CausalOriginalArchive.validate(record) { supplied.append(archive.record) }
         }
-        let originals = try Dictionary(supplied.map { (try $0.key, $0) }, uniquingKeysWith: { first, _ in first }).sorted { $0.key < $1.key }.map(\.value)
+        let originals = try Dictionary(supplied.map { (try migrationCache.recordKey($0), $0) }, uniquingKeysWith: { first, _ in first }).sorted { $0.key < $1.key }.map(\.value)
         var quarantine: [String: RecoveryQuarantine] = [:]
         var candidates: [String: (JournalEnvelope, ArchivedRecord)] = [:]
         var rules: [String: ArchivedObject] = [:], profiles: [String: ArchivedObject] = [:]
@@ -60,33 +63,38 @@ struct RecoveryVerifier {
             do {
                 guard record.bytes.count <= CloudRecordCodec.maximumAssetBytes,
                       record.claimedChecksum == BackupService.hash(record.bytes),
-                      try CloudRecordCodec.canonicalBytes(record.bytes) == record.bytes,
+                      try migrationCache.canonicalBytes(record.bytes) == record.bytes,
                       record.zoneName.hasPrefix(CloudRecordCodec.zonePrefix),
                       let dataset = UUID(uuidString: String(record.zoneName.dropFirst(CloudRecordCodec.zonePrefix.count))),
                       record.zoneName == CloudRecordCodec.zoneID(dataset).zoneName else { throw BackupService.invalid("cloud_integrity") }
+                if record.recordType == CloudRecordKind.archive.recordType, let source = migrationCache.source(bytes: record.bytes) {
+                    guard record.recordID == (try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: source.contentHash)) else { throw BackupService.invalid("archive_identity") }
+                    profiles[source.contentHash] = ArchivedObject(id: source.contentHash, bytes: record.bytes, checksum: BackupService.hash(record.bytes))
+                    continue
+                }
                 let fields = try JSONSerialization.jsonObject(with: record.bytes) as? [String: Any]
                 if record.recordType == CloudRecordKind.journal.recordType { program = fields?["programId"] as? String }
                 if record.recordType == CloudRecordKind.archive.recordType {
                     let ruleArchive = fields?["hash"] is String
                     let id = try BackupService.archiveHash(record.bytes, key: ruleArchive ? "hash" : "contentHash")
                     guard record.recordID == (try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: id)) else { throw BackupService.invalid("archive_identity") }
-                    if fields?["archiveKind"] != nil { _ = try CausalOriginalArchive.validate(record) }
+                    if fields?["archiveKind"] as? String == "causal-original-v1" { _ = try CausalOriginalArchive.validate(record) }
                     let archived = ArchivedObject(id: id, bytes: record.bytes, checksum: BackupService.hash(record.bytes))
                     if ruleArchive { _ = try BackupService.rules([archived], hash: id); rules[id] = archived }
-                    else { try BackupService.validateStarterProfileRegistration(archived); profiles[id] = archived }
+                    else { try BackupService.validateStarterProfileRegistration(archived, migrationCache: migrationCache); profiles[id] = archived }
                 } else {
                     guard record.recordType == CloudRecordKind.journal.recordType,
                           let identity = fields?["eventId"] as? String,
                           record.recordID == (try CloudRecordCodec.recordName(kind: .journal, datasetID: dataset, identity: identity)),
                           fields?["datasetId"] as? String == dataset.uuidString.lowercased() else { throw BackupService.invalid("journal_identity") }
-                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2, 3, 4].contains(schema) else {
+                    guard let schema = fields?["schemaVersion"] as? Int, [1, 2, 3, 4, 5].contains(schema) else {
                         throw EngineError(code: "unsupported_version", field: "schemaVersion")
                     }
                     // Unknown discriminators are version boundaries. Missing or
                     // type-invalid fields of a known format are corrupt originals.
                     let command = fields?["command"] as? [String: Any]
                     if let kind = command?["kind"] as? String {
-                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy", "activateFlexibleScheduling", "changeStarterProgram"].contains(kind) else {
+                        guard ["initialize", "workout", "reconfigure", "variantChange", "reschedule", "interruption", "resolveConflict", "activatePolicy", "activateFlexibleScheduling", "changeStarterProgram", "migrateProgram"].contains(kind) else {
                             throw EngineError(code: "unsupported_version", field: "command.kind")
                         }
                         if let change = command?["change"] as? [String: Any], let changeKind = change["kind"] as? String {
@@ -129,6 +137,7 @@ struct RecoveryVerifier {
                 let (envelope, record) = remaining[hash]!
                 guard let archive = rules[envelope.rulesetHash], profiles[envelope.profileHash] != nil,
                       profiles[envelope.sourceProfileHash] != nil else { continue }
+                if let hash = BackupService.migrationArchiveHash(envelope.command), profiles[hash] == nil { continue }
                 if case let .resolveConflict(selection, _, archiveHashes, _) = envelope.command {
                     guard Set(archiveHashes).count == archiveHashes.count, !archiveHashes.isEmpty, archiveHashes.allSatisfy({ profiles[$0] != nil }),
                           selection.reviewedQuarantineChecksums.allSatisfy({ checksum in originals.contains { BackupService.hash($0.bytes) == checksum } }) else { continue }
@@ -140,7 +149,7 @@ struct RecoveryVerifier {
                     let rule = try BackupService.rules([archive], hash: envelope.rulesetHash)
                     let config = envelope.returnedState.config
                     guard envelope.rulesetVersion == rule.version else { throw BackupService.invalid("rules_version") }
-                    if [2,3,4].contains(envelope.schemaVersion) {
+                    if [2,3,4,5].contains(envelope.schemaVersion) {
                         guard envelope.profileID == config.profileID, envelope.profileHash == config.profileHash,
                               envelope.sourceProfileID == config.sourceProfileID, envelope.sourceProfileHash == config.sourceProfileHash,
                               rule.profileID == envelope.profileID, rule.profileHash == envelope.profileHash else { throw BackupService.invalid("archive_references") }
@@ -151,6 +160,8 @@ struct RecoveryVerifier {
                               config.programID == envelope.programID else { throw BackupService.invalid("root") }
                         let result = try initializeProgram(config: config, rules: rule, firstWorkout: first)
                         replayed = ConfigurationResult(state: result.state, workout: result.workout, decisions: [])
+                    } else if case .migrateProgram = envelope.command {
+                        replayed = try BackupService.replayMigrationRoot(envelope, rules: rule, profiles: Array(profiles.values), migrationCache: migrationCache, ruleArchiveBytes: archive.bytes)
                     } else {
                         guard let parentHash = envelope.parentEnvelopeHash, let parent = verified[parentHash],
                               parent.datasetID == envelope.datasetID, parent.programID == envelope.programID,

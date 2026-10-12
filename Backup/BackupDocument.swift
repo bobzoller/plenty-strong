@@ -31,6 +31,7 @@ struct StoreSnapshot: Equatable, Sendable {
     var history: [JournalEnvelope]
     var decisions: [Decision]
     var health: StoreHealth
+    var externalSource: ExternalSourceArchive? = nil
 }
 struct FinalizationReceipt: Sendable { var result: AdvanceResult; var snapshot: StoreSnapshot }
 struct WorkoutDraft: Codable, Equatable, Sendable {
@@ -56,6 +57,8 @@ struct WorkoutDraft: Codable, Equatable, Sendable {
     var pendingFinish: PendingWorkoutFinish? = nil
     // Nil retains pre-flexible drafts byte-for-byte and their original date policy.
     var startedAtMilliseconds: Int64? = nil
+    // Fresh per-session source recovery review; nil preserves every old draft.
+    var migrationRecoveryAttestations: [MigrationRecoveryAttestation]? = nil
     // Persisted UI deadlines use whole reference seconds; recording rounds up by <1s.
     // Supported bounds are Foundation's distantPast...distantFuture dates, inclusive.
     static var supportedRestDeadlineRange: ClosedRange<Date> { .distantPast ... .distantFuture }
@@ -93,4 +96,24 @@ struct RecoveryProgramSummary: Equatable, Sendable {
     var projectedHeadHash: String?
     var knownCompletedWorkoutCount: Int
     var health: StoreHealth
+}
+
+/// A review binds both the immutable candidate and every accepted head/draft.
+struct MigrationPreviewReceipt: Equatable, Sendable {
+    var programID: UUID
+    var importIdentity: String
+    var storeFingerprint: String
+    var documentDigest: String
+    var selectionDigest: String
+    var proposedAcceptance: MigrationAcceptance
+    var preview: ProgramMigrationPreview
+    var state: ProgramState
+    var existingRootHash: String? = nil
+}
+struct MigrationImportReceipt: Equatable, Sendable {
+    var programID: UUID
+    var rootHash: String
+    var accepted: Int
+    var identical: Int
+    var snapshot: StoreSnapshot
 }

@@ -100,6 +100,11 @@ import TrainingCore
         operations.afterRelease = { [weak self] in self?.scheduleStagedIngestion() }
     }
     #if DEBUG
+    var syntheticMigrationURL: URL? {
+        guard uiTesting, ProcessInfo.processInfo.arguments.contains("-fixture-migration") else { return nil }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("PlentyStrong-Synthetic-UITests/PlentyStrong-synthetic-migration.json")
+    }
     var syntheticBackupURL: URL? {
         guard uiTesting else { return nil }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("PlentyStrong-Synthetic-Recovery.json")
@@ -116,6 +121,103 @@ import TrainingCore
         if let recovery = syntheticBackupURL { try bytes.write(to: recovery, options: .atomic) }
         #endif
         return url
+    }
+    func decodeMigrationData(_ data: Data) async throws -> ProgramMigrationDocument {
+        try await Task.detached(priority: .userInitiated) {
+            guard data.count <= CloudRecordCodec.maximumAssetBytes else { throw BackupService.invalid("migration_file_size") }
+            let document = try JSONDecoder().decode(ProgramMigrationDocument.self, from: data)
+            guard try CloudRecordCodec.canonicalBytes(data) == BackupService.bytes(document) else { throw BackupService.invalid("migration_unknown_or_noncanonical_fields") }
+            try validateMigrationDocument(document)
+            return document
+        }.value
+    }
+    func previewMigration(document: ProgramMigrationDocument, selection: MigrationSelection) async throws -> MigrationPreviewReceipt {
+        guard let repository else { throw BackupService.invalid("repository") }
+        return try await operations.perform { _ in
+            guard workout?.canEditProgramSettings != false, workout?.hasAmbiguousFinish != true else { throw BackupUIError.protectedWorkout }
+            let acceptance = MigrationAcceptance(acceptedAtMilliseconds: Int64(now().timeIntervalSince1970 * 1000), timeZoneID: timeZoneID)
+            return try await repository.previewMigration(document: document, selection: selection, acceptance: acceptance)
+        }
+    }
+    func importMigration(document: ProgramMigrationDocument, selection: MigrationSelection,
+                         preview: MigrationPreviewReceipt) async throws -> MigrationImportReceipt {
+        guard let repository else { throw BackupService.invalid("repository") }
+        return try await operations.perform { _ in
+            guard workout?.canEditProgramSettings != false, workout?.hasAmbiguousFinish != true else { throw BackupUIError.protectedWorkout }
+            let acceptance = MigrationAcceptance(acceptedAtMilliseconds: Int64(now().timeIntervalSince1970 * 1000), timeZoneID: timeZoneID)
+            let proposedDate = try CalendarContext(timeZoneID: preview.proposedAcceptance.timeZoneID).localDate(at:
+                Date(timeIntervalSince1970: Double(preview.proposedAcceptance.acceptedAtMilliseconds) / 1000))
+            let acceptedDate = try CalendarContext(timeZoneID: acceptance.timeZoneID).localDate(at: now())
+            guard preview.existingRootHash != nil || (proposedDate == acceptedDate && acceptance.timeZoneID == preview.proposedAcceptance.timeZoneID) else {
+                throw EngineError(code: "stale_migration_preview", field: "acceptance_date")
+            }
+            let current = try await Task.detached(priority: .userInitiated) {
+                guard preview.documentDigest == (try BackupService.hash(document)),
+                      preview.selectionDigest == (try BackupService.hash(selection)) else { throw BackupUIError.protectedWorkout }
+                return try previewProgramMigration(document: document, selection: selection,
+                    acceptance: preview.existingRootHash == nil ? acceptance : preview.proposedAcceptance, programID: preview.programID)
+            }.value
+            // The accepted clock is captured once by this writer. A later date or
+            // changed native preview requires a new review rather than silent import.
+            guard current.initialized.workout == preview.preview.initialized.workout,
+                  current.differences == preview.preview.differences else { throw EngineError(code: "stale_migration_preview", field: "native_policy") }
+            return try await repository.importMigration(document: document, selection: selection,
+                expectedStoreFingerprint: preview.storeFingerprint, acceptance: acceptance)
+        }
+    }
+    private func requireSafeMigrationAdoption(_ candidate: StoreSnapshot, repository: TrainingRepository) async throws {
+        let roots = try await repository.snapshots()
+        try await Task.detached(priority: .userInitiated) {
+            var offered: [String: [MovementSafetyState]] = [:]
+            for movement in candidate.state.config.movements {
+                var safety = candidate.state.baseSafety?[movement.id] ?? MovementSafetyState(paused: false, minimumRir: movement.minimumRir, sourceEventIDs: [])
+                safety.minimumRir = max(safety.minimumRir, movement.minimumRir)
+                safety.paused = safety.paused || candidate.state.exercises.contains { id, state in
+                    candidate.state.config.variants?[id]?.baseMovementID == movement.id && state.mode == .paused
+                }
+                offered[starterSafetyFamily(for: movement.id), default: []].append(safety)
+            }
+            for root in roots where root.state.config.programID != candidate.state.config.programID {
+                guard root.health == .ready, root.draft == nil, AppTrainingCompatibility.supports(root) else { throw BackupUIError.retainedRestrictions }
+                var retained = root.state.retainedSafety ?? [:]
+                for movement in root.state.config.movements {
+                    let family = starterSafetyFamily(for: movement.id)
+                    var safety = root.state.baseSafety?[movement.id] ?? MovementSafetyState(paused: false, minimumRir: movement.minimumRir, sourceEventIDs: [])
+                    safety.minimumRir = max(safety.minimumRir, movement.minimumRir)
+                    safety.paused = safety.paused || root.state.exercises.contains { id, state in
+                        root.state.config.variants?[id]?.baseMovementID == movement.id && state.mode == .paused
+                    }
+                    if let prior = retained[family] {
+                        safety.minimumRir = max(safety.minimumRir, prior.minimumRir)
+                        safety.paused = safety.paused || prior.paused
+                    }
+                    retained[family] = safety
+                }
+                // Dormant families and aliases are safety continuity, never load
+                // equivalence. Missing or weaker protection blocks selection.
+                guard retained.allSatisfy({ family, safety in
+                    guard let candidates = offered[family], !candidates.isEmpty else { return false }
+                    return candidates.allSatisfy { (!safety.paused || $0.paused) && $0.minimumRir >= safety.minimumRir }
+                }) else { throw BackupUIError.retainedRestrictions }
+            }
+        }.value
+    }
+    func adoptMigration(_ receipt: MigrationImportReceipt) async throws {
+        guard let repository else { throw BackupService.invalid("repository") }
+        try await operations.perform { operation in
+            guard workout?.hasAmbiguousFinish != true, workout?.snapshot.draft == nil,
+                  try await repository.exportBackup().drafts.isEmpty else { throw BackupUIError.protectedWorkout }
+            let snapshot = try await repository.snapshot(programID: receipt.programID)
+            guard snapshot.health == .ready, snapshot.draft == nil,
+                  snapshot.history.first?.envelopeHash == receipt.rootHash,
+                  snapshot.externalSource != nil else { throw BackupService.invalid("migration_adoption") }
+            try await requireSafeMigrationAdoption(snapshot, repository: repository)
+            preferences.activeProgramID = receipt.programID.uuidString.lowercased()
+            try savePreferences()
+            selectionGeneration += 1
+            try await installSelectedSnapshot(snapshot, repository: repository, operation: operation)
+            try await refreshRecoveryPrograms()
+        }
     }
     func restoreBackupData(_ data: Data) async throws -> ImportReceipt {
         guard !busy else { throw EngineError(code: "operation_in_progress", field: "backup") }
@@ -207,6 +309,9 @@ import TrainingCore
                 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
                 #if targetEnvironment(simulator)
+                if uiTesting, arguments.contains("-fixture-migration"), let url = syntheticMigrationURL {
+                    try BackupService.bytes(ProgramMigrationDesignFixture.make(unresolvedLoad: true)).write(to: url, options: .atomic)
+                }
                 if uiTesting, backup.heads.isEmpty, arguments.contains("-fixture-starter-intro") {
                     try await seedStarterIntroduction(repository)
                 }
@@ -476,7 +581,7 @@ extension AppComposition {
     private func restoreProgramSelection(operation: TrainingOperationGate.Lease) async throws {
         guard let repository, workout == nil, readOnlyProgram == nil else { return }
         let document = try await repository.exportBackup()
-        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let proof = try await repository.verifiedRecoveryProof()
         let verifiedRoots = Set(proof.envelopes.values.filter { $0.parentEnvelopeHash == nil }.map(\.programID))
         let ids = document.heads.keys.filter { verifiedRoots.contains($0) }.sorted()
         let id = preferences.activeProgramID.flatMap { ids.contains($0) ? $0 : nil } ?? (ids.count == 1 ? ids.first : nil)
@@ -490,6 +595,9 @@ extension AppComposition {
         try operations.requireOwnership(operation)
         guard AppTrainingCompatibility.supports(snapshot) else {
             workout = nil; readOnlyProgram = snapshot; showingWorkout = false; return
+        }
+        if snapshot.state.schemaVersion == 5, workout?.snapshot.state.config.programID != snapshot.state.config.programID {
+            try await requireSafeMigrationAdoption(snapshot, repository: repository)
         }
         readOnlyProgram = nil
         if let model = workout, model.snapshot.state.config.programID == snapshot.state.config.programID {
@@ -564,7 +672,7 @@ extension AppComposition {
     }
     private func recoveryRootChoice(for model: WorkoutViewModel) async throws -> RecoveryRootChoice {
         let document = try await model.repository.exportBackup()
-        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let proof = try await model.repository.verifiedRecoveryProof()
         let program = model.programID.uuidString.lowercased()
         let roots = proof.envelopes.values.filter { $0.programID == program && $0.parentEnvelopeHash == nil }
         guard roots.count == 1, let root = roots.first, let dataset = UUID(uuidString: root.datasetID),
@@ -739,7 +847,7 @@ extension AppComposition {
               workout?.hasAmbiguousFinish != true else { throw BackupUIError.protectedWorkout }
         try await operations.perform { operation in
             let document = try await repository.exportBackup()
-            let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+            let proof = try await repository.verifiedRecoveryProof()
             let roots = proof.envelopes.values.filter { $0.programID == id && $0.parentEnvelopeHash == nil }
             guard roots.count == 1, let root = roots.first,
                   (document.recovery?.rootDatasets[root.envelopeHash] ?? root.datasetID) == root.datasetID,
@@ -764,7 +872,7 @@ extension AppComposition {
     private nonisolated static func requireSafeNewProgramBody(_ config: ProgramConfig, repository: TrainingRepository) async throws {
         let document = try await repository.exportBackup()
         guard document.drafts.isEmpty else { throw BackupUIError.retainedRestrictions }
-        let proof = try RecoveryVerifier().verify(BackupService.recoveryRecords(document))
+        let proof = try await repository.verifiedRecoveryProof()
         let programs = Set(document.heads.keys).union(proof.envelopes.values.filter { $0.parentEnvelopeHash == nil }.map(\.programID))
         if config.profileID == "starter-upper-v1" || config.profileID == "starter-glute-v1" {
             let choice = try StarterProgramCatalog.choice(for: config)
@@ -834,7 +942,7 @@ extension AppComposition {
     func associateSelectedProgram() async { await resumeRecovery(allowAssociation: true) }
     func recoveryProof() async throws -> VerifiedCloudBatch {
         guard let repository else { throw BackupService.invalid("repository") }
-        return try RecoveryVerifier().verify(BackupService.recoveryRecords(await repository.exportBackup()))
+        return try await repository.verifiedRecoveryProof()
     }
     func resolveRecoveryConflict(programID: String, heads: [String], selection: BranchSelection) async throws {
         guard let repository, let uuid = UUID(uuidString: programID) else { throw BackupService.invalid("program") }
@@ -875,7 +983,7 @@ extension AppComposition {
 /// changed, migrated, or assigned invented profile/variant identifiers here.
 enum AppTrainingCompatibility {
     static func supports(_ snapshot: StoreSnapshot) -> Bool {
-        guard [2,3,4].contains(snapshot.state.schemaVersion), let rules = try? RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash),
+        guard [2,3,4,5].contains(snapshot.state.schemaVersion), let rules = try? RulesetCatalog.resolve(version: snapshot.state.rulesetVersion, hash: snapshot.state.rulesetHash),
               (try? ProgramPolicy.resolve(schemaVersion: snapshot.state.schemaVersion, rules: rules)) != nil,
               snapshot.state.rulesetHash == rules.hash,
               (try? validate(config: snapshot.state.config, rules: rules)) != nil else { return false }

@@ -16,6 +16,7 @@ struct OnboardingView<Restore: View>: View {
             DeveloperModeSection()
             #endif
             Section { NavigationLink("Restore an existing JSON backup", destination: restore).disabled(operationInProgress).accessibilityIdentifier("onboarding.restore") }
+            Section { NavigationLink("Import an existing program") { ProgramMigrationView(composition: composition) }.disabled(operationInProgress).accessibilityIdentifier("onboarding.migration") }
             Section { NavigationLink("Optional iCloud recovery") { CloudRecoveryView(composition: composition) }.accessibilityIdentifier("onboarding.cloud-recovery") }
             Section("Your emphasis") { ProgramChoiceView(selection: $emphasis) }
             Section("Your goal") {

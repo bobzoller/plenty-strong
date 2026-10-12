@@ -33,7 +33,7 @@ enum BackupService {
     static func rules(_ archives: [ArchivedObject], hash: String) throws -> Ruleset {
         guard let archive = archives.first(where: { $0.id == hash }) else { throw invalid("missing_rules") }
         let rule = try JSONDecoder().decode(Ruleset.self, from: archive.bytes)
-        guard ["general-fitness-swift1", "general-fitness-v0.2", "general-fitness-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(rule.version) else { throw EngineError(code: "unsupported_version", field: "rules") }
+        guard ["general-fitness-swift1", "general-fitness-v0.2", "general-fitness-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1", "general-fitness-migrated-exact-v1"].contains(rule.version) else { throw EngineError(code: "unsupported_version", field: "rules") }
         if (rule.contractVersion ?? 1) >= 4 || ["general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(rule.version) {
             guard rule.hash == hash, (try? RulesetCatalog.resolve(version: rule.version, hash: hash)) != nil else {
                 throw EngineError(code: "unsupported_version", field: "rules")
@@ -45,7 +45,22 @@ enum BackupService {
         guard try archiveHash(archive.bytes, key: "hash") == hash else { throw invalid("rules_hash") }
         return rule
     }
-    static func validateStarterProfileRegistration(_ archive: ArchivedObject) throws {
+    static func validateStarterProfileRegistration(_ archive: ArchivedObject, migrationCache: MigrationAdmissionCache? = nil) throws {
+        if migrationCache?.source(archive) != nil { return }
+        let raw = try JSONSerialization.jsonObject(with: archive.bytes) as? [String: Any]
+        if let kind = raw?["archiveKind"] as? String {
+            switch kind {
+            case "external-program-source-v1":
+                let source = try JSONDecoder().decode(ExternalSourceArchive.self, from: archive.bytes)
+                try validateExternalSourceArchive(source)
+                guard source.contentHash == archive.id, try bytes(source) == archive.bytes else { throw invalid("external_source_archive") }
+                migrationCache?.remember(source: source, bytes: archive.bytes)
+            case "causal-original-v1":
+                _ = try JSONDecoder().decode(CausalOriginalArchive.self, from: archive.bytes)
+            default: throw EngineError(code: "unsupported_version", field: "archiveKind")
+            }
+            return
+        }
         let fields = try JSONSerialization.jsonObject(with: archive.bytes) as? [String: Any]
         let profileID = fields?["profileId"] as? String
         if (fields?["schemaVersion"] as? Int ?? 1) >= 4 || profileID?.hasPrefix("starter-") == true {
@@ -69,6 +84,8 @@ enum BackupService {
                   envelope.sourceProfileID == config.sourceProfileID, envelope.sourceProfileHash == config.sourceProfileHash else { return false }
         }
         switch envelope.command {
+        case .initialize: return [1, 2, 3, 4].contains(envelope.schemaVersion)
+        case .migrateProgram: return envelope.schemaVersion == 5
         case .changeStarterProgram: return envelope.schemaVersion == 4
         case .activatePolicy: return envelope.schemaVersion == 3
         case .reconfigure(change: .reviewStrengthHandling, next: _),
@@ -94,13 +111,14 @@ enum BackupService {
         var recoveryBatch: VerifiedCloudBatch? = nil
         var rulesByHash: [String: Ruleset] = [:]
     }
-    static func validate(_ document: BackupDocument) throws -> Replay {
-        if document.formatVersion == 2 { return try validateGraph(document) }
+    static func validate(_ document: BackupDocument, migrationCache: MigrationAdmissionCache? = nil) throws -> Replay {
+        if document.formatVersion == 2 { return try validateGraph(document, migrationCache: migrationCache) }
         guard document.formatVersion == 1, document.recovery == nil else { throw EngineError(code: "unsupported_version", field: "formatVersion") }
         guard !document.datasetID.isEmpty else { throw invalid("dataset") }
         try [document.journal, document.rules, document.profiles, document.drafts].forEach(validateObjects)
         // Admit each frozen archive once for this immutable document. Every event
-        // still replays with its referenced policy; nothing survives this invocation.
+        // still replays with its referenced policy. Repository contexts may retain
+        // only byte-bound immutable source admission and root replay evidence.
         var admittedRules: [String: Ruleset] = [:]
         for archive in document.rules {
             guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") }
@@ -111,8 +129,9 @@ enum BackupService {
             return rule
         }
         for archive in document.profiles {
+            if migrationCache?.source(archive) != nil { continue }
             guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") }
-            try validateStarterProfileRegistration(archive)
+            try validateStarterProfileRegistration(archive, migrationCache: migrationCache)
         }
         let envelopes = try document.journal.map { item -> JournalEnvelope in
             let envelope = try JSONDecoder().decode(JournalEnvelope.self, from: item.bytes)
@@ -122,7 +141,7 @@ enum BackupService {
         var histories: [String: [JournalEnvelope]] = [:]
         var heads: [String: JournalEnvelope] = [:]
         for envelope in envelopes {
-            guard [2, 3, 4].contains(envelope.schemaVersion), envelope.returnedState.schemaVersion == envelope.schemaVersion else {
+            guard [2, 3, 4, 5].contains(envelope.schemaVersion), envelope.returnedState.schemaVersion == envelope.schemaVersion else {
                 throw EngineError(code: "unsupported_version", field: "schemaVersion")
             }
             guard envelope.datasetID == document.datasetID,
@@ -144,6 +163,9 @@ enum BackupService {
                       envelope.inputRevision == -1, config.programID == envelope.programID else { throw invalid("root") }
                 let initialized = try initializeProgram(config: config, rules: rule, firstWorkout: first)
                 replayed = ConfigurationResult(state: initialized.state, workout: initialized.workout, decisions: [])
+            } else if case .migrateProgram = envelope.command {
+                guard parent == nil else { throw invalid("migration_root_parent") }
+                replayed = try replayMigrationRoot(envelope, rules: rule, profiles: document.profiles, migrationCache: migrationCache, ruleArchiveBytes: document.rules.first { $0.id == rule.hash }?.bytes)
             } else {
                 guard let parent, envelope.parentEnvelopeHash == parent.envelopeHash,
                       envelope.inputRevision == parent.returnedState.revision,
@@ -174,6 +196,63 @@ enum BackupService {
         }
         return Replay(histories: histories, heads: heads, rulesByHash: admittedRules)
     }
+    /// Capture follows complete admission. Immutable bytes are represented by
+    /// their admitted checksums, avoiding re-encoding megabytes for review tokens.
+    static func migrationStoreFingerprint(_ document: BackupDocument) throws -> String {
+        func objects(_ values: [ArchivedObject]) -> CanonicalValue {
+            .array(values.sorted { $0.id < $1.id }.map { .object(["id": .string($0.id), "checksum": .string($0.checksum)]) })
+        }
+        var fields: [String: CanonicalValue] = ["formatVersion": .integer(Int64(document.formatVersion)), "datasetID": .string(document.datasetID),
+            "heads": .object(document.heads.mapValues(CanonicalValue.string)), "journal": objects(document.journal),
+            "rules": objects(document.rules), "profiles": objects(document.profiles), "drafts": objects(document.drafts)]
+        if let graph = document.recovery {
+            fields["recovery"] = .object(["version": .integer(Int64(graph.version)),
+                "heads": .object(graph.heads.mapValues { .array($0.map(CanonicalValue.string)) }),
+                "rootDatasets": .object(graph.rootDatasets.mapValues(CanonicalValue.string)),
+                "originals": .array(graph.originals.map { record in .object(["recordID": .string(record.recordID),
+                    "zoneName": .string(record.zoneName), "recordType": .string(record.recordType),
+                    "claimedChecksum": record.claimedChecksum.map(CanonicalValue.string) ?? .null,
+                    "checksum": .string(hash(record.bytes))]) }),
+                "quarantines": .array(graph.quarantines.map { .object(["id": .string($0.id), "reason": .string($0.reason), "checksum": .string(hash($0.bytes))]) }),
+                "resolvedQuarantineKeys": .array(graph.resolvedQuarantineKeys.map(CanonicalValue.string))])
+        }
+        return try CanonicalJSON.sha256(.object(fields))
+    }
+    static func externalSource(_ archives: [ArchivedObject], hash: String, migrationCache: MigrationAdmissionCache? = nil) throws -> ExternalSourceArchive {
+        if let archive = archives.first(where: { $0.id == hash }), let source = migrationCache?.source(archive) { return source }
+        guard let archive = archives.first(where: { $0.id == hash }),
+              try archiveHash(archive.bytes, key: "contentHash") == hash else { throw invalid("missing_external_source") }
+        try validateStarterProfileRegistration(archive, migrationCache: migrationCache)
+        if let source = migrationCache?.source(archive) { return source }
+        let source = try JSONDecoder().decode(ExternalSourceArchive.self, from: archive.bytes)
+        guard source.contentHash == hash else { throw invalid("external_source_hash") }
+        try validateExternalSourceArchive(source)
+        return source
+    }
+    static func migrationArchiveHash(_ command: JournalCommand) -> String? {
+        if case let .migrateProgram(_, _, _, hash) = command { return hash }
+        return nil
+    }
+    static func replayMigrationRoot(_ envelope: JournalEnvelope, rules: Ruleset, profiles: [ArchivedObject], migrationCache: MigrationAdmissionCache? = nil, ruleArchiveBytes: Data? = nil) throws -> ConfigurationResult {
+        guard envelope.schemaVersion == 5, envelope.parentEnvelopeHash == nil,
+              envelope.inputStateHash == nil, envelope.inputRevision == -1,
+              envelope.returnedState.revision == 0,
+              case let .migrateProgram(checkpoint, selection, acceptance, hash) = envelope.command,
+              hash == checkpoint.externalArchiveHash,
+              let id = UUID(uuidString: envelope.programID) else { throw invalid("migration_root") }
+        let source = try externalSource(profiles, hash: hash, migrationCache: migrationCache)
+        guard let archive = profiles.first(where: { $0.id == hash }) else { throw invalid("missing_external_source") }
+        guard let profile = profiles.first(where: { $0.id == envelope.profileHash }),
+              let sourceProfile = profiles.first(where: { $0.id == envelope.sourceProfileHash }) else { throw invalid("migration_profile_dependencies") }
+        let cacheKey = try self.hash([envelope.envelopeHash, self.hash(try bytes(envelope)), rules.hash,
+            self.hash(ruleArchiveBytes ?? bytes(rules)), self.hash(profile.bytes), self.hash(sourceProfile.bytes), hash, self.hash(archive.bytes)])
+        if let cached = migrationCache?.root(key: cacheKey) { return cached }
+        let result = try migrateProgram(checkpoint: checkpoint, selection: selection, acceptance: acceptance,
+            source: source, programID: id, rules: rules)
+        let replayed = ConfigurationResult(state: result.state, workout: result.workout, decisions: [])
+        migrationCache?.remember(root: replayed, key: cacheKey)
+        return replayed
+    }
     static func eventHash(_ command: JournalCommand) throws -> String {
         if case let .workout(event, _) = command { return try hash(event) }
         return try hash(command)
@@ -199,7 +278,7 @@ enum BackupService {
         guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else { throw invalid("command_rules") }
         switch command {
         case .activatePolicy, .changeStarterProgram: throw invalid("activation")
-        case .initialize: throw invalid("nonroot_initialize")
+        case .initialize, .migrateProgram: throw invalid("nonroot_initialize")
         case .activateFlexibleScheduling: return try activateFlexibleScheduling(state: state, rules: rules)
         case let .workout(event, next):
             guard rawVariantSnapshotsMatch(state: state, event: event) else { throw invalid("raw_observation_snapshot") }
@@ -248,7 +327,7 @@ enum BackupService {
     }
     static func validateDraft(_ draft: WorkoutDraft, state: ProgramState, rules: Ruleset) throws {
         let displayed = try prepareWorkout(state: state, rules: rules, easierToday: draft.sessionMode == .easier)
-        if [3, 4].contains(state.schemaVersion) {
+        if [3, 4, 5].contains(state.schemaVersion) {
             for log in draft.logs {
                 guard let row = displayed.exercises.first(where: { $0.movementID == log.movementID }) else { throw invalid("draft_log") }
                 try validateIndexedExactLog(log, prescription: row)
@@ -264,6 +343,22 @@ enum BackupService {
                 }
             }
         }
+        if let attestations = draft.migrationRecoveryAttestations {
+            guard state.schemaVersion == 5, let source = state.migration, let start = draft.startedAtMilliseconds,
+                  Set(attestations.map(\.movementID)).count == attestations.count,
+                  attestations.allSatisfy({ attestation in
+                      guard let base = state.config.variants?[attestation.movementID]?.baseMovementID else { return false }
+                      return source.baselines.first { $0.baseMovementID == base }?.recoveryRequired == true &&
+                          draft.logs.contains { $0.movementID == attestation.movementID } && attestation.externalArchiveHash == source.externalArchiveHash &&
+                          attestation.checkedAtMilliseconds >= start
+                  }) else { throw invalid("draft_recovery_attestation") }
+            for attestation in attestations { _ = try SessionTiming.localDate(milliseconds: attestation.checkedAtMilliseconds, timeZoneID: draft.timeZoneID) }
+        }
+        for log in draft.logs where log.status == .completed {
+            if let base = log.baseMovementID, state.migration?.baselines.first(where: { $0.baseMovementID == base })?.recoveryRequired == true {
+                guard draft.migrationRecoveryAttestations?.contains(where: { $0.movementID == log.movementID }) == true else { throw invalid("draft_recovery_attestation") }
+            }
+        }
         let acknowledged = draft.acknowledgedMovementIDs ?? []
         guard Set(acknowledged).count == acknowledged.count,
               Set(acknowledged).isSubset(of: Set(displayed.exercises.map(\.movementID))),
@@ -271,7 +366,8 @@ enum BackupService {
         if state.schedulingPolicy == .flexibleV1 {
             guard let start = draft.startedAtMilliseconds,
                   try SessionTiming.localDate(milliseconds: start, timeZoneID: draft.timeZoneID) == draft.date,
-                  state.lastSessionDate == nil || draft.date > state.lastSessionDate! else { throw invalid("draft_timing") }
+                  state.lastSessionDate == nil || draft.date > state.lastSessionDate!,
+                  state.migration?.externalLastSessionDate == nil || draft.date > state.migration!.externalLastSessionDate! else { throw invalid("draft_timing") }
         } else {
             guard draft.startedAtMilliseconds == nil, draft.date == displayed.date else { throw invalid("draft_timing") }
         }
@@ -289,6 +385,7 @@ enum BackupService {
         _ = try ObservationAuditValidator.originalLogs(effective: draft.logs, audit: draft.observationAudit,
             prescription: draft.displayed, config: state.config, schemaVersion: state.schemaVersion)
         if let pending = draft.pendingFinish {
+            guard pending.event.migrationRecoveryAttestations == draft.migrationRecoveryAttestations else { throw invalid("draft_recovery_finish_binding") }
             try WorkoutScheduler.validate(slot: pending.next, config: state.config, schedulingPolicy: state.schedulingPolicy)
             if let timing = pending.event.timing {
                 let finishedDate = try timing.validate(sessionDate: draft.date, plannedDate: draft.planned.date)
@@ -302,7 +399,7 @@ enum BackupService {
 
 
 extension BackupService {
-    static func recoveryRecords(_ document: BackupDocument) throws -> [ArchivedRecord] {
+    static func recoveryRecords(_ document: BackupDocument, migrationCache: MigrationAdmissionCache? = nil) throws -> [ArchivedRecord] {
         let envelopes = try document.journal.map { try JSONDecoder().decode(JournalEnvelope.self, from: $0.bytes) }
         var output: [ArchivedRecord] = []
         let datasets = Set(envelopes.map(\.datasetID))
@@ -317,9 +414,9 @@ extension BackupService {
             for archive in document.rules + document.profiles {
                 // Frozen resources can be shared across datasets. Exact source
                 // wrappers belong only to their original dataset/zone.
-                if let source = try? JSONDecoder().decode(CausalOriginalArchive.self, from: archive.bytes),
+                if migrationCache?.source(archive) == nil, let source = try? JSONDecoder().decode(CausalOriginalArchive.self, from: archive.bytes),
                    source.record.zoneName != CloudRecordCodec.zoneID(dataset).zoneName { continue }
-                let canonical = try CloudRecordCodec.canonicalBytes(archive.bytes)
+                let canonical = try migrationCache?.canonicalBytes(archive.bytes) ?? CloudRecordCodec.canonicalBytes(archive.bytes)
                 output.append(ArchivedRecord(observation: CloudObservation(recordID: try CloudRecordCodec.recordName(kind: .archive, datasetID: dataset, identity: archive.id),
                     zoneName: CloudRecordCodec.zoneID(dataset).zoneName, recordType: CloudRecordKind.archive.recordType,
                     claimedChecksum: hash(canonical), payload: canonical, systemFields: Data())))
@@ -332,19 +429,20 @@ extension BackupService {
             rootDatasets: Dictionary(uniqueKeysWithValues: batch.envelopes.values.filter { $0.parentEnvelopeHash == nil }.map { ($0.envelopeHash, $0.datasetID) }),
             quarantines: quarantines, resolvedQuarantineKeys: resolved.sorted())
     }
-    static func validateGraph(_ document: BackupDocument) throws -> Replay {
-        try validateGraph(document, capturedBatch: nil)
+    static func validateGraph(_ document: BackupDocument, migrationCache: MigrationAdmissionCache? = nil) throws -> Replay {
+        try validateGraph(document, capturedBatch: nil, migrationCache: migrationCache)
     }
     /// The repository alone uses this for the exact immutable capture from which
     /// it assembled the manifest. Untrusted import/restore use validate instead.
-    static func validateCapturedGraph(_ document: BackupDocument, batch: VerifiedCloudBatch) throws -> Replay {
-        try validateGraph(document, capturedBatch: batch)
+    static func validateCapturedGraph(_ document: BackupDocument, batch: VerifiedCloudBatch, migrationCache: MigrationAdmissionCache? = nil) throws -> Replay {
+        try validateGraph(document, capturedBatch: batch, migrationCache: migrationCache)
     }
-    private static func validateGraph(_ document: BackupDocument, capturedBatch: VerifiedCloudBatch?) throws -> Replay {
+    private static func validateGraph(_ document: BackupDocument, capturedBatch: VerifiedCloudBatch?, migrationCache: MigrationAdmissionCache? = nil) throws -> Replay {
         guard let graph = document.recovery, graph.version == 1 else { throw invalid("graph_version") }
         try [document.journal, document.rules, document.profiles, document.drafts].forEach(validateObjects)
         // Admit each frozen archive once for this immutable document. Every event
-        // still replays with its referenced policy; nothing survives this invocation.
+        // still replays with its referenced policy. Repository contexts may retain
+        // only byte-bound immutable source admission and root replay evidence.
         var admittedRules: [String: Ruleset] = [:]
         for archive in document.rules {
             guard try archiveHash(archive.bytes, key: "hash") == archive.id else { throw invalid("rules_hash") }
@@ -354,10 +452,14 @@ extension BackupService {
             guard let rule = admittedRules[hash] else { throw invalid("missing_rules") }
             return rule
         }
-        for archive in document.profiles { guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") } }
+        for archive in document.profiles {
+            if migrationCache?.source(archive) != nil { continue }
+            guard try archiveHash(archive.bytes, key: "contentHash") == archive.id else { throw invalid("profile_hash") }
+            try validateStarterProfileRegistration(archive, migrationCache: migrationCache)
+        }
         guard Set(graph.quarantines.map(\.id)).count == graph.quarantines.count,
               graph.quarantines.allSatisfy({ hash($0.bytes) == $0.id }) else { throw invalid("portable_quarantine") }
-        let batch = try capturedBatch ?? RecoveryVerifier().verify(recoveryRecords(document))
+        let batch = try capturedBatch ?? RecoveryVerifier().verify(recoveryRecords(document, migrationCache: migrationCache), migrationCache: migrationCache)
         let reviewed = Set(batch.envelopes.values.flatMap { envelope -> [String] in
             if case let .resolveConflict(selection, _, _, _) = envelope.command { return selection.reviewedQuarantineChecksums }; return []
         })

@@ -427,3 +427,27 @@ private struct SyntheticOldEnvelope: Codable {
         await repository.close()
     }
 }
+
+extension BackupTests {
+    @Test func hashCorrectExternalArchiveIsNotAnIgnoredProfileExtra() async throws {
+        let s = try await RepositoryTestHarness.make(goal: .size)
+        let original = try await s.repository.exportBackup()
+        var fields: [String: CanonicalValue] = ["archiveKind": .string("external-program-source-v1"),
+            "schemaVersion": .integer(1), "files": .array([])]
+        let id = try CanonicalJSON.sha256(.object(fields))
+        fields["contentHash"] = .string(id)
+        let bytes = try CanonicalJSON.encode(.object(fields))
+        var malformed = original
+        malformed.profiles.append(ArchivedObject(id: id, bytes: bytes, checksum: BackupService.hash(bytes)))
+        await #expect(throws: (any Error).self) { try await s.repository.importBackup(malformed) }
+        #expect(try await s.repository.exportBackup() == original)
+        malformed = original
+        fields["archiveKind"] = .string("unsupported-external-program-v2")
+        fields.removeValue(forKey: "contentHash")
+        let unsupportedID = try CanonicalJSON.sha256(.object(fields))
+        fields["contentHash"] = .string(unsupportedID)
+        let unsupported = try CanonicalJSON.encode(.object(fields))
+        malformed.profiles.append(.init(id: unsupportedID, bytes: unsupported, checksum: BackupService.hash(unsupported)))
+        #expect(throws: (any Error).self) { try BackupService.validate(malformed) }
+    }
+}

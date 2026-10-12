@@ -14,6 +14,17 @@ func run() async throws {
     let mode = args[1]
     let directory = URL(fileURLWithPath: args[2], isDirectory: true)
     let source = URL(fileURLWithPath: args[3], isDirectory: true)
+    if mode == "migration-snapshot-timing" {
+        guard args.count == 4 else { throw BackupService.invalid("migration_timing_arguments") }
+        try await migrationSnapshotTiming(directory: directory, source: source)
+        return
+    }
+    if mode == "migration-proof" {
+        guard args.count == 6 else { throw BackupService.invalid("migration_proof_arguments") }
+        try await migrationProof(directory: directory, source: source,
+            documentURL: URL(fileURLWithPath: args[4]), selectionURL: URL(fileURLWithPath: args[5]))
+        return
+    }
     let url = directory.appendingPathComponent("training.store")
     let inputURL = directory.appendingPathComponent("input.json")
     let repository = try TrainingRepository.open(at: url, archiveDirectory: source)

@@ -11,6 +11,7 @@ struct SettingsView: View {
             #endif
             if model.snapshot.health != .ready { Text("Local store requires attention: \(model.snapshot.health.rawValue)").accessibilityIdentifier("store.health") }
             NavigationLink("Program and saved setups") { ProgramSettingsView(model: model) }.accessibilityIdentifier("settings.program")
+            NavigationLink("Import an existing program") { ProgramMigrationView(composition: composition) }.accessibilityIdentifier("settings.migration")
             NavigationLink("Lossless backup and restore") { BackupSettingsView(composition: composition) }.accessibilityIdentifier("settings.backup")
             NavigationLink("iCloud recovery") { CloudRecoveryView(composition: composition) }.accessibilityIdentifier("settings.cloud-recovery")
                 #if DEBUG

@@ -203,7 +203,7 @@ struct WorkoutView: View {
                         Button(row.sets.isEmpty ? (textSize.isAccessibilitySize ? "Review" : "Review outcome") : (textSize.isAccessibilitySize ? "Start" : "Start movement")) {
                             Task { await model.run { try await model.beginMovement(movementID: id) } }
                         }.buttonStyle(.borderedProminent).controlSize(.large).accessibilityLabel(row.sets.isEmpty ? "Review outcome" : "Start movement").accessibilityIdentifier("guided.next")
-                            .disabled(model.busy || model.snapshot.health != .ready || (!row.sets.isEmpty && model.movement(for: row).loadingMode == .externalLoad && !preparationWeightIsConfirmed(for: row)))
+                            .disabled(model.busy || model.snapshot.health != .ready || (!row.sets.isEmpty && model.requiresMigrationRecovery(id) && !model.migrationRecoveryConfirmed(id)) || (!row.sets.isEmpty && model.movement(for: row).loadingMode == .externalLoad && !preparationWeightIsConfirmed(for: row)))
                         } secondary: {
                             WorkoutSecondaryActions(model: model, step: .introduction(movementID: id), row: row, pendingActual: $pendingActual)
                         }
@@ -326,6 +326,15 @@ struct WorkoutView: View {
             Text(MovementPrescriptionSummary.goal(row, policy: summary.policy, repCounting: metadata.repCounting))
                 .accessibilityIdentifier("movement.goal-reps")
             if let instruction = row.sets.first?.effortInstruction { Text(instruction).accessibilityIdentifier("movement.instruction") }
+        }
+        if model.requiresMigrationRecovery(row.movementID), !row.sets.isEmpty {
+            Text("The source program requires recovery before another exposure. Review soreness, pain and control for this movement; import has not confirmed your recovery.")
+                .accessibilityIdentifier("movement.source-recovery")
+            Button(model.migrationRecoveryConfirmed(row.movementID) ? "Recovery reviewed for this session" : "I have recovered since the last exposure") {
+                Task { await model.run { try await model.confirmMigrationRecovery(movementID: row.movementID) } }
+            }.disabled(model.migrationRecoveryConfirmed(row.movementID) || model.busy || row.kind == .paused)
+                .accessibilityIdentifier("movement.confirm-source-recovery")
+            Text("If you have not recovered, skip or stop this movement. Existing safeguards remain.").font(.caption)
         }
         if metadata.loadingMode == .externalLoad {
             if !row.sets.isEmpty, log?.actualSets.isEmpty == true, log?.problem == Problem.none, !model.handled(row.movementID), row.kind != .paused {

@@ -153,6 +153,7 @@ enum WorkoutFlowResolver {
             plannedPrescriptionID: draft.planned.id, sessionMode: draft.sessionMode,
             exercises: draft.logs, observationAudit: draft.observationAudit)
         expected.timing = event.timing
+        expected.migrationRecoveryAttestations = draft.migrationRecoveryAttestations
         if let flow = draft.flow {
             guard flow.forward == .workoutReview, Set(draft.acknowledgedMovementIDs ?? []) == ids,
                   Set(flow.reviewedSummaryMovementIDs) == ids else { throw invalid("pendingFinish.review") }
