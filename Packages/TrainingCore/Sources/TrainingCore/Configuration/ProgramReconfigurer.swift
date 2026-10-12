@@ -58,6 +58,7 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
         affected = try variantIDs(for: base, in: state, rules: rules)
         resumeAuthorized = true
         if policy.usesVariants { updated.baseSafety![base]!.paused = false }
+        if updated.migration != nil, !updated.migration!.clearedSafetyBaseIDs.contains(base) { updated.migration!.clearedSafetyBaseIDs.append(base); updated.migration!.clearedSafetyBaseIDs.sort() }
         key = "safe_resume"
     }
     for id in affected {
@@ -67,9 +68,15 @@ public func reconfigureProgram(state: ProgramState, change: ConfigurationChange,
         rebaseline(&updated.exercises[id]!, movement: movement, config: updated.config,
                    preset: try rules.preset(goal: updated.config.goal, daysPerWeek: updated.config.daysPerWeek),
                    paused: updated.baseSafety?[base]?.paused == true || (before.mode == .paused && !resumeAuthorized))
-        if policy.usesExactTargets {
-            seedExactBaseline(&updated.exercises[id]!, clearSetupReview: key == "setup_reset")
+        if let dose = state.migration?.doses[id] {
+            updated.exercises[id]!.normalSets = dose.normalSets
+            updated.exercises[id]!.repFloor = dose.repFloor; updated.exercises[id]!.repCeiling = dose.initialRepCeiling
+            updated.migration?.clockAnchors.removeValue(forKey: id)
         }
+        if policy.usesExactTargets {
+            seedExactBaseline(&updated.exercises[id]!, clearSetupReview: key == "setup_reset" || resumeAuthorized)
+        }
+        if let original = updated.migration?.baselines.first(where: { $0.baseMovementID == base }), original.reviewRequired, updated.migration?.clearedSafetyBaseIDs.contains(base) != true { updated.exercises[id]!.exactRepState!.setupReviewRequired = true }
         decisions.append(try configurationDecision(id: id, action: .baseline, ruleIDs: policy.usesExactTargets ? ["X12"] : [], key: key,
                                                    before: before, after: updated.exercises[id]!, ruleset: policy.usesExactTargets ? rules : nil))
     }

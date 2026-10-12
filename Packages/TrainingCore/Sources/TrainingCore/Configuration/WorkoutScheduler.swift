@@ -147,7 +147,7 @@ func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDat
         guard before.mode != .paused, state.baseSafety![base]!.paused != true,
               before.exactRepState?.setupReviewRequired != true else { return nil }
         var after = before
-        guard let last = before.exactRepState!.lastSuitableNormalDate else {
+        guard let last = migratedClockDate(state: state, id: id) else {
             guard before.mode != .baseline else { return nil }
             seedExactBaseline(&after)
             state.exercises[id] = after
@@ -158,6 +158,7 @@ func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDat
         guard !before.interruptedReturn, last.days(until: asOf) >= (try rules.resolvedParameters.interruptionDays) else { return nil }
         let movement = state.config.movements.first { $0.id == base }!
         try beginExactInterruptedReturn(&after, movement: movement, rules: rules)
+        state.migration?.clockAnchors.removeValue(forKey: id)
         state.exercises[id] = after
         return try exactDecision(id: id, action: .recover, rule: "X08", key: "interruption_return",
             before: before, after: after, rules: rules)
@@ -178,7 +179,7 @@ func markInterruptedReturn(state: inout ProgramState, id: String, asOf: LocalDat
 /// or replace the pending issued prescription; the repository disallows drafts.
 public func activateFlexibleScheduling(state: ProgramState, rules: Ruleset) throws -> ConfigurationResult {
     try validateConfigurationState(state: state, rules: rules)
-    guard [2, 3, 4].contains(state.schemaVersion) else {
+    guard [2, 3, 4, 5].contains(state.schemaVersion) else {
         throw EngineError(code: "unsupported_scheduling", field: "schemaVersion")
     }
     guard state.schedulingPolicy == nil else { return unchangedConfiguration(state) }
@@ -197,10 +198,14 @@ func validateCompletionDates(_ input: AdvanceInput) throws {
     let state = input.state, event = input.event, planned = state.activePrescription
     guard !event.eventID.isEmpty,
           state.lastSessionDate == nil || event.date > state.lastSessionDate!,
+          state.migration?.externalLastSessionDate == nil || event.date > state.migration!.externalLastSessionDate!,
           input.nextWorkoutDate > event.date else { throw EngineError(code: "invalid_date", field: "date") }
     if state.schedulingPolicy == .flexibleV1 {
         guard let timing = event.timing else { throw EngineError(code: "invalid_session_timing", field: "timing") }
         let finishedDate = try timing.validate(sessionDate: event.date, plannedDate: planned.date)
+        if let acceptance = state.migration?.acceptance {
+            guard timing.startedAtMilliseconds >= acceptance.acceptedAtMilliseconds else { throw EngineError(code: "invalid_date", field: "before_migration_cutover") }
+        }
         let next = try WorkoutScheduler.nextRotation(after: max(planned.date, finishedDate), consumedSlotID: planned.slotID, config: state.config)
         guard next.date == input.nextWorkoutDate, next.slotID == input.nextSlotID else {
             throw EngineError(code: "invalid_rotation", field: "next")

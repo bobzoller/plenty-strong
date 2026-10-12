@@ -48,7 +48,7 @@ func plannedWorkout(state: ProgramState, rules: Ruleset, slot: WorkoutSlot) thro
     try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
     case .starterExactV1: return try plannedStarterWorkout(state: state, rules: rules, slot: slot)
-    case .fixedExactV1: return try plannedExactWorkout(state: state, rules: rules, slot: slot)
+    case .fixedExactV1, .migratedExactV1: return try plannedExactWorkout(state: state, rules: rules, slot: slot)
     case .numericV02, .fixedCeilingsV1: break
     }
     guard let weeklySlot = state.config.weeklySlots.first(where: { $0.id == slot.slotID }) else {

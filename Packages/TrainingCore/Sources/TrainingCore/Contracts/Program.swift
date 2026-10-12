@@ -358,6 +358,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
     public var retainedSafety: [String: MovementSafetyState]?
     // Nil is the archived weekday-bound scheduling contract.
     public var schedulingPolicy: SchedulingPolicy? = nil
+    public var migration: ProgramMigrationOrigin? = nil
 
     public init(schemaVersion: Int, rulesetVersion: String, rulesetHash: String, config: ProgramConfig, revision: Int, exercises: [String: ExerciseState], lastSessionDate: LocalDate?, activePrescription: WorkoutPrescription, processedEvents: [String: String], baseSafety: [String: MovementSafetyState]? = nil, retainedSafety: [String: MovementSafetyState]? = nil) {
         self.schemaVersion = schemaVersion
@@ -386,6 +387,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         case baseSafety
         case retainedSafety
         case schedulingPolicy
+        case migration
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -401,6 +403,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         baseSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .baseSafety)
         retainedSafety = try c.decodeIfPresent([String: MovementSafetyState].self, forKey: .retainedSafety)
         schedulingPolicy = try c.decodeIfPresent(SchedulingPolicy.self, forKey: .schedulingPolicy)
+        migration = try c.decodeIfPresent(ProgramMigrationOrigin.self, forKey: .migration)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -416,6 +419,7 @@ public struct ProgramState: Codable, Equatable, Sendable {
         try c.encodeIfPresent(baseSafety, forKey: .baseSafety)
         try c.encodeIfPresent(retainedSafety, forKey: .retainedSafety)
         try c.encodeIfPresent(schedulingPolicy, forKey: .schedulingPolicy)
+        try c.encodeIfPresent(migration, forKey: .migration)
     }
 }
 

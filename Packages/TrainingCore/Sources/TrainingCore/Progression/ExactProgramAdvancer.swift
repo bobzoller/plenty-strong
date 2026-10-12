@@ -55,7 +55,7 @@ func advanceExactProgram(_ input: AdvanceInput) -> AdvanceResult {
                     seedExactBaseline(&exercise)
                 }
                 rule = "X09"; key = "easier_session_recorded"
-            } else if !before.interruptedReturn && before.exactRepState!.lastSuitableNormalDate.map({
+            } else if !before.interruptedReturn && migratedClockDate(state: state, id: id).map({
                 $0.days(until: input.event.date) >= parameters.interruptionDays
             }) == true {
                 // Unprepared overdue work cannot establish new load/capacity. Raw
@@ -184,6 +184,7 @@ func advanceExactProgram(_ input: AdvanceInput) -> AdvanceResult {
                                                    movement: movement, context: context)
                 exercise.recentComparable = Array((exercise.recentComparable + [observation]).suffix(parameters.plateauExposures))
             }
+            if exercise.exactRepState?.lastSuitableNormalDate != nil || exercise.interruptedReturn || exercise.load != before.load { state.migration?.clockAnchors.removeValue(forKey: id) }
             state.exercises[id] = exercise
             decisions.append(try exactDecision(id: id, action: action, rule: rule, key: key,
                                                before: before, after: exercise, rules: input.rules))
@@ -210,6 +211,7 @@ private func validateExactAdvance(_ input: AdvanceInput) throws -> WorkoutPrescr
     let planned = try prepareExactWorkout(state: input.state, rules: input.rules, easierToday: false)
     let event = input.event
     try validateCompletionDates(input)
+    try validateMigrationRecoveryAttestations(event: event, state: input.state)
     try WorkoutScheduler.validate(slot: WorkoutSlot(date: input.nextWorkoutDate, slotID: input.nextSlotID), config: input.state.config, schedulingPolicy: input.state.schedulingPolicy)
     let displayed = try prepareExactWorkout(state: input.state, rules: input.rules, easierToday: event.sessionMode == .easier)
     guard event.slotID == planned.slotID, event.plannedPrescriptionID == planned.id,

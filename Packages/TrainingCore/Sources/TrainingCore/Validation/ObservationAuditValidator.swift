@@ -8,7 +8,7 @@ public enum ObservationAuditValidator {
                                     schemaVersion: Int) throws -> [ExerciseLog] {
         guard let audit else { return effective }
         guard audit.version == 1 else { throw invalid("version") }
-        guard [2, 3, 4].contains(schemaVersion) else { throw invalid("schemaVersion") }
+        guard [2, 3, 4, 5].contains(schemaVersion) else { throw invalid("schemaVersion") }
         guard Set(effective.map(\.movementID)).count == effective.count,
               Set(prescription.exercises.map(\.movementID)).count == prescription.exercises.count else {
             throw invalid("movementID")

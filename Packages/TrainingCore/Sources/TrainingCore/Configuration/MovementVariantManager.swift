@@ -31,11 +31,13 @@ public func changeMovementVariant(state: ProgramState, change: VariantChange, ru
         updated.config.activeVariantIDs![base] = id
         let preset = try rules.preset(goal: state.config.goal, daysPerWeek: state.config.daysPerWeek)
         let range = initialRepRange(movement: movement, goal: state.config.goal, preset: preset)
+        let imported = state.config.activeVariantIDs?[base].flatMap { state.migration?.doses[$0] }
+        if let imported { updated.migration!.doses[id] = imported }
         updated.exercises[id] = ExerciseState(load: nil, mode: state.baseSafety![base]!.paused ? .paused : .baseline,
-            normalSets: preset.normalSets, repFloor: range.floor, repCeiling: range.ceiling,
+            normalSets: imported?.normalSets ?? preset.normalSets, repFloor: imported?.repFloor ?? range.floor, repCeiling: imported?.initialRepCeiling ?? range.ceiling,
             ceilingStreak: 0, strainStreak: 0, lastCompletedDate: nil, nextSetOverride: nil,
             interruptedReturn: false, recentComparable: [], setupRevision: 1,
-            exactRepState: policy.usesExactTargets ? ExactRepState(normalTargets: Array(repeating: range.floor, count: preset.normalSets), shortfallStreak: 0, lastSuitableNormalDate: nil, setupReviewRequired: false) : nil)
+            exactRepState: policy.usesExactTargets ? ExactRepState(normalTargets: Array(repeating: imported?.repFloor ?? range.floor, count: imported?.normalSets ?? preset.normalSets), shortfallStreak: 0, lastSuitableNormalDate: nil, setupReviewRequired: state.migration?.baselines.first(where: { $0.baseMovementID == base })?.reviewRequired == true && state.migration?.clearedSafetyBaseIDs.contains(base) != true) : nil)
     case let .select(base, variant):
         guard state.config.movements.contains(where: { $0.id == base }),
               state.config.variants![variant]?.baseMovementID == base else {

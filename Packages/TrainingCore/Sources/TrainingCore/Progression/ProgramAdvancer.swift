@@ -5,9 +5,10 @@ import Foundation
 public func advanceProgram(_ input: AdvanceInput) -> AdvanceResult {
     do {
         try rejectLegacyStarterFields(input.state)
+        guard input.state.schemaVersion == 5 || input.event.migrationRecoveryAttestations == nil else { throw EngineError(code: "unsupported_policy", field: "migrationRecoveryAttestations") }
         switch try ProgramPolicy.resolve(schemaVersion: input.state.schemaVersion, rules: input.rules) {
         case .starterExactV1: return advanceStarterProgram(input)
-        case .fixedExactV1: return advanceExactProgram(input)
+        case .fixedExactV1, .migratedExactV1: return advanceExactProgram(input)
         case .numericV02, .fixedCeilingsV1: break
         }
         let eventHash = try CanonicalJSON.sha256(canonicalValue(input.event))

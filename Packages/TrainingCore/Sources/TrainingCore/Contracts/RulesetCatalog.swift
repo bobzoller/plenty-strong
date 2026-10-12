@@ -2,6 +2,7 @@ import Foundation
 
 /// Only immutable, bundled resources are admitted; no caller-supplied executable policy.
 public enum RulesetCatalog {
+    public static let migratedExactRulesetHash = "a784da24966e2ec98669703617e3bfaf9f43396e396c8ac697695a57b284c126"
     public static let exactRulesetHash = "b5b1100ee68edbe76384c31a3c8e1af918b4f5e3737f701ed0a6745989c3c73f"
     public static let fixedProfileHash = "e63a0543d54108af99637ed52dacebc1276e766b4314bc095891248efd7ce8ce"
     public static let fixedRulesetHash = "cc6520f0de45d47979942d3dda21eccc2e9779638ef1c18c7fdc44c4862b8463"
@@ -22,6 +23,8 @@ public enum RulesetCatalog {
     public static func numericV02() throws -> Ruleset {
         try loadRules(named: "numeric-v02-ruleset")
     }
+
+    public static func migratedExactV1() throws -> Ruleset { try loadRules(named: "ruleset-migrated-exact-v1") }
 
     public static func exactV1() throws -> Ruleset {
         let rules = try loadRules(named: "ruleset-exact-v1")
@@ -46,6 +49,7 @@ public enum RulesetCatalog {
         switch (version, hash) {
         case ("general-fitness-v0.2", numericRulesetHash): try numericV02()
         case ("general-fitness-swift1", fixedRulesetHash): try fixedV1()
+        case ("general-fitness-migrated-exact-v1", migratedExactRulesetHash): try migratedExactV1()
         case ("general-fitness-exact-v1", exactRulesetHash): try exactV1()
         case ("general-fitness-upper-exact-v2", StarterProgramCatalog.upperRulesetHash): try starter(.upperBody)
         case ("general-fitness-glute-exact-v1", StarterProgramCatalog.gluteRulesetHash): try starter(.wholeBodyGlutes)
@@ -75,6 +79,7 @@ public enum RulesetCatalog {
         let data = try resource(named: name)
         let expectedRawHash: String?
         switch name {
+        case "ruleset-migrated-exact-v1": expectedRawHash = migratedExactRulesetHash
         case "ruleset-exact-v1": expectedRawHash = exactRulesetHash
         case "ruleset-upper-exact-v2": expectedRawHash = StarterProgramCatalog.upperRulesetHash
         case "ruleset-glute-exact-v1": expectedRawHash = StarterProgramCatalog.gluteRulesetHash

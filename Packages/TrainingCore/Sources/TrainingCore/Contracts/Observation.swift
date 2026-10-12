@@ -155,6 +155,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
     public var exercises: [ExerciseLog]
     public var timing: SessionTiming? = nil
     public var observationAudit: ObservationAudit? = nil
+    public var migrationRecoveryAttestations: [MigrationRecoveryAttestation]? = nil
 
     public init(eventID: String, date: LocalDate, slotID: String, prescriptionID: String, plannedPrescriptionID: String, sessionMode: SessionMode, exercises: [ExerciseLog], observationAudit: ObservationAudit? = nil) {
         self.eventID = eventID
@@ -177,6 +178,7 @@ public struct CompletedWorkout: Codable, Equatable, Sendable {
         case exercises
         case timing
         case observationAudit
+        case migrationRecoveryAttestations
     }
 
 }

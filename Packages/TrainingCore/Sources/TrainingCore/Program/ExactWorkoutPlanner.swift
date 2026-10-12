@@ -86,9 +86,10 @@ private func validateExactTransitionState(state: ProgramState, rules: Ruleset) t
         let base = state.config.variants![id]!.baseMovementID
         let movement = state.config.movements.first { $0.id == base }!
         let range = initialRepRange(movement: movement, goal: state.config.goal, preset: preset)
+        let imported = state.migration?.doses[id]
         let safety = state.baseSafety![base]!
-        guard exercise.normalSets == preset.normalSets, exercise.repFloor == range.floor,
-              exercise.repCeiling >= range.ceiling,
+        guard exercise.normalSets == (imported?.normalSets ?? preset.normalSets), exercise.repFloor == (imported?.repFloor ?? range.floor),
+              exercise.repCeiling >= (imported?.initialRepCeiling ?? range.ceiling),
               (0..<parameters.confirmationCount).contains(exercise.ceilingStreak),
               (0..<parameters.setbackCount).contains(exercise.strainStreak),
               (exercise.ceilingStreak == 0 && exercise.strainStreak == 0 && exercise.exactRepState!.shortfallStreak == 0) ||

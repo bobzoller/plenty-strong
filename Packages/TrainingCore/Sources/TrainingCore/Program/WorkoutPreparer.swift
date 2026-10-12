@@ -1,11 +1,11 @@
 import Foundation
 
 public func prepareWorkout(state: ProgramState, rules: Ruleset, easierToday: Bool = false) throws -> WorkoutPrescription {
-    guard state.schedulingPolicy == nil || [2, 3, 4].contains(state.schemaVersion) else { throw EngineError(code: "unsupported_scheduling", field: "schemaVersion") }
+    guard state.schedulingPolicy == nil || [2, 3, 4, 5].contains(state.schemaVersion) else { throw EngineError(code: "unsupported_scheduling", field: "schemaVersion") }
     try rejectLegacyStarterFields(state)
     switch try ProgramPolicy.resolve(schemaVersion: state.schemaVersion, rules: rules) {
     case .starterExactV1: return try prepareStarterWorkout(state: state, rules: rules, easierToday: easierToday)
-    case .fixedExactV1: return try prepareExactWorkout(state: state, rules: rules, easierToday: easierToday)
+    case .fixedExactV1, .migratedExactV1: return try prepareExactWorkout(state: state, rules: rules, easierToday: easierToday)
     case .numericV02, .fixedCeilingsV1: break
     }
     try rules.validateIntegrity()

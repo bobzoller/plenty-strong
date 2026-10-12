@@ -247,7 +247,7 @@ public struct Ruleset: Codable, Equatable, Sendable {
     /// Archived numeric v0.2 has textual tables. Resolve its exact approved constants
     /// without adding fields to its encoded object/hash. Fixed catalogs store constants.
     public func preset(goal: Goal, daysPerWeek: Int) throws -> GoalPreset {
-        guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1"].contains(version) else {
+        guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1", "general-fitness-migrated-exact-v1"].contains(version) else {
             throw EngineError(code: "unknown_ruleset", field: "rules.version")
         }
         try validateIntegrity()
@@ -268,7 +268,7 @@ public struct Ruleset: Codable, Equatable, Sendable {
 
     public var resolvedParameters: RuleParameters {
         get throws {
-            guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(version) else {
+            guard ["general-fitness-v0.2", "general-fitness-swift1", "general-fitness-exact-v1", "general-fitness-migrated-exact-v1", "general-fitness-upper-exact-v2", "general-fitness-glute-exact-v1"].contains(version) else {
                 throw EngineError(code: "unknown_ruleset", field: "rules.version")
             }
             try validateIntegrity()
@@ -299,6 +299,15 @@ public struct Ruleset: Codable, Equatable, Sendable {
         }
         guard starterDoses == nil, safetyFamilies == nil else {
             throw EngineError(code: "invalid_ruleset", field: "rules.starterDoses")
+        }
+        if version == "general-fitness-migrated-exact-v1" {
+            guard hash == RulesetCatalog.migratedExactRulesetHash, contractVersion == 5,
+                  sourceRulesetHash == RulesetCatalog.exactRulesetHash,
+                  profileID == "fixed-home-gym-v0.2", profileHash == RulesetCatalog.fixedProfileHash,
+                  parameters?.exactRep == ExactRepParameters() else {
+                throw EngineError(code: "invalid_ruleset", field: "rules.migration")
+            }
+            return
         }
         if version == "general-fitness-exact-v1" {
             guard hash == RulesetCatalog.exactRulesetHash,

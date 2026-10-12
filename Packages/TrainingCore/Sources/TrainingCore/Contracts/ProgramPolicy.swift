@@ -7,6 +7,7 @@ public enum ProgramPolicy: Equatable, Sendable {
     case fixedCeilingsV1
     case fixedExactV1
     case starterExactV1
+    case migratedExactV1
 
     public static func resolve(schemaVersion: Int, rules: Ruleset) throws -> ProgramPolicy {
         try rules.validateIntegrity()
@@ -14,6 +15,7 @@ public enum ProgramPolicy: Equatable, Sendable {
         case (1, "general-fitness-v0.2", RulesetCatalog.numericRulesetHash): return .numericV02
         case (2, "general-fitness-swift1", RulesetCatalog.fixedRulesetHash): return .fixedCeilingsV1
         case (3, "general-fitness-exact-v1", RulesetCatalog.exactRulesetHash): return .fixedExactV1
+        case (5, "general-fitness-migrated-exact-v1", RulesetCatalog.migratedExactRulesetHash): return .migratedExactV1
         case (4, "general-fitness-upper-exact-v2", StarterProgramCatalog.upperRulesetHash),
              (4, "general-fitness-glute-exact-v1", StarterProgramCatalog.gluteRulesetHash): return .starterExactV1
         default: throw EngineError(code: "unsupported_policy", field: "schemaVersion")
@@ -21,13 +23,14 @@ public enum ProgramPolicy: Equatable, Sendable {
     }
 
     public var usesVariants: Bool { self != .numericV02 }
-    public var usesExactTargets: Bool { self == .fixedExactV1 || self == .starterExactV1 }
+    public var usesExactTargets: Bool { self == .fixedExactV1 || self == .starterExactV1 || self == .migratedExactV1 }
     public var usesStarterDoses: Bool { self == .starterExactV1 }
     public var schemaVersion: Int {
         switch self {
         case .numericV02: 1
         case .fixedCeilingsV1: 2
         case .fixedExactV1: 3
+        case .migratedExactV1: 5
         case .starterExactV1: 4
         }
     }
@@ -67,7 +70,8 @@ public func validateExactRepContract(state: ProgramState, rules: Ruleset) throws
     guard state.rulesetVersion == rules.version, state.rulesetHash == rules.hash else {
         throw EngineError(code: "ruleset_mismatch", field: "rules")
     }
-    if !policy.usesStarterDoses {
+    if policy == .migratedExactV1 { try validateMigratedState(state, rules: rules) }
+    else if !policy.usesStarterDoses {
         try rejectLegacyStarterFields(state)
     } else {
         try validateStarterProgram(state: state, rules: rules)
@@ -85,7 +89,7 @@ public func validateExactRepContract(state: ProgramState, rules: Ruleset) throws
         guard let exact = exercise.exactRepState, let variant = variants[id],
               let movement = state.config.movements.first(where: { $0.id == variant.baseMovementID }),
               exercise.normalSets > 0, exercise.repFloor >= 1, exercise.repCeiling >= exercise.repFloor,
-              exercise.repCeiling <= (state.config.goal == .strength && movement.lowRepLoadingAllowed ? parameters.maximumStrengthRepCeiling : parameters.maximumRepCeiling),
+              exercise.repCeiling <= max(state.migration?.doses[id]?.initialRepCeiling ?? 0, (state.config.goal == .strength && movement.lowRepLoadingAllowed ? parameters.maximumStrengthRepCeiling : parameters.maximumRepCeiling)),
               validTargets(exact.normalTargets, count: exercise.normalSets, ceiling: exercise.repCeiling),
               (0..<parameters.setbackCount).contains(exact.shortfallStreak),
               let revision = exercise.setupRevision, revision > 0,
@@ -175,6 +179,7 @@ func validateExactComparable(_ exposure: Exposure, variant: MovementVariant, mov
 /// New optional wire values cannot acquire meaning in an archived legacy policy.
 func rejectLegacyStarterFields(_ state: ProgramState) throws {
     guard (1...3).contains(state.schemaVersion) else { return }
+    guard state.migration == nil else { throw EngineError(code: "invalid_state", field: "migration") }
     guard state.retainedSafety == nil, state.exercises.values.allSatisfy({ $0.starterState == nil }),
           state.config.variants?.values.allSatisfy({ $0.loadingModeOverride == nil }) != false else {
         throw EngineError(code: "invalid_state", field: "starterState")

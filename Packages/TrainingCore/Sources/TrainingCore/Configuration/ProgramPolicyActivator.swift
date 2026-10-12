@@ -38,7 +38,7 @@ public func policyActivationEvidenceEventIDs(state: ProgramState, history: [Jour
 /// Admission compares saved raw descriptions byte for byte; Swift String
 /// equality alone can equate different Unicode encodings of an observation.
 public func rawVariantSnapshotsMatch(state: ProgramState, event: CompletedWorkout) -> Bool {
-    guard [2, 3, 4].contains(state.schemaVersion) else { return true }
+    guard [2, 3, 4, 5].contains(state.schemaVersion) else { return true }
     return event.exercises.allSatisfy { log in
         log.baseMovementID == state.config.variants?[log.movementID]?.baseMovementID &&
         log.modificationsSnapshot != nil && log.modificationsSnapshot!.utf8.elementsEqual(
@@ -213,6 +213,6 @@ private func activationLegacyTransition(state: ProgramState, command: JournalCom
             competingHeadHashes: heads, branches: branches, selection: selection, rules: rules, next: next))
         return ConfigurationResult(state: result.state, workout: result.workout, decisions: result.decisions)
     case .activateFlexibleScheduling: return try activateFlexibleScheduling(state: state, rules: rules)
-    case .initialize, .activatePolicy, .changeStarterProgram: throw activationInvalid("command")
+    case .initialize, .migrateProgram, .activatePolicy, .changeStarterProgram: throw activationInvalid("command")
     }
 }
